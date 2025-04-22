@@ -6,7 +6,7 @@ $logFile = "$env:LOCALAPPDATA\Temp\TestTomcatConfig.log"
 function Write-Log {
     param($Message)
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$timestamp $Message" | Out-File -FilePath $logFile -Append
+    "$timestamp $Message" | Out-File -FilePath $logFile -Append -Encoding UTF8
     Write-Host "[$timestamp] $Message"
 }
 
@@ -32,17 +32,21 @@ function Get-TomcatConfigPath {
     if ($catalinaHome) {
         $confPath = Join-Path $catalinaHome "conf"
         $serverXml = Join-Path $confPath "server.xml"
-        if (Test-Path $serverXml) {
-            $version = if ($catalinaHome -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
-            if ($version -match "^7\.") { $version = "7.0" }
-            elseif ($version -match "^8\.0") { $version = "8.0" }
-            elseif ($version -match "^8\.5") { $version = "8.5" }
-            elseif ($version -match "^9\.") { $version = "9.0" }
-            elseif ($version -match "^10\.") { $version = "10.0" }
-            Write-Log "Found Tomcat configuration at CATALINA_HOME: $confPath"
-            return @{ Path = $confPath; Version = $version }
-        } else {
-            Write-Log "CATALINA_HOME set to $catalinaHome, but no valid conf/server.xml found"
+        try {
+            if (Test-Path $serverXml -ErrorAction Stop) {
+                $version = if ($catalinaHome -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
+                if ($version -match "^7\.") { $version = "7.0" }
+                elseif ($version -match "^8\.0") { $version = "8.0" }
+                elseif ($version -match "^8\.5") { $version = "8.5" }
+                elseif ($version -match "^9\.") { $version = "9.0" }
+                elseif ($version -match "^10\.") { $version = "10.0" }
+                Write-Log "Found Tomcat configuration at CATALINA_HOME: $confPath"
+                return @{ Path = $confPath; Version = $version }
+            } else {
+                Write-Log "CATALINA_HOME set to $catalinaHome, but no valid conf/server.xml found"
+            }
+        } catch {
+            Write-Log "Error accessing $serverXml in CATALINA_HOME: $_"
         }
     } else {
         Write-Log "CATALINA_HOME not set"
@@ -53,7 +57,8 @@ function Get-TomcatConfigPath {
         "C:\Program Files\Apache Software Foundation",
         "C:\Program Files (x86)\Apache Software Foundation",
         "C:\Apache\Tomcat",
-        "C:\Tomcat"
+        "C:\Tomcat",
+        "C:\ProgramData\Apache\Tomcat"
     )
     $versionPatterns = @(
         "Tomcat 7.*",
@@ -69,22 +74,26 @@ function Get-TomcatConfigPath {
             continue
         }
         foreach ($pattern in $versionPatterns) {
-            $dirs = Get-ChildItem -Path $base -Directory -Filter $pattern -ErrorAction SilentlyContinue
-            foreach ($dir in $dirs) {
-                $confPath = Join-Path $dir.FullName "conf"
-                $serverXml = Join-Path $confPath "server.xml"
-                if (Test-Path $serverXml) {
-                    $version = if ($dir.Name -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
-                    if ($version -match "^7\.") { $version = "7.0" }
-                    elseif ($version -match "^8\.0") { $version = "8.0" }
-                    elseif ($version -match "^8\.5") { $version = "8.5" }
-                    elseif ($version -match "^9\.") { $version = "9.0" }
-                    elseif ($version -match "^10\.") { $version = "10.0" }
-                    Write-Log "Found Tomcat configuration at $confPath"
-                    return @{ Path = $confPath; Version = $version }
-                } else {
-                    Write-Log "No server.xml found in $confPath"
+            try {
+                $dirs = Get-ChildItem -Path $base -Directory -Filter $pattern -ErrorAction Stop
+                foreach ($dir in $dirs) {
+                    $confPath = Join-Path $dir.FullName "conf"
+                    $serverXml = Join-Path $confPath "server.xml"
+                    if (Test-Path $serverXml) {
+                        $version = if ($dir.Name -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
+                        if ($version -match "^7\.") { $version = "7.0" }
+                        elseif ($version -match "^8\.0") { $version = "8.0" }
+                        elseif ($version -match "^8\.5") { $version = "8.5" }
+                        elseif ($version -match "^9\.") { $version = "9.0" }
+                        elseif ($version -match "^10\.") { $version = "10.0" }
+                        Write-Log "Found Tomcat configuration at $confPath"
+                        return @{ Path = $confPath; Version = $version }
+                    } else {
+                        Write-Log "No server.xml found in $confPath"
+                    }
                 }
+            } catch {
+                Write-Log "Error accessing $base for pattern $pattern: $_"
             }
         }
     }
@@ -159,9 +168,14 @@ $serverConfigs = @{
 # Backup original files
 $serverXml = Join-Path $tomcatConfPath "server.xml"
 $usersXml = Join-Path $tomcatConfPath "tomcat-users.xml"
-Copy-Item $serverXml "$backupDir\server.xml.bak" -Force
-Copy-Item $usersXml "$backupDir\tomcat-users.xml.bak" -Force
-Write-Log "Backed up original files to $backupDir"
+try {
+    Copy-Item $serverXml "$backupDir\server.xml.bak" -Force -ErrorAction Stop
+    Copy-Item $usersXml "$backupDir\tomcat-users.xml.bak" -Force -ErrorAction Stop
+    Write-Log "Backed up original files to $backupDir"
+} catch {
+    Write-Log "Error backing up configuration files: $_"
+    exit 1
+}
 
 # Track test results
 $totalTests = 0
@@ -175,7 +189,7 @@ foreach ($serverTest in $serverTests) {
             Write-Log "Skipping Hashed_SHA512 for Tomcat $tomcatVersion (not supported)"
             continue
         }
-        if ($passwordTest -eq "Salted_PBKDF2" -and $tomcatVersion -in @("7.0", "8.0")) {
+        if ($passwordTest -eq "Salted_PBKDF2" -and $tomcatVersion -in @("7.0", "8.0", "8.5")) {
             Write-Log "Skipping Salted_PBKDF2 for Tomcat $tomcatVersion (not supported)"
             continue
         }
@@ -187,48 +201,63 @@ foreach ($serverTest in $serverTests) {
         $totalTests++
 
         # Modify server.xml
-        $xml = [xml](Get-Content $serverXml -Encoding UTF8)
-        $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']")
-        if (-not $realm) {
-            $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.MemoryRealm']")
-        }
-        if ($serverTest -eq "NoCredentialHandler") {
-            if ($realm.CredentialHandler) { $realm.RemoveChild($realm.CredentialHandler) | Out-Null }
-        } else {
-            $newHandler = [xml]$serverConfigs[$serverTest]
-            if ($realm.CredentialHandler) {
-                $realm.ReplaceChild($xml.ImportNode($newHandler.DocumentElement, $true), $realm.CredentialHandler) | Out-Null
-            } else {
-                $realm.AppendChild($xml.ImportNode($newHandler.DocumentElement, $true)) | Out-Null
+        try {
+            $xml = [xml](Get-Content $serverXml -Encoding UTF8 -ErrorAction Stop)
+            $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']")
+            if (-not $realm) {
+                $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.MemoryRealm']")
             }
+            if ($serverTest -eq "NoCredentialHandler") {
+                if ($realm.CredentialHandler) { $realm.RemoveChild($realm.CredentialHandler) | Out-Null }
+            } else {
+                $newHandler = [xml]$serverConfigs[$serverTest]
+                if ($realm.CredentialHandler) {
+                    $realm.ReplaceChild($xml.ImportNode($newHandler.DocumentElement, $true), $realm.CredentialHandler) | Out-Null
+                } else {
+                    $realm.AppendChild($xml.ImportNode($newHandler.DocumentElement, $true)) | Out-Null
+                }
+            }
+            $xml.Save($serverXml)
+        } catch {
+            Write-Log "Error modifying server.xml: $_"
+            exit 1
         }
-        $xml.Save($serverXml)
 
         # Modify tomcat-users.xml
-        $users = [xml](Get-Content $usersXml -Encoding UTF8)
-        $user = $users.SelectSingleNode("//user[@username='testuser']")
-        if (-not $user) {
-            $user = $users.CreateElement("user")
-            $user.SetAttribute("username", "testuser")
-            $user.SetAttribute("roles", "manager")
-            $users.'tomcat-users'.AppendChild($user) | Out-Null
-        }
-        $user.SetAttribute("password", $passwordValues[$passwordTest])
+        try {
+            $users = [xml](Get-Content $usersXml -Encoding UTF8 -ErrorAction Stop)
+            $user = $users.SelectSingleNode("//user[@username='testuser']")
+            if (-not $user) {
+                $user = $users.CreateElement("user")
+                $user.SetAttribute("username", "testuser")
+                $user.SetAttribute("roles", "manager")
+                $users.'tomcat-users'.AppendChild($user) | Out-Null
+            }
+            $user.SetAttribute("password", $passwordValues[$passwordTest])
 
-        # Save with explicit UTF-8 encoding
-        $writerSettings = New-Object System.Xml.XmlWriterSettings
-        $writerSettings.Encoding = [System.Text.Encoding]::UTF8
-        $writerSettings.Indent = $true
-        $writer = [System.Xml.XmlWriter]::Create($usersXml, $writerSettings)
-        $users.Save($writer)
-        $writer.Close()
+            # Save with explicit UTF-8 encoding
+            $writerSettings = New-Object System.Xml.XmlWriterSettings
+            $writerSettings.Encoding = [System.Text.Encoding]::UTF8
+            $writerSettings.Indent = $true
+            $writer = [System.Xml.XmlWriter]::Create($usersXml, $writerSettings)
+            $users.Save($writer)
+            $writer.Close()
+        } catch {
+            Write-Log "Error modifying tomcat-users.xml: $_"
+            exit 1
+        }
 
         # Run CheckTomcatConfigWin.ps1 and capture output
-        $output = & ".\CheckTomcatConfigWin.ps1" | Out-String
-        Write-Log "Test output: $output"
+        try {
+            $output = & ".\CheckTomcatConfigWin.ps1" 2>&1 | Out-String
+            Write-Log "Test output: $output"
+        } catch {
+            Write-Log "Error running CheckTomcatConfigWin.ps1: $_"
+            exit 1
+        }
 
         # Validate test result
-        $isSecure = $output -match "Compliant" -or $output -match "Secure"
+        $isSecure = $output -match "Status: Compliant" -or $output -match "Overall Configuration: Secure"
         $expectedSecure = switch ($passwordTest) {
             "Plaintext" { $false }
             "Hashed_MD5" { $false }
@@ -262,9 +291,14 @@ foreach ($serverTest in $serverTests) {
 } # End serverTests loop
 
 # Restore original files
-Copy-Item "$backupDir\server.xml.bak" $serverXml -Force
-Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force
-Write-Log "Restored original configuration files"
+try {
+    Copy-Item "$backupDir\server.xml.bak" $serverXml -Force -ErrorAction Stop
+    Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force -ErrorAction Stop
+    Write-Log "Restored original configuration files"
+} catch {
+    Write-Log "Error restoring configuration files: $_"
+    exit 1
+}
 
 # Summarize results
 Write-Log "Test Summary:"
