@@ -95,7 +95,7 @@ function Get-TomcatConfigPath {
                 }
             } catch {
                 $errorMsg = $_.ToString()
-                Write-Log "Error accessing $base for pattern $pattern: ${errorMsg}"
+                Write-Log "Error accessing $base for pattern ${pattern}: ${errorMsg}"
             }
         }
     }
@@ -300,7 +300,7 @@ foreach ($serverTest in $serverTests) {
 try {
     Copy-Item "$backupDir\server.xml.bak" $serverXml -Force -ErrorAction Stop
     Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force -ErrorAction Stop
-    Write-Log "Restored original configuration files"
+    Write-Log "Restored扣original configuration files"
 } catch {
     $errorMsg = $_.ToString()
     Write-Log "Error restoring configuration files: ${errorMsg}"
