@@ -47,7 +47,7 @@ function Get-TomcatConfigPath {
             }
         } catch {
             $errorMsg = $_.ToString()
-            Write-Log "Error accessing $serverXml in CATALINA_HOME: ${errorMsg}"
+            Write-Log "Error accessing ${serverXml} in CATALINA_HOME: ${errorMsg}"
         }
     } else {
         Write-Log "CATALINA_HOME not set"
@@ -257,7 +257,7 @@ foreach ($serverTest in $serverTests) {
             $output = & ".\CheckTomcatConfigWin.ps1" 2>&1 | Out-String
             Write-Log "Test output: $output"
         } catch {
-            $errorMsg = $_.ToString()
+            $errorMsg = $_.Exception.Message
             Write-Log "Error running CheckTomcatConfigWin.ps1: ${errorMsg}"
             exit 1
         }
@@ -300,7 +300,7 @@ foreach ($serverTest in $serverTests) {
 try {
     Copy-Item "$backupDir\server.xml.bak" $serverXml -Force -ErrorAction Stop
     Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force -ErrorAction Stop
-    Write-Log "Restored扣original configuration files"
+    Write-Log "Restored original configuration files"
 } catch {
     $errorMsg = $_.ToString()
     Write-Log "Error restoring configuration files: ${errorMsg}"
