@@ -46,7 +46,7 @@ function Get-TomcatConfigPath {
                 Write-Log "CATALINA_HOME set to $catalinaHome, but no valid conf/server.xml found"
             }
         } catch {
-            Write-Log "Error accessing $serverXml in CATALINA_HOME: $_"
+            Write-Log "Error accessing $serverXml in CATALINA_HOME: ${_}"
         }
     } else {
         Write-Log "CATALINA_HOME not set"
@@ -93,7 +93,7 @@ function Get-TomcatConfigPath {
                     }
                 }
             } catch {
-                Write-Log "Error accessing $base for pattern $pattern: $_"
+                Write-Log "Error accessing $base for pattern $pattern: ${_}"
             }
         }
     }
@@ -173,7 +173,7 @@ try {
     Copy-Item $usersXml "$backupDir\tomcat-users.xml.bak" -Force -ErrorAction Stop
     Write-Log "Backed up original files to $backupDir"
 } catch {
-    Write-Log "Error backing up configuration files: $_"
+    Write-Log "Error backing up configuration files: ${_}"
     exit 1
 }
 
@@ -219,7 +219,7 @@ foreach ($serverTest in $serverTests) {
             }
             $xml.Save($serverXml)
         } catch {
-            Write-Log "Error modifying server.xml: $_"
+            Write-Log "Error modifying server.xml: ${_}"
             exit 1
         }
 
@@ -243,7 +243,7 @@ foreach ($serverTest in $serverTests) {
             $users.Save($writer)
             $writer.Close()
         } catch {
-            Write-Log "Error modifying tomcat-users.xml: $_"
+            Write-Log "Error modifying tomcat-users.xml: ${_}"
             exit 1
         }
 
@@ -252,7 +252,7 @@ foreach ($serverTest in $serverTests) {
             $output = & ".\CheckTomcatConfigWin.ps1" 2>&1 | Out-String
             Write-Log "Test output: $output"
         } catch {
-            Write-Log "Error running CheckTomcatConfigWin.ps1: $_"
+            Write-Log "Error running CheckTomcatConfigWin.ps1: ${_}"
             exit 1
         }
 
@@ -296,7 +296,7 @@ try {
     Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force -ErrorAction Stop
     Write-Log "Restored original configuration files"
 } catch {
-    Write-Log "Error restoring configuration files: $_"
+    Write-Log "Error restoring configuration files: ${_}"
     exit 1
 }
 
