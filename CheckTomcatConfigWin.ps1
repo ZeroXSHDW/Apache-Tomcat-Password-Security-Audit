@@ -7,7 +7,7 @@ function Write-Log {
     param($Message)
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     "$timestamp $Message" | Out-File -FilePath $logFile -Append -Encoding UTF8
-    Write-Host $Message
+    Write-Host "[$timestamp] $Message"
 }
 
 Write-Log "Checking Apache Tomcat configuration security..."
@@ -33,7 +33,7 @@ function Get-TomcatConfigPath {
                 Write-Log "CATALINA_HOME set to $catalinaHome, but no valid conf/server.xml found"
             }
         } catch {
-            Write-Log "Error accessing $serverXml in CATALINA_HOME: $_"
+            Write-Log "Error accessing ${serverXml} in CATALINA_HOME: $($_.Exception.Message)"
         }
     } else {
         Write-Log "CATALINA_HOME not set"
@@ -80,7 +80,7 @@ function Get-TomcatConfigPath {
                     }
                 }
             } catch {
-                Write-Log "Error accessing $base for pattern $pattern: $_"
+                Write-Log "Error accessing $base for pattern ${pattern}: $($_.Exception.Message)"
             }
         }
     }
@@ -110,7 +110,7 @@ try {
     $serverXml = [xml](Get-Content $serverXmlPath -Encoding UTF8 -ErrorAction Stop)
     $usersXml = [xml](Get-Content $usersXmlPath -Encoding UTF8 -ErrorAction Stop)
 } catch {
-    Write-Log "Error reading configuration files: $_"
+    Write-Log "Error reading configuration files: $($_.Exception.Message)"
     exit 1
 }
 
