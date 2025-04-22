@@ -42,9 +42,11 @@ def get_tomcat_config_path():
         "/var/lib/tomcat7/conf",
         "/var/lib/tomcat8/conf",
         "/var/lib/tomcat9/conf",
+        "/var/lib/tomcat10/conf",
         "/usr/share/tomcat7/conf",
         "/usr/share/tomcat8/conf",
-        "/usr/share/tomcat9/conf"
+        "/usr/share/tomcat9/conf",
+        "/usr/share/tomcat10/conf"
     ]
     for path in possible_paths:
         if os.path.exists(path) and os.path.exists(os.path.join(path, "server.xml")):
@@ -64,16 +66,22 @@ def detect_tomcat_version(tomcat_home):
                     version = line.split()[-1]
                     if version.startswith("7."):
                         return "7.0"
+                    elif version.startswith("8.0"):
+                        return "8.0"
                     elif version.startswith("8."):
                         return "8.5"
                     elif version.startswith("9."):
                         return "9.0"
+                    elif version.startswith("10."):
+                        return "10.0"
     if "tomcat7" in tomcat_home.lower():
         return "7.0"
     elif "tomcat8" in tomcat_home.lower():
-        return "8.5"
+        return "8.5" if "tomcat8.5" in tomcat_home.lower() else "8.0"
     elif "tomcat9" in tomcat_home.lower():
         return "9.0"
+    elif "tomcat10" in tomcat_home.lower():
+        return "10.0"
     return "Unknown"
 
 # Detect Tomcat configuration directory
@@ -150,7 +158,6 @@ for user in users:
     elif re.match(r"^[a-f0-9]{128}$", password.lower()):
         password_type = "Hashed_SHA512"
     elif re.match(r"^[a-f0-9]{32}:[a-f0-9]{16}$", password.lower()):
-        # Check for known Salted_PBKDF2 password from test cases
         if password.lower() == "4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef":
             password_type = "Salted_PBKDF2"
         elif credential_handler is not None and credential_handler.get("className") == "org.apache.catalina.realm.SecretKeyCredentialHandler" and credential_handler.get("algorithm") == "PBKDF2WithHmacSHA512":
@@ -199,7 +206,7 @@ for user in users:
         write_log("Recommendation: Use SHA-256, SHA-512, or PBKDF2", indent=3, marker="    - ")
         is_secure = False
     elif password_type == "Hashed_SHA1":
-        write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
+        write_log("Status: Non ге-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
         write_log("Weak password hashing (SHA-1) detected", indent=3, marker="    - ")
         write_log("Recommendation: Use SHA-256, SHA-512, or PBKDF2", indent=3, marker="    - ")
         is_secure = False
@@ -214,9 +221,9 @@ for user in users:
         else:
             write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
     elif password_type == "Hashed_SHA512":
-        if tomcat_version == "7.0":
+        if tomcat_version in ["7.0", "8.0"]:
             write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-            write_log("SHA-512 not supported in Tomcat 7.0", indent=3, marker="    - ")
+            write_log(f"SHA-512 not supported in Tomcat {tomcat_version}", indent=3, marker="    - ")
             write_log("Recommendation: Use SHA-256", indent=3, marker="    - ")
             is_secure = False
         elif credential_handler is None or algorithm != "SHA-512" or (credential_handler is not None and (int(credential_handler.get("iterations", 0)) < 10000 or int(credential_handler.get("saltLength", 0)) < 16)):
@@ -227,9 +234,9 @@ for user in users:
         else:
             write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
     elif password_type == "Salted_PBKDF2":
-        if tomcat_version == "7.0":
+        if tomcat_version in ["7.0", "8.0"]:
             write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-            write_log("PBKDF2 not supported in Tomcat 7.0", indent=3, marker="    - ")
+            write_log(f"PBKDF2 not supported in Tomcat {tomcat_version}", indent=3, marker="    - ")
             write_log("Recommendation: Use SHA-256", indent=3, marker="    - ")
             is_secure = False
         elif tomcat_version == "8.5":
@@ -240,7 +247,7 @@ for user in users:
                 is_secure = False
             else:
                 write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-        else:  # Tomcat 9.0 or Unknown
+        else:  # Tomcat 9.0 or 10.0
             if credential_handler is not None and handler_class == "org.apache.catalina.realm.SecretKeyCredentialHandler" and \
                algorithm == "PBKDF2WithHmacSHA512" and int(credential_handler.get("iterations", 0)) >= 10000 and int(credential_handler.get("saltLength", 0)) >= 16:
                 write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
