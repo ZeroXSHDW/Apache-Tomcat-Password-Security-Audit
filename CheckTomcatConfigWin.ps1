@@ -1,5 +1,5 @@
 # CheckTomcatConfig.ps1
-# Audits Tomcat configuration for password security and compliance (7.0, 8.5, 9.0)
+# Audits Tomcat configuration for password security and compliance (7.0, 8.0, 8.5, 9.0, 10.0)
 
 # Log setup
 $logFile = "$env:LOCALAPPDATA\Temp\TestTomcatConfig.log"
@@ -16,11 +16,15 @@ Write-Log "Checking Apache Tomcat configuration security..."
 function Get-TomcatConfigPath {
     $possiblePaths = @(
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 7.0\conf",
+        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.0\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.5\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 9.0\conf",
+        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.0\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
+        "C:\Program Files\Apache Software Foundation\Tomcat 8.0\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
-        "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf"
+        "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
+        "C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf"
     )
     foreach ($path in $possiblePaths) {
         if (Test-Path $path) {
@@ -103,33 +107,23 @@ foreach ($user in $users) {
     $params = @()
 
     # Parameter: Password Type
-    $params += "- Parameter: Password Type = $passwordType [$(
-        if ($passwordType -match 'Plaintext|MD5|SHA1') { 'FAIL' } else { 'PASS' }
-    )]"
+    $params += "- Parameter: Password Type = $passwordType [$(if ($passwordType -match 'Plaintext|MD5|SHA1') { 'FAIL' } else { 'PASS' })]"
 
     # Parameter: CredentialHandler Presence
     $handlerClass = if ($credentialHandler) { $credentialHandler.className } else { "None" }
-    $params += "- Parameter: CredentialHandler = $handlerClass [$(
-        if ($credentialHandler) { 'PASS' } else { 'FAIL' }
-    )]"
+    $params += "- Parameter: CredentialHandler = $handlerClass [$(if ($credentialHandler) { 'PASS' } else { 'FAIL' })]"
 
     # Parameter: Algorithm
     $algorithm = if ($credentialHandler -and $credentialHandler.algorithm) { $credentialHandler.algorithm } else { "None" }
-    $params += "- Parameter: Algorithm = $algorithm [$(
-        if ($algorithm -in @('SHA-256', 'SHA-512', 'PBKDF2WithHmacSHA512')) { 'PASS' } else { 'FAIL' }
-    )]"
+    $params += "- Parameter: Algorithm = $algorithm [$(if ($algorithm -in @('SHA-256', 'SHA-512', 'PBKDF2WithHmacSHA512')) { 'PASS' } else { 'FAIL' })]"
 
     # Parameter: Iterations (if applicable)
     $iterations = if ($credentialHandler -and $credentialHandler.iterations) { [int]$credentialHandler.iterations } else { 0 }
-    $params += "- Parameter: Iterations = $iterations [$(
-        if ($iterations -ge 10000) { 'PASS' } else { 'FAIL' }
-    )]"
+    $params += "- Parameter: Iterations = $iterations [$(if ($iterations -ge 10000) { 'PASS' } else { 'FAIL' })]"
 
     # Parameter: Salt Length (if applicable)
     $saltLength = if ($credentialHandler -and $credentialHandler.saltLength) { [int]$credentialHandler.saltLength } else { 0 }
-    $params += "- Parameter: Salt Length = $saltLength [$(
-        if ($saltLength -ge 16) { 'PASS' } else { 'FAIL' }
-    )]"
+    $params += "- Parameter: Salt Length = $saltLength [$(if ($saltLength -ge 16) { 'PASS' } else { 'FAIL' })]"
 
     # Log parameters
     foreach ($param in $params) {
@@ -169,9 +163,9 @@ foreach ($user in $users) {
         }
     }
     elseif ($passwordType -eq "Hashed_SHA512") {
-        if ($tomcatVersion -eq "7.0") {
+        if ($tomcatVersion -in @("7.0", "8.0")) {
             Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-            Write-Log "    - SHA-512 not supported in Tomcat 7.0"
+            Write-Log "    - SHA-512 not supported in Tomcat $tomcatVersion"
             Write-Log "    - Recommendation: Use SHA-256"
             $isSecure = $false
         } elseif (-not $credentialHandler -or $credentialHandler.algorithm -ne "SHA-512" -or
@@ -185,9 +179,9 @@ foreach ($user in $users) {
         }
     }
     elseif ($passwordType -eq "Salted_PBKDF2") {
-        if ($tomcatVersion -eq "7.0") {
+        if ($tomcatVersion -in @("7.0", "8.0")) {
             Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-            Write-Log "    - PBKDF2 not supported in Tomcat 7.0"
+            Write-Log "    - PBKDF2 not supported in Tomcat $tomcatVersion"
             Write-Log "    - Recommendation: Use SHA-256"
             $isSecure = $false
         } elseif ($tomcatVersion -eq "8.5") {
@@ -200,7 +194,7 @@ foreach ($user in $users) {
             } else {
                 Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
             }
-        } else { # Tomcat 9.0
+        } else { # Tomcat 9.0, 10.0
             if ($credentialHandler -and $credentialHandler.className -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and
                 $credentialHandler.algorithm -eq "PBKDF2WithHmacSHA512" -and
                 [int]$credentialHandler.iterations -ge 10000 -and [int]$credentialHandler.saltLength -ge 16) {
