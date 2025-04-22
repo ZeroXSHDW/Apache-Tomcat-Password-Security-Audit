@@ -15,7 +15,7 @@ Write-Log "Starting tests for CheckTomcatConfigWin.ps1..."
 # Verify script exists
 if (-not (Test-Path ".\CheckTomcatConfigWin.ps1")) {
     Write-Log "Error: CheckTomcatConfigWin.ps1 not found"
-    exit
+    exit 1
 }
 Write-Log "Verified file exists: .\CheckTomcatConfigWin.ps1"
 
@@ -27,9 +27,33 @@ if (Test-Path $logFile) {
 
 # Function to detect Tomcat path and version
 function Get-TomcatConfigPath {
+    # Check CATALINA_HOME first
+    $catalinaHome = [System.Environment]::GetEnvironmentVariable("CATALINA_HOME")
+    if ($catalinaHome) {
+        $confPath = Join-Path $catalinaHome "conf"
+        $serverXml = Join-Path $confPath "server.xml"
+        if (Test-Path $serverXml) {
+            $version = if ($catalinaHome -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
+            if ($version -match "^7\.") { $version = "7.0" }
+            elseif ($version -match "^8\.0") { $version = "8.0" }
+            elseif ($version -match "^8\.5") { $version = "8.5" }
+            elseif ($version -match "^9\.") { $version = "9.0" }
+            elseif ($version -match "^10\.") { $version = "10.0" }
+            Write-Log "Found Tomcat configuration at CATALINA_HOME: $confPath"
+            return @{ Path = $confPath; Version = $version }
+        } else {
+            Write-Log "CATALINA_HOME set to $catalinaHome, but no valid conf/server.xml found"
+        }
+    } else {
+        Write-Log "CATALINA_HOME not set"
+    }
+
+    # Search common paths
     $basePaths = @(
         "C:\Program Files\Apache Software Foundation",
-        "C:\Program Files (x86)\Apache Software Foundation"
+        "C:\Program Files (x86)\Apache Software Foundation",
+        "C:\Apache\Tomcat",
+        "C:\Tomcat"
     )
     $versionPatterns = @(
         "Tomcat 7.*",
@@ -40,25 +64,31 @@ function Get-TomcatConfigPath {
     )
 
     foreach ($base in $basePaths) {
-        if (-not (Test-Path $base)) { continue }
+        if (-not (Test-Path $base)) {
+            Write-Log "Base path $base does not exist"
+            continue
+        }
         foreach ($pattern in $versionPatterns) {
-            $dirs = Get-ChildItem -Path $base -Directory -Filter $pattern
+            $dirs = Get-ChildItem -Path $base -Directory -Filter $pattern -ErrorAction SilentlyContinue
             foreach ($dir in $dirs) {
                 $confPath = Join-Path $dir.FullName "conf"
                 $serverXml = Join-Path $confPath "server.xml"
                 if (Test-Path $serverXml) {
                     $version = if ($dir.Name -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
-                    # Map to major version for compatibility with existing logic
                     if ($version -match "^7\.") { $version = "7.0" }
                     elseif ($version -match "^8\.0") { $version = "8.0" }
                     elseif ($version -match "^8\.5") { $version = "8.5" }
                     elseif ($version -match "^9\.") { $version = "9.0" }
                     elseif ($version -match "^10\.") { $version = "10.0" }
+                    Write-Log "Found Tomcat configuration at $confPath"
                     return @{ Path = $confPath; Version = $version }
+                } else {
+                    Write-Log "No server.xml found in $confPath"
                 }
             }
         }
     }
+    Write-Log "Error: No Tomcat configuration directory found in any searched paths"
     return $null
 }
 
@@ -66,7 +96,7 @@ function Get-TomcatConfigPath {
 $tomcatInfo = Get-TomcatConfigPath
 if (-not $tomcatInfo) {
     Write-Log "Error: No Tomcat configuration directory found"
-    exit
+    exit 1
 }
 $tomcatConfPath = $tomcatInfo.Path
 $tomcatVersion = $tomcatInfo.Version
@@ -105,7 +135,7 @@ if ($tomcatVersion -eq "7.0") {
     Write-Log "Limiting tests for Tomcat 7.0: Excluding SHA-512, NestedCredentialHandler, and SecretKeyCredentialHandler"
 }
 
-# Password examples (simplified for demo)
+# Password examples
 $passwordValues = @{
     "Plaintext" = "s3cret"
     "Hashed_MD5" = "5ebe2294ecd0e0f08eab7690d2a6ee69"
@@ -197,9 +227,30 @@ foreach ($serverTest in $serverTests) {
         $output = & ".\CheckTomcatConfigWin.ps1" | Out-String
         Write-Log "Test output: $output"
 
-        # Validate test result (simplified validation)
-        $isSecure = $output -match "Secure" -or $output -match "Compliant"
-        $expectedSecure = ($passwordTest -in @("Hashed_SHA256", "Hashed_SHA512", "Salted_PBKDF2") -and $serverTest -in @("MessageDigestCredentialHandler_SHA256", "MessageDigestCredentialHandler_SHA512", "SecretKeyCredentialHandler_PBKDF2"))
+        # Validate test result
+        $isSecure = $output -match "Compliant" -or $output -match "Secure"
+        $expectedSecure = switch ($passwordTest) {
+            "Plaintext" { $false }
+            "Hashed_MD5" { $false }
+            "Hashed_SHA1" { $false }
+            "Salted_MD5" { $false }
+            "Hashed_SHA256" {
+                $tomcatVersion -eq "7.0" -or (
+                    $serverTest -eq "MessageDigestCredentialHandler_SHA256" -and
+                    $tomcatVersion -notin @("7.0")
+                )
+            }
+            "Hashed_SHA512" {
+                $serverTest -eq "MessageDigestCredentialHandler_SHA512" -and
+                $tomcatVersion -notin @("7.0", "8.0")
+            }
+            "Salted_PBKDF2" {
+                $serverTest -eq "SecretKeyCredentialHandler_PBKDF2" -and
+                $tomcatVersion -in @("9.0", "10.0")
+            }
+            default { $false }
+        }
+
         if ($isSecure -eq $expectedSecure) {
             Write-Log "Result: PASSED"
             $passedTests++
