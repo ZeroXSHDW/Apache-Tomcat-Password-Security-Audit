@@ -189,4 +189,131 @@ $failedTests = 0
 foreach ($serverTest in $serverTests) {
     foreach ($passwordTest in $passwordTests) {
         if ($passwordTest -eq "Hashed_SHA512" -and $tomcatVersion -in @("7.0", "8.0")) {
-            Write-Log "Skipping Hashed_SHA512 for Tomcat $tomcatVersion (not
+            Write-Log "Skipping Hashed_SHA512 for Tomcat $tomcatVersion (not supported)"
+            continue
+        }
+        if ($passwordTest -eq "Salted_PBKDF2" -and $tomcatVersion -in @("7.0", "8.0", "8.5")) {
+            Write-Log "Skipping Salted_PBKDF2 for Tomcat $tomcatVersion (not supported)"
+            continue
+        }
+        if ($passwordTest -eq "Salted_PBKDF2" -and $serverTest -ne "SecretKeyCredentialHandler_PBKDF2" -and $tomcatVersion -in @("9.0", "10.0")) {
+            Write-Log "Skipping Salted_PBKDF2 with $serverTest for Tomcat $tomcatVersion (only supported with SecretKeyCredentialHandler)"
+            continue
+        }
+        Write-Log "Running test: ${tomcatVersion}_${serverTest}_${passwordTest} for Tomcat $tomcatVersion"
+        $totalTests++
+
+        # Modify server.xml
+        try {
+            $xml = [xml](Get-Content $serverXml -Encoding UTF8 -ErrorAction Stop)
+            $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']")
+            if (-not $realm) {
+                $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.MemoryRealm']")
+            }
+            if ($serverTest -eq "NoCredentialHandler") {
+                if ($realm.CredentialHandler) { $realm.RemoveChild($realm.CredentialHandler) | Out-Null }
+            } else {
+                $newHandler = [xml]$serverConfigs[$serverTest]
+                if ($realm.CredentialHandler) {
+                    $realm.ReplaceChild($xml.ImportNode($newHandler.DocumentElement, $true), $realm.CredentialHandler) | Out-Null
+                } else {
+                    $realm.AppendChild($xml.ImportNode($newHandler.DocumentElement, $true)) | Out-Null
+                }
+            }
+            $xml.Save($serverXml)
+        } catch {
+            $errorMsg = $_.ToString()
+            Write-Log "Error modifying server.xml: ${errorMsg}"
+            exit 1
+        }
+
+        # Modify tomcat-users.xml
+        try {
+            $users = [xml](Get-Content $usersXml -Encoding UTF8 -ErrorAction Stop)
+            $user = $users.SelectSingleNode("//user[@username='testuser']")
+            if (-not $user) {
+                $user = $users.CreateElement("user")
+                $user.SetAttribute("username", "testuser")
+                $user.SetAttribute("roles", "manager")
+                $users.'tomcat-users'.AppendChild($user) | Out-Null
+            }
+            $user.SetAttribute("password", $passwordValues[$passwordTest])
+
+            # Save with explicit UTF-8 encoding
+            $writerSettings = New-Object System.Xml.XmlWriterSettings
+            $writerSettings.Encoding = [System.Text.Encoding]::UTF8
+            $writerSettings.Indent = $true
+            $writer = [System.Xml.XmlWriter]::Create($usersXml, $writerSettings)
+            $users.Save($writer)
+            $writer.Close()
+        } catch {
+            $errorMsg = $_.ToString()
+            Write-Log "Error modifying tomcat-users.xml: ${errorMsg}"
+            exit 1
+        }
+
+        # Run CheckTomcatConfigWin.ps1 and capture output
+        try {
+            $output = & ".\CheckTomcatConfigWin.ps1" 2>&1 | Out-String
+            Write-Log "Test output: $output"
+        } catch {
+            $errorMsg = $_.ToString()
+            Write-Log "Error running CheckTomcatConfigWin.ps1: ${errorMsg}"
+            exit 1
+        }
+
+        # Validate test result
+        $isSecure = $output -match "Status: Compliant" -or $output -match "Overall Configuration: Secure"
+        $expectedSecure = switch ($passwordTest) {
+            "Plaintext" { $false }
+            "Hashed_MD5" { $false }
+            "Hashed_SHA1" { $false }
+            "Salted_MD5" { $false }
+            "Hashed_SHA256" {
+                $tomcatVersion -eq "7.0" -or (
+                    $serverTest -eq "MessageDigestCredentialHandler_SHA256" -and
+                    $tomcatVersion -notin @("7.0")
+                )
+            }
+            "Hashed_SHA512" {
+                $serverTest -eq "MessageDigestCredentialHandler_SHA512" -and
+                $tomcatVersion -notin @("7.0", "8.0")
+            }
+            "Salted_PBKDF2" {
+                $serverTest -eq "SecretKeyCredentialHandler_PBKDF2" -and
+                $tomcatVersion -in @("9.0", "10.0")
+            }
+            default { $false }
+        }
+
+        if ($isSecure -eq $expectedSecure) {
+            Write-Log "Result: PASSED"
+            $passedTests++
+        } else {
+            Write-Log "Result: FAILED (Expected secure: $expectedSecure, Actual output: $output)"
+            $failedTests++
+        }
+    } # End passwordTests loop
+} # End serverTests loop
+
+# Restore original files
+try {
+    Copy-Item "$backupDir\server.xml.bak" $serverXml -Force -ErrorAction Stop
+    Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force -ErrorAction Stop
+    Write-Log "Restored original configuration files"
+} catch {
+    $errorMsg = $_.ToString()
+    Write-Log "Error restoring configuration files: ${errorMsg}"
+    exit 1
+}
+
+# Summarize results
+Write-Log "Test Summary:"
+Write-Log "  Total tests run: $totalTests"
+Write-Log "  Tests passed: $passedTests"
+Write-Log "  Tests failed: $failedTests"
+if ($failedTests -eq 0) {
+    Write-Log "All tests completed successfully"
+} else {
+    Write-Log "Some tests failed. Check $logFile for details"
+}
