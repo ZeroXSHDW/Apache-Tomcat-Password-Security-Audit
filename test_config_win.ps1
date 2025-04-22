@@ -1,5 +1,5 @@
 # test_config.ps1
-# Tests CheckTomcatConfig.ps1 for various Tomcat configurations (7.0, 8.5, 9.0)
+# Tests CheckTomcatConfig.ps1 for various Tomcat configurations (7.0, 8.0, 8.5, 9.0, 10.0)
 
 # Log setup
 $logFile = "$env:LOCALAPPDATA\Temp\TestTomcatConfig.log"
@@ -29,11 +29,15 @@ if (Test-Path $logFile) {
 function Get-TomcatConfigPath {
     $possiblePaths = @(
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 7.0\conf",
+        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.0\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.5\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 9.0\conf",
+        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.0\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
+        "C:\Program Files\Apache Software Foundation\Tomcat 8.0\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
-        "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf"
+        "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
+        "C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf"
     )
     foreach ($path in $possiblePaths) {
         if (Test-Path $path) {
@@ -79,11 +83,11 @@ $serverTests = @(
     "MessageDigestCredentialHandler_MD5",
     "MessageDigestCredentialHandler_SHA256"
 )
-if ($tomcatVersion -in @("8.5", "9.0")) {
+if ($tomcatVersion -in @("8.0", "8.5", "9.0", "10.0")) {
     $serverTests += "MessageDigestCredentialHandler_SHA512"
     $serverTests += "NestedCredentialHandler"
 }
-if ($tomcatVersion -eq "9.0") {
+if ($tomcatVersion -in @("9.0", "10.0")) {
     $serverTests += "SecretKeyCredentialHandler_PBKDF2"
 }
 if ($tomcatVersion -eq "7.0") {
@@ -120,15 +124,15 @@ Copy-Item $usersXml "$backupDir\tomcat-users.xml.bak" -Force
 # Run tests
 foreach ($serverTest in $serverTests) {
     foreach ($passwordTest in $passwordTests) {
-        if ($passwordTest -eq "Hashed_SHA512" -and $tomcatVersion -eq "7.0") {
-            Write-Log "Skipping Hashed_SHA512 for Tomcat 7.0 (not supported)"
+        if ($passwordTest -eq "Hashed_SHA512" -and $tomcatVersion -in @("7.0", "8.0")) {
+            Write-Log "Skipping Hashed_SHA512 for Tomcat $tomcatVersion (not supported)"
             continue
         }
-        if ($passwordTest -eq "Salted_PBKDF2" -and $tomcatVersion -eq "7.0") {
-            Write-Log "Skipping Salted_PBKDF2 for Tomcat 7.0 (not supported)"
+        if ($passwordTest -eq "Salted_PBKDF2" -and $tomcatVersion -in @("7.0", "8.0")) {
+            Write-Log "Skipping Salted_PBKDF2 for Tomcat $tomcatVersion (not supported)"
             continue
         }
-        if ($passwordTest -eq "Salted_PBKDF2" -and $serverTest -eq "SecretKeyCredentialHandler_PBKDF2" -and $tomcatVersion -ne "9.0") {
+        if ($passwordTest -eq "Salted_PBKDF2" -and $serverTest -eq "SecretKeyCredentialHandler_PBKDF2" -and $tomcatVersion -notin @("9.0", "10.0")) {
             Write-Log "Skipping Salted_PBKDF2 with SecretKeyCredentialHandler for Tomcat $tomcatVersion (not supported)"
             continue
         }
@@ -167,18 +171,3 @@ foreach ($serverTest in $serverTests) {
         $writerSettings.Encoding = [System.Text.Encoding]::UTF8
         $writerSettings.Indent = $true
         $writer = [System.Xml.XmlWriter]::Create($usersXml, $writerSettings)
-        $users.Save($writer)
-        $writer.Close()
-
-        # Run CheckTomcatConfig.ps1
-        $output = & ".\CheckTomcatConfig.ps1" 2>&1
-        Write-Log "Test output: $output"
-    }
-}
-
-# Restore original files
-Copy-Item "$backupDir\server.xml.bak" $serverXml -Force
-Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force
-Write-Log "Restored original configuration files"
-
-Write-Log "All tests completed successfully"
