@@ -7,7 +7,7 @@ function Write-Log {
     param($Message)
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     "$timestamp $Message" | Out-File -FilePath $logFile -Append -Encoding UTF8
-    Write-Host "[$timestamp] $Message"
+    Write-Output "[$timestamp] $Message"
 }
 
 Write-Log "Checking Apache Tomcat configuration security..."
