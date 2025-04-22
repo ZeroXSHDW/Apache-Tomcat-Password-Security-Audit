@@ -46,7 +46,8 @@ function Get-TomcatConfigPath {
                 Write-Log "CATALINA_HOME set to $catalinaHome, but no valid conf/server.xml found"
             }
         } catch {
-            Write-Log "Error accessing $serverXml in CATALINA_HOME: ${_}"
+            $errorMsg = $_.ToString()
+            Write-Log "Error accessing $serverXml in CATALINA_HOME: $errorMsg"
         }
     } else {
         Write-Log "CATALINA_HOME not set"
@@ -93,7 +94,8 @@ function Get-TomcatConfigPath {
                     }
                 }
             } catch {
-                Write-Log "Error accessing $base for pattern $pattern: ${_}"
+                $errorMsg = $_.ToString()
+                Write-Log "Error accessing $base for pattern $pattern: $errorMsg"
             }
         }
     }
@@ -173,7 +175,8 @@ try {
     Copy-Item $usersXml "$backupDir\tomcat-users.xml.bak" -Force -ErrorAction Stop
     Write-Log "Backed up original files to $backupDir"
 } catch {
-    Write-Log "Error backing up configuration files: ${_}"
+    $errorMsg = $_.ToString()
+    Write-Log "Error backing up configuration files: $errorMsg"
     exit 1
 }
 
@@ -219,7 +222,8 @@ foreach ($serverTest in $serverTests) {
             }
             $xml.Save($serverXml)
         } catch {
-            Write-Log "Error modifying server.xml: ${_}"
+            $errorMsg = $_.ToString()
+            Write-Log "Error modifying server.xml: $errorMsg"
             exit 1
         }
 
@@ -243,7 +247,8 @@ foreach ($serverTest in $serverTests) {
             $users.Save($writer)
             $writer.Close()
         } catch {
-            Write-Log "Error modifying tomcat-users.xml: ${_}"
+            $errorMsg = $_.ToString()
+            Write-Log "Error modifying tomcat-users.xml: $errorMsg"
             exit 1
         }
 
@@ -252,7 +257,8 @@ foreach ($serverTest in $serverTests) {
             $output = & ".\CheckTomcatConfigWin.ps1" 2>&1 | Out-String
             Write-Log "Test output: $output"
         } catch {
-            Write-Log "Error running CheckTomcatConfigWin.ps1: ${_}"
+            $errorMsg = $_.ToString()
+            Write-Log "Error running CheckTomcatConfigWin.ps1: $errorMsg"
             exit 1
         }
 
@@ -296,7 +302,8 @@ try {
     Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force -ErrorAction Stop
     Write-Log "Restored original configuration files"
 } catch {
-    Write-Log "Error restoring configuration files: ${_}"
+    $errorMsg = $_.ToString()
+    Write-Log "Error restoring configuration files: $errorMsg"
     exit 1
 }
 
