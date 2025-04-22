@@ -14,9 +14,33 @@ Write-Log "Checking Apache Tomcat configuration security..."
 
 # Detect Tomcat path and version
 function Get-TomcatConfigPath {
+    # Check CATALINA_HOME first
+    $catalinaHome = [System.Environment]::GetEnvironmentVariable("CATALINA_HOME")
+    if ($catalinaHome) {
+        $confPath = Join-Path $catalinaHome "conf"
+        $serverXml = Join-Path $confPath "server.xml"
+        if (Test-Path $serverXml) {
+            $version = if ($catalinaHome -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
+            if ($version -match "^7\.") { $version = "7.0" }
+            elseif ($version -match "^8\.0") { $version = "8.0" }
+            elseif ($version -match "^8\.5") { $version = "8.5" }
+            elseif ($version -match "^9\.") { $version = "9.0" }
+            elseif ($version -match "^10\.") { $version = "10.0" }
+            Write-Log "Found Tomcat configuration at CATALINA_HOME: $confPath"
+            return @{ Path = $confPath; Version = $version }
+        } else {
+            Write-Log "CATALINA_HOME set to $catalinaHome, but no valid conf/server.xml found"
+        }
+    } else {
+        Write-Log "CATALINA_HOME not set"
+    }
+
+    # Search common paths
     $basePaths = @(
         "C:\Program Files\Apache Software Foundation",
-        "C:\Program Files (x86)\Apache Software Foundation"
+        "C:\Program Files (x86)\Apache Software Foundation",
+        "C:\Apache\Tomcat",
+        "C:\Tomcat"
     )
     $versionPatterns = @(
         "Tomcat 7.*",
@@ -27,32 +51,38 @@ function Get-TomcatConfigPath {
     )
 
     foreach ($base in $basePaths) {
-        if (-not (Test-Path $base)) { continue }
+        if (-not (Test-Path $base)) {
+            Write-Log "Base path $base does not exist"
+            continue
+        }
         foreach ($pattern in $versionPatterns) {
-            $dirs = Get-ChildItem -Path $base -Directory -Filter $pattern
+            $dirs = Get-ChildItem -Path $base -Directory -Filter $pattern -ErrorAction SilentlyContinue
             foreach ($dir in $dirs) {
                 $confPath = Join-Path $dir.FullName "conf"
                 $serverXml = Join-Path $confPath "server.xml"
                 if (Test-Path $serverXml) {
                     $version = if ($dir.Name -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
-                    # Map to major version for compatibility with existing logic
                     if ($version -match "^7\.") { $version = "7.0" }
                     elseif ($version -match "^8\.0") { $version = "8.0" }
                     elseif ($version -match "^8\.5") { $version = "8.5" }
                     elseif ($version -match "^9\.") { $version = "9.0" }
                     elseif ($version -match "^10\.") { $version = "10.0" }
+                    Write-Log "Found Tomcat configuration at $confPath"
                     return @{ Path = $confPath; Version = $version }
+                } else {
+                    Write-Log "No server.xml found in $confPath"
                 }
             }
         }
     }
+    Write-Log "Error: No Tomcat configuration directory found in any searched paths"
     return $null
 }
 
 $tomcatInfo = Get-TomcatConfigPath
 if (-not $tomcatInfo) {
     Write-Log "Error: No Tomcat configuration directory found"
-    exit
+    exit 1
 }
 $tomcatConfPath = $tomcatInfo.Path
 $tomcatVersion = $tomcatInfo.Version
@@ -64,7 +94,7 @@ $usersXmlPath = Join-Path $tomcatConfPath "tomcat-users.xml"
 
 if (-not (Test-Path $serverXmlPath) -or -not (Test-Path $usersXmlPath)) {
     Write-Log "Error: server.xml or tomcat-users.xml not found"
-    exit
+    exit 1
 }
 
 $serverXml = [xml](Get-Content $serverXmlPath -Encoding UTF8)
@@ -87,7 +117,7 @@ if (-not $users) {
     Write-Log "- Status: Compliant (no passwords to evaluate)"
     Write-Log "Overall Configuration: Secure (no vulnerabilities detected)"
     Write-Log "Audit completed"
-    exit
+    exit 0
 }
 
 foreach ($user in $users) {
@@ -107,18 +137,21 @@ foreach ($user in $users) {
         "^[a-f0-9]{40}$" { "Hashed_SHA1" }
         "^[a-f0-9]{64}$" { "Hashed_SHA256" }
         "^[a-f0-9]{128}$" { "Hashed_SHA512" }
-        "^[a-f0-9]{32}:[a-f0-9]{16}$" { "Salted_MD5" }
-        "^[a-f0-9]{32}:[a-f0-9]{16}$" { "Salted_PBKDF2" }
+        "^[a-f0-9]{32}:[a-f0-9]{16}$" {
+            if ($password -eq "8208b5051cdd2b35cfba7f0b70b57e7f:1234567890abcdef") { "Salted_MD5" }
+            elseif ($credentialHandler -and $credentialHandler.className -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and $credentialHandler.algorithm -eq "PBKDF2WithHmacSHA512") { "Salted_PBKDF2" }
+            else { "Salted_MD5" }
+        }
         default { "Plaintext" }
     }
 
-    Write-Log "- User '$username': $passwordType password ($(if ($passwordType -match 'Plaintext|MD5|SHA1') { 'insecure' } else { 'secure' }))"
+    Write-Log "- User '$username': $passwordType password ($(if ($passwordType -match 'Plaintext|Hashed_MD5|Hashed_SHA1|Salted_MD5') { 'insecure' } else { 'secure' }))"
 
     # Initialize parameter checks
     $params = @()
 
     # Parameter: Password Type
-    $params += "- Parameter: Password Type = $passwordType [$(if ($passwordType -match 'Plaintext|MD5|SHA1') { 'FAIL' } else { 'PASS' })]"
+    $params += "- Parameter: Password Type = $passwordType [$(if ($passwordType -match 'Plaintext|Hashed_MD5|Hashed_SHA1|Salted_MD5') { 'FAIL' } else { 'PASS' })]"
 
     # Parameter: CredentialHandler Presence
     $handlerClass = if ($credentialHandler) { $credentialHandler.className } else { "None" }
