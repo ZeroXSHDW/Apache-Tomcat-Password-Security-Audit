@@ -1,5 +1,5 @@
 # test_config.ps1
-# Tests CheckTomcatConfig.ps1 for various Tomcat configurations (7.0, 8.0, 8.5, 9.0, 10.0)
+# Tests CheckTomcatConfigWin.ps1 for various Tomcat configurations (7.0, 8.0, 8.5, 9.0, 10.0)
 
 # Log setup
 $logFile = "$env:LOCALAPPDATA\Temp\TestTomcatConfig.log"
@@ -10,14 +10,14 @@ function Write-Log {
     Write-Host "[$timestamp] $Message"
 }
 
-Write-Log "Starting tests for CheckTomcatConfig.ps1..."
+Write-Log "Starting tests for CheckTomcatConfigWin.ps1..."
 
 # Verify script exists
-if (-not (Test-Path ".\CheckTomcatConfig.ps1")) {
-    Write-Log "Error: CheckTomcatConfig.ps1 not found"
+if (-not (Test-Path ".\CheckTomcatConfigWin.ps1")) {
+    Write-Log "Error: CheckTomcatConfigWin.ps1 not found"
     exit
 }
-Write-Log "Verified file exists: .\CheckTomcatConfig.ps1"
+Write-Log "Verified file exists: .\CheckTomcatConfigWin.ps1"
 
 # Clear existing log
 if (Test-Path $logFile) {
@@ -120,6 +120,12 @@ $serverXml = Join-Path $tomcatConfPath "server.xml"
 $usersXml = Join-Path $tomcatConfPath "tomcat-users.xml"
 Copy-Item $serverXml "$backupDir\server.xml.bak" -Force
 Copy-Item $usersXml "$backupDir\tomcat-users.xml.bak" -Force
+Write-Log "Backed up original files to $backupDir"
+
+# Track test results
+$totalTests = 0
+$passedTests = 0
+$failedTests = 0
 
 # Run tests
 foreach ($serverTest in $serverTests) {
@@ -132,11 +138,12 @@ foreach ($serverTest in $serverTests) {
             Write-Log "Skipping Salted_PBKDF2 for Tomcat $tomcatVersion (not supported)"
             continue
         }
-        if ($passwordTest -eq "Salted_PBKDF2" -and $serverTest -eq "SecretKeyCredentialHandler_PBKDF2" -and $tomcatVersion -notin @("9.0", "10.0")) {
-            Write-Log "Skipping Salted_PBKDF2 with SecretKeyCredentialHandler for Tomcat $tomcatVersion (not supported)"
+        if ($passwordTest -eq "Salted_PBKDF2" -and $serverTest -ne "SecretKeyCredentialHandler_PBKDF2" -and $tomcatVersion -in @("9.0", "10.0")) {
+            Write-Log "Skipping Salted_PBKDF2 with $serverTest for Tomcat $tomcatVersion (only supported with SecretKeyCredentialHandler)"
             continue
         }
         Write-Log "Running test: ${tomcatVersion}_${serverTest}_${passwordTest} for Tomcat $tomcatVersion"
+        $totalTests++
 
         # Modify server.xml
         $xml = [xml](Get-Content $serverXml -Encoding UTF8)
@@ -145,13 +152,13 @@ foreach ($serverTest in $serverTests) {
             $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.MemoryRealm']")
         }
         if ($serverTest -eq "NoCredentialHandler") {
-            if ($realm.CredentialHandler) { $realm.RemoveChild($realm.CredentialHandler) }
+            if ($realm.CredentialHandler) { $realm.RemoveChild($realm.CredentialHandler) | Out-Null }
         } else {
             $newHandler = [xml]$serverConfigs[$serverTest]
             if ($realm.CredentialHandler) {
-                $realm.ReplaceChild($xml.ImportNode($newHandler.DocumentElement, $true), $realm.CredentialHandler)
+                $realm.ReplaceChild($xml.ImportNode($newHandler.DocumentElement, $true), $realm.CredentialHandler) | Out-Null
             } else {
-                $realm.AppendChild($xml.ImportNode($newHandler.DocumentElement, $true))
+                $realm.AppendChild($xml.ImportNode($newHandler.DocumentElement, $true)) | Out-Null
             }
         }
         $xml.Save($serverXml)
@@ -163,11 +170,47 @@ foreach ($serverTest in $serverTests) {
             $user = $users.CreateElement("user")
             $user.SetAttribute("username", "testuser")
             $user.SetAttribute("roles", "manager")
-            $users.'tomcat-users'.AppendChild($user)
+            $users.'tomcat-users'.AppendChild($user) | Out-Null
         }
         $user.SetAttribute("password", $passwordValues[$passwordTest])
+
         # Save with explicit UTF-8 encoding
         $writerSettings = New-Object System.Xml.XmlWriterSettings
         $writerSettings.Encoding = [System.Text.Encoding]::UTF8
         $writerSettings.Indent = $true
         $writer = [System.Xml.XmlWriter]::Create($usersXml, $writerSettings)
+        $users.Save($writer)
+        $writer.Close()
+
+        # Run CheckTomcatConfigWin.ps1 and capture output
+        $output = & ".\CheckTomcatConfigWin.ps1" | Out-String
+        Write-Log "Test output: $output"
+
+        # Validate test result (simplified validation)
+        $isSecure = $output -match "Secure" -or $output -match "Compliant"
+        $expectedSecure = ($passwordTest -in @("Hashed_SHA256", "Hashed_SHA512", "Salted_PBKDF2") -and $serverTest -in @("MessageDigestCredentialHandler_SHA256", "MessageDigestCredentialHandler_SHA512", "SecretKeyCredentialHandler_PBKDF2"))
+        if ($isSecure -eq $expectedSecure) {
+            Write-Log "Result: PASSED"
+            $passedTests++
+        } else {
+            Write-Log "Result: FAILED (Expected secure: $expectedSecure, Actual output: $output)"
+            $failedTests++
+        }
+    } # End passwordTests loop
+} # End serverTests loop
+
+# Restore original files
+Copy-Item "$backupDir\server.xml.bak" $serverXml -Force
+Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force
+Write-Log "Restored original configuration files"
+
+# Summarize results
+Write-Log "Test Summary:"
+Write-Log "  Total tests run: $totalTests"
+Write-Log "  Tests passed: $passedTests"
+Write-Log "  Tests failed: $failedTests"
+if ($failedTests -eq 0) {
+    Write-Log "All tests completed successfully"
+} else {
+    Write-Log "Some tests failed. Check $logFile for details"
+}
