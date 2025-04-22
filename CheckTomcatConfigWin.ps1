@@ -1,5 +1,5 @@
-# CheckTomcatConfig.ps1
-# Audits Tomcat configuration for password security and compliance (7.0, 8.0, 8.5, 9.0, 10.0)
+# CheckTomcatConfigWin.ps1
+# Audits Tomcat configuration for password security and compliance (7.x, 8.0.x, 8.5.x, 9.x, 10.x)
 
 # Log setup
 $logFile = "$env:LOCALAPPDATA\Temp\TestTomcatConfig.log"
@@ -14,24 +14,35 @@ Write-Log "Checking Apache Tomcat configuration security..."
 
 # Detect Tomcat path and version
 function Get-TomcatConfigPath {
-    $possiblePaths = @(
-        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 7.0\conf",
-        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.0\conf",
-        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.5\conf",
-        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 9.0\conf",
-        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.0\conf",
-        "C:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
-        "C:\Program Files\Apache Software Foundation\Tomcat 8.0\conf",
-        "C:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
-        "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
-        "C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf"
+    $basePaths = @(
+        "C:\Program Files\Apache Software Foundation",
+        "C:\Program Files (x86)\Apache Software Foundation"
     )
-    foreach ($path in $possiblePaths) {
-        if (Test-Path $path) {
-            $serverXml = Join-Path $path "server.xml"
-            if (Test-Path $serverXml) {
-                $version = if ($path -match "Tomcat\s*(\d+\.\d+)") { $matches[1] } else { "Unknown" }
-                return @{ Path = $path; Version = $version }
+    $versionPatterns = @(
+        "Tomcat 7.*",
+        "Tomcat 8.0.*",
+        "Tomcat 8.5.*",
+        "Tomcat 9.*",
+        "Tomcat 10.*"
+    )
+
+    foreach ($base in $basePaths) {
+        if (-not (Test-Path $base)) { continue }
+        foreach ($pattern in $versionPatterns) {
+            $dirs = Get-ChildItem -Path $base -Directory -Filter $pattern
+            foreach ($dir in $dirs) {
+                $confPath = Join-Path $dir.FullName "conf"
+                $serverXml = Join-Path $confPath "server.xml"
+                if (Test-Path $serverXml) {
+                    $version = if ($dir.Name -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
+                    # Map to major version for compatibility with existing logic
+                    if ($version -match "^7\.") { $version = "7.0" }
+                    elseif ($version -match "^8\.0") { $version = "8.0" }
+                    elseif ($version -match "^8\.5") { $version = "8.5" }
+                    elseif ($version -match "^9\.") { $version = "9.0" }
+                    elseif ($version -match "^10\.") { $version = "10.0" }
+                    return @{ Path = $confPath; Version = $version }
+                }
             }
         }
     }
