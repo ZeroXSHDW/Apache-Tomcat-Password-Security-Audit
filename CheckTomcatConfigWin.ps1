@@ -6,7 +6,7 @@ $logFile = "$env:LOCALAPPDATA\Temp\TestTomcatConfig.log"
 function Write-Log {
     param($Message)
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$timestamp $Message" | Out-File -FilePath $logFile -Append
+    "$timestamp $Message" | Out-File -FilePath $logFile -Append -Encoding UTF8
     Write-Host $Message
 }
 
@@ -19,17 +19,21 @@ function Get-TomcatConfigPath {
     if ($catalinaHome) {
         $confPath = Join-Path $catalinaHome "conf"
         $serverXml = Join-Path $confPath "server.xml"
-        if (Test-Path $serverXml) {
-            $version = if ($catalinaHome -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
-            if ($version -match "^7\.") { $version = "7.0" }
-            elseif ($version -match "^8\.0") { $version = "8.0" }
-            elseif ($version -match "^8\.5") { $version = "8.5" }
-            elseif ($version -match "^9\.") { $version = "9.0" }
-            elseif ($version -match "^10\.") { $version = "10.0" }
-            Write-Log "Found Tomcat configuration at CATALINA_HOME: $confPath"
-            return @{ Path = $confPath; Version = $version }
-        } else {
-            Write-Log "CATALINA_HOME set to $catalinaHome, but no valid conf/server.xml found"
+        try {
+            if (Test-Path $serverXml -ErrorAction Stop) {
+                $version = if ($catalinaHome -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
+                if ($version -match "^7\.") { $version = "7.0" }
+                elseif ($version -match "^8\.0") { $version = "8.0" }
+                elseif ($version -match "^8\.5") { $version = "8.5" }
+                elseif ($version -match "^9\.") { $version = "9.0" }
+                elseif ($version -match "^10\.") { $version = "10.0" }
+                Write-Log "Found Tomcat configuration at CATALINA_HOME: $confPath"
+                return @{ Path = $confPath; Version = $version }
+            } else {
+                Write-Log "CATALINA_HOME set to $catalinaHome, but no valid conf/server.xml found"
+            }
+        } catch {
+            Write-Log "Error accessing $serverXml in CATALINA_HOME: $_"
         }
     } else {
         Write-Log "CATALINA_HOME not set"
@@ -40,7 +44,8 @@ function Get-TomcatConfigPath {
         "C:\Program Files\Apache Software Foundation",
         "C:\Program Files (x86)\Apache Software Foundation",
         "C:\Apache\Tomcat",
-        "C:\Tomcat"
+        "C:\Tomcat",
+        "C:\ProgramData\Apache\Tomcat"
     )
     $versionPatterns = @(
         "Tomcat 7.*",
@@ -56,22 +61,26 @@ function Get-TomcatConfigPath {
             continue
         }
         foreach ($pattern in $versionPatterns) {
-            $dirs = Get-ChildItem -Path $base -Directory -Filter $pattern -ErrorAction SilentlyContinue
-            foreach ($dir in $dirs) {
-                $confPath = Join-Path $dir.FullName "conf"
-                $serverXml = Join-Path $confPath "server.xml"
-                if (Test-Path $serverXml) {
-                    $version = if ($dir.Name -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
-                    if ($version -match "^7\.") { $version = "7.0" }
-                    elseif ($version -match "^8\.0") { $version = "8.0" }
-                    elseif ($version -match "^8\.5") { $version = "8.5" }
-                    elseif ($version -match "^9\.") { $version = "9.0" }
-                    elseif ($version -match "^10\.") { $version = "10.0" }
-                    Write-Log "Found Tomcat configuration at $confPath"
-                    return @{ Path = $confPath; Version = $version }
-                } else {
-                    Write-Log "No server.xml found in $confPath"
+            try {
+                $dirs = Get-ChildItem -Path $base -Directory -Filter $pattern -ErrorAction Stop
+                foreach ($dir in $dirs) {
+                    $confPath = Join-Path $dir.FullName "conf"
+                    $serverXml = Join-Path $confPath "server.xml"
+                    if (Test-Path $serverXml) {
+                        $version = if ($dir.Name -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
+                        if ($version -match "^7\.") { $version = "7.0" }
+                        elseif ($version -match "^8\.0") { $version = "8.0" }
+                        elseif ($version -match "^8\.5") { $version = "8.5" }
+                        elseif ($version -match "^9\.") { $version = "9.0" }
+                        elseif ($version -match "^10\.") { $version = "10.0" }
+                        Write-Log "Found Tomcat configuration at $confPath"
+                        return @{ Path = $confPath; Version = $version }
+                    } else {
+                        Write-Log "No server.xml found in $confPath"
+                    }
                 }
+            } catch {
+                Write-Log "Error accessing $base for pattern $pattern: $_"
             }
         }
     }
@@ -97,8 +106,13 @@ if (-not (Test-Path $serverXmlPath) -or -not (Test-Path $usersXmlPath)) {
     exit 1
 }
 
-$serverXml = [xml](Get-Content $serverXmlPath -Encoding UTF8)
-$usersXml = [xml](Get-Content $usersXmlPath -Encoding UTF8)
+try {
+    $serverXml = [xml](Get-Content $serverXmlPath -Encoding UTF8 -ErrorAction Stop)
+    $usersXml = [xml](Get-Content $usersXmlPath -Encoding UTF8 -ErrorAction Stop)
+} catch {
+    Write-Log "Error reading configuration files: $_"
+    exit 1
+}
 
 # Analyze CredentialHandler
 $realm = $serverXml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']")
@@ -138,9 +152,11 @@ foreach ($user in $users) {
         "^[a-f0-9]{64}$" { "Hashed_SHA256" }
         "^[a-f0-9]{128}$" { "Hashed_SHA512" }
         "^[a-f0-9]{32}:[a-f0-9]{16}$" {
-            if ($password -eq "8208b5051cdd2b35cfba7f0b70b57e7f:1234567890abcdef") { "Salted_MD5" }
-            elseif ($credentialHandler -and $credentialHandler.className -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and $credentialHandler.algorithm -eq "PBKDF2WithHmacSHA512") { "Salted_PBKDF2" }
-            else { "Salted_MD5" }
+            if ($credentialHandler -and $credentialHandler.className -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and $credentialHandler.algorithm -eq "PBKDF2WithHmacSHA512") {
+                "Salted_PBKDF2"
+            } else {
+                "Salted_MD5"
+            }
         }
         default { "Plaintext" }
     }
@@ -199,8 +215,7 @@ foreach ($user in $users) {
         } elseif (-not $credentialHandler -or $credentialHandler.algorithm -ne "SHA-256" -or
             [int]$credentialHandler.iterations -lt 10000 -or [int]$credentialHandler.saltLength -lt 16) {
             Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-            Write-Log "    - Hashed_SHA256 passwords should use salt and iterations"
-            Write-Log "    - Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000"
+            Write-Log "    - Hashed_SHA256 requires MessageDigestCredentialHandler with SHA-256, saltLength >= 16, iterations >= 10000"
             $isSecure = $false
         } else {
             Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
@@ -215,8 +230,7 @@ foreach ($user in $users) {
         } elseif (-not $credentialHandler -or $credentialHandler.algorithm -ne "SHA-512" -or
             [int]$credentialHandler.iterations -lt 10000 -or [int]$credentialHandler.saltLength -lt 16) {
             Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-            Write-Log "    - Hashed_SHA512 passwords should use salt and iterations"
-            Write-Log "    - Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000"
+            Write-Log "    - Hashed_SHA512 requires MessageDigestCredentialHandler with SHA-512, saltLength >= 16, iterations >= 10000"
             $isSecure = $false
         } else {
             Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
@@ -229,15 +243,10 @@ foreach ($user in $users) {
             Write-Log "    - Recommendation: Use SHA-256"
             $isSecure = $false
         } elseif ($tomcatVersion -eq "8.5") {
-            if (-not $credentialHandler -or $credentialHandler.algorithm -notin @("SHA-256", "SHA-512") -or
-                [int]$credentialHandler.iterations -lt 10000 -or [int]$credentialHandler.saltLength -lt 16) {
-                Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-                Write-Log "    - Salted_PBKDF2 requires compatible MessageDigestCredentialHandler"
-                Write-Log "    - Recommendation: Configure MessageDigestCredentialHandler with SHA-256/SHA-512, saltLength >= 16, iterations >= 10000"
-                $isSecure = $false
-            } else {
-                Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-            }
+            Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
+            Write-Log "    - Salted_PBKDF2 not supported in Tomcat 8.5"
+            Write-Log "    - Recommendation: Use SHA-256 or SHA-512"
+            $isSecure = $false
         } else { # Tomcat 9.0, 10.0
             if ($credentialHandler -and $credentialHandler.className -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and
                 $credentialHandler.algorithm -eq "PBKDF2WithHmacSHA512" -and
@@ -245,8 +254,7 @@ foreach ($user in $users) {
                 Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
             } else {
                 Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-                Write-Log "    - Salted_PBKDF2 requires SecretKeyCredentialHandler with PBKDF2"
-                Write-Log "    - Recommendation: Configure SecretKeyCredentialHandler with PBKDF2, saltLength >= 16, iterations >= 10000"
+                Write-Log "    - Salted_PBKDF2 requires SecretKeyCredentialHandler with PBKDF2, saltLength >= 16, iterations >= 10000"
                 $isSecure = $false
             }
         }
