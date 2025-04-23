@@ -29,11 +29,19 @@ function Get-CredentialHandler {
         $xml = [xml](Get-Content $ServerXmlPath)
         $credentialHandler = $xml.Server.Service.Engine.Host.Realm.CredentialHandler
         if ($credentialHandler) {
+            $iterations = 0
+            if ($credentialHandler.iterations) {
+                $iterations = [int]$credentialHandler.iterations
+            }
+            $saltLength = 0
+            if ($credentialHandler.saltLength) {
+                $saltLength = [int]$credentialHandler.saltLength
+            }
             return @{
                 className = $credentialHandler.className
                 algorithm = $credentialHandler.algorithm
-                iterations = [int]($credentialHandler.iterations ? $credentialHandler.iterations : 0)
-                saltLength = [int]($credentialHandler.saltLength ? $credentialHandler.saltLength : 0)
+                iterations = $iterations
+                saltLength = $saltLength
             }
         }
         return $null
