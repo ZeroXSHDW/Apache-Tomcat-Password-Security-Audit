@@ -136,7 +136,7 @@ if (-not $users) {
 
 foreach ($user in $users) {
     $username = $user.username
-    $password = $user.password
+    $password = $user.password.Trim()  # Trim to remove any whitespace
 
     # Skip users without passwords
     if (-not $password) {
@@ -145,14 +145,17 @@ foreach ($user in $users) {
         continue
     }
 
+    # Log raw password for debugging
+    Write-Log "Raw password for user '$username': '$password'"
+
     # Detect password type
     $passwordType = switch -Regex ($password) {
-        "^[a-f0-9]{32}$" { "Hashed_MD5" }
-        "^[a-f0-9]{40}$" { "Hashed_SHA1" }
-        "^[a-f0-9]{64}$" { "Hashed_SHA256" }
-        "^[a-f0-9]{128}$" { "Hashed_SHA512" }
-        "^[a-f0-9]{32}:[a-f0-9]{16}$" { "Salted_MD5" }
-        "^[a-f0-9]{64}:[a-f0-9]{16}$" {
+        "^[a-fA-F0-9]{32}$" { "Hashed_MD5" }
+        "^[a-fA-F0-9]{40}$" { "Hashed_SHA1" }
+        "^[a-fA-F0-9]{64}$" { "Hashed_SHA256" }
+        "^[a-fA-F0-9]{128}$" { "Hashed_SHA512" }
+        "^[a-fA-F0-9]{32}:[a-fA-F0-9]{16}$" { "Salted_MD5" }
+        "^[a-fA-F0-9]{64}:[a-fA-F0-9]{16}$" {
             if ($credentialHandler -and $credentialHandler.className -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and $credentialHandler.algorithm -eq "PBKDF2WithHmacSHA512") {
                 "Salted_PBKDF2"
             } else {
@@ -161,6 +164,8 @@ foreach ($user in $users) {
         }
         default { "Plaintext" }
     }
+
+    Write-Log "Detected password type for user '$username': $passwordType"
 
     Write-Log "- User '$username': $passwordType password ($(if ($passwordType -match 'Plaintext|Hashed_MD5|Hashed_SHA1|Salted_MD5') { 'insecure' } else { 'secure' }))"
 
@@ -172,7 +177,7 @@ foreach ($user in $users) {
 
     # Parameter: CredentialHandler Presence
     $handlerClass = if ($credentialHandler) { $credentialHandler.className } else { "None" }
-    $params += "- Parameter»: CredentialHandler = $handlerClass [$(if ($credentialHandler) { 'PASS' } else { 'FAIL' })]"
+    $params += "- Parameter: CredentialHandler = $handlerClass [$(if ($credentialHandler) { 'PASS' } else { 'FAIL' })]"
 
     # Parameter: Algorithm
     $algorithm = if ($credentialHandler -and $credentialHandler.algorithm) { $credentialHandler.algorithm } else { "None" }
