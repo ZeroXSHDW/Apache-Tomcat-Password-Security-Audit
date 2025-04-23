@@ -60,7 +60,9 @@ function Check-PasswordSecurity {
         Write-Log "- User 'testuser': Salted_PBKDF2 password (secure)"
     }
     else {
-        Write-Log "- User 'testuser': Unknown password (secure)"
+        $passwordType = "Unknown"
+        $isSecure = $false # Treat unknown formats as insecure for plaintext or weak passwords
+        Write-Log "- User 'testuser': Unknown password (insecure)"
     }
 
     # Parameter checks
@@ -73,7 +75,7 @@ function Check-PasswordSecurity {
 
     # Compliance check
     $isCompliant = $true
-    if ($passwordType -match "MD5|SHA1" -or $Password -eq "password123") {
+    if ($passwordType -match "MD5|SHA1" -or $Password -eq "password123" -or $passwordType -eq "Unknown") {
         $isCompliant = $false
         Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
         Write-Log "    - Weak or unknown password format detected"
@@ -104,10 +106,12 @@ function Restart-TomcatService {
     $serviceName = "Tomcat10"
     try {
         $service = Get-Service -Name $serviceName -ErrorAction Stop
+        Write-Log "Attempting to restart Tomcat service ($serviceName)..."
         if ($service.Status -eq "Running") {
-            Write-Log "Restarting Tomcat service..."
+            Write-Log "Stopping Tomcat service..."
             Stop-Service -Name $serviceName -Force -ErrorAction Stop
             Start-Sleep -Seconds 5
+            Write-Log "Starting Tomcat service..."
             Start-Service -Name $serviceName -ErrorAction Stop
             Write-Log "Tomcat service restarted successfully"
         } else {
@@ -117,6 +121,7 @@ function Restart-TomcatService {
         }
     } catch {
         Write-Log "Warning: Could not restart Tomcat service: $($_.Exception.Message)"
+        Write-Log "Recommendation: Ensure the Tomcat service is properly configured and the account has sufficient permissions."
     }
 }
 
