@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # test_config_unix.py
-# Automated testing for CheckTomcatConfigUnix.py across Tomcat 10.0 and 10.1
+# Automated testing for CheckTomcatConfigUnix.py across Tomcat 7.0, 8.5, 9.0, 10.0, and 10.1
 
 import os
 import sys
@@ -38,7 +38,13 @@ def get_tomcat_config_path():
     possible_paths = [
         "/opt/tomcat/conf",
         "/usr/local/tomcat/conf",
+        "/var/lib/tomcat7/conf",
+        "/var/lib/tomcat8/conf",
+        "/var/lib/tomcat9/conf",
         "/var/lib/tomcat10/conf",
+        "/usr/share/tomcat7/conf",
+        "/usr/share/tomcat8/conf",
+        "/usr/share/tomcat9/conf",
         "/usr/share/tomcat10/conf"
     ]
     for path in possible_paths:
@@ -54,8 +60,14 @@ def detect_tomcat_version(tomcat_home):
             for line in f:
                 if line.startswith("Apache Tomcat Version"):
                     version = line.split()[-1]
-                    if version.startswith("10.0"): return "10.0"
+                    if version.startswith("7.0"): return "7.0"
+                    elif version.startswith("8.5"): return "8.5"
+                    elif version.startswith("9.0"): return "9.0"
+                    elif version.startswith("10.0"): return "10.0"
                     elif version.startswith("10.1"): return "10.1"
+    if "tomcat7" in tomcat_home.lower(): return "7.0"
+    if "tomcat8" in tomcat_home.lower(): return "8.5"
+    if "tomcat9" in tomcat_home.lower(): return "9.0"
     if "tomcat10" in tomcat_home.lower(): return "10.0"
     return "Unknown"
 
@@ -142,6 +154,63 @@ def run_check_script():
 
 # Define test cases
 TEST_CASES = {
+    "7.0": {
+        "server_configs": [
+            {"name": "NoCredentialHandler", "config": None},
+            {"name": "MessageDigest_MD5", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "MD5"}},
+            {"name": "MessageDigest_SHA1", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-1"}},
+            {"name": "MessageDigest_SHA256", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-256", "iterations": "10000", "saltLength": "16"}},
+            {"name": "MessageDigest_SHA512", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-512", "iterations": "10000", "saltLength": "16"}},
+            {"name": "NestedCredentialHandler", "config": {"className": "org.apache.catalina.realm.NestedCredentialHandler"}}
+        ],
+        "passwords": [
+            {"type": "Plaintext", "value": "s3cret"},
+            {"type": "Hashed_MD5", "value": "5ebe2294ecd0e0f08eab7690d2a6ee69"},
+            {"type": "Hashed_SHA1", "value": "e5e9fa1ba31ecd1ae84f75caaa474f3a663f05f4"},
+            {"type": "Hashed_SHA256", "value": "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"},
+            {"type": "Hashed_SHA512", "value": "ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff"},
+            {"type": "Salted_MD5", "value": "5ebe2294ecd0e0f08eab7690d2a6ee69:1234567890abcdef"},
+            {"type": "Salted_PBKDF2", "value": "4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef"}
+        ]
+    },
+    "8.5": {
+        "server_configs": [
+            {"name": "NoCredentialHandler", "config": None},
+            {"name": "MessageDigest_MD5", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "MD5"}},
+            {"name": "MessageDigest_SHA1", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-1"}},
+            {"name": "MessageDigest_SHA256", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-256", "iterations": "10000", "saltLength": "16"}},
+            {"name": "MessageDigest_SHA512", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-512", "iterations": "10000", "saltLength": "16"}},
+            {"name": "NestedCredentialHandler", "config": {"className": "org.apache.catalina.realm.NestedCredentialHandler"}}
+        ],
+        "passwords": [
+            {"type": "Plaintext", "value": "s3cret"},
+            {"type": "Hashed_MD5", "value": "5ebe2294ecd0e0f08eab7690d2a6ee69"},
+            {"type": "Hashed_SHA1", "value": "e5e9fa1ba31ecd1ae84f75caaa474f3a663f05f4"},
+            {"type": "Hashed_SHA256", "value": "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"},
+            {"type": "Hashed_SHA512", "value": "ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff"},
+            {"type": "Salted_MD5", "value": "5ebe2294ecd0e0f08eab7690d2a6ee69:1234567890abcdef"},
+            {"type": "Salted_PBKDF2", "value": "4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef"}
+        ]
+    },
+    "9.0": {
+        "server_configs": [
+            {"name": "NoCredentialHandler", "config": None},
+            {"name": "MessageDigest_MD5", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "MD5"}},
+            {"name": "MessageDigest_SHA256", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-256", "iterations": "10000", "saltLength": "16"}},
+            {"name": "MessageDigest_SHA512", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-512", "iterations": "10000", "saltLength": "16"}},
+            {"name": "NestedCredentialHandler", "config": {"className": "org.apache.catalina.realm.NestedCredentialHandler"}},
+            {"name": "SecretKey_PBKDF2", "config": {"className": "org.apache.catalina.realm.SecretKeyCredentialHandler", "algorithm": "PBKDF2WithHmacSHA512", "iterations": "10000", "saltLength": "16", "keyLength": "256"}}
+        ],
+        "passwords": [
+            {"type": "Plaintext", "value": "s3cret"},
+            {"type": "Hashed_MD5", "value": "5ebe2294ecd0e0f08eab7690d2a6ee69"},
+            {"type": "Hashed_SHA1", "value": "e5e9fa1ba31ecd1ae84f75caaa474f3a663f05f4"},
+            {"type": "Hashed_SHA256", "value": "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"},
+            {"type": "Hashed_SHA512", "value": "ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff"},
+            {"type": "Salted_MD5", "value": "5ebe2294ecd0e0f08eab7690d2a6ee69:1234567890abcdef"},
+            {"type": "Salted_PBKDF2", "value": "4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef"}
+        ]
+    },
     "10.0": {
         "server_configs": [
             {"name": "NoCredentialHandler", "config": None},
@@ -221,7 +290,7 @@ EXPECTED_OUTPUTS = {
         "pass": False
     },
     "Salted_PBKDF2": {
-        "10.0_10.1": {
+        "9.0_10.0_10.1": {
             "pattern": r"User 'testuser': Salted_PBKDF2 password \(secure\).*Parameter: Password Type = Salted_PBKDF2 \[PASS\].*Parameter: CredentialHandler = org.apache.catalina.realm.SecretKeyCredentialHandler \[PASS\].*Parameter: Algorithm = PBKDF2WithHmacSHA512 \[PASS\].*Parameter: Iterations = 10000 \[PASS\].*Parameter: Salt Length = 16 \[PASS\].*Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark",
             "pass": True
         },
@@ -258,8 +327,8 @@ def run_tests():
 
     # Handle unknown version
     if tomcat_version == "Unknown":
-        write_log("Warning: Could not determine Tomcat version. Defaulting to 10.0 for testing.")
-        tomcat_version = "10.0"
+        write_log("Warning: Could not determine Tomcat version. Defaulting to 7.0 for testing.")
+        tomcat_version = "7.0"
 
     # Backup original files
     write_log(f"Backed up original files to {backup_dir}")
@@ -270,7 +339,7 @@ def run_tests():
 
     # Run tests for the detected version
     if tomcat_version not in TEST_CASES:
-        write_log(f"Error: Unsupported Tomcat version {tomcat_version}. Supported versions: 10.0, 10.1")
+        write_log(f"Error: Unsupported Tomcat version {tomcat_version}. Supported versions: 7.0, 8.5, 9.0, 10.0, 10.1")
         sys.exit(1)
 
     for server_config in TEST_CASES[tomcat_version]["server_configs"]:
@@ -299,11 +368,11 @@ def run_tests():
             # Determine expected output
             expected = EXPECTED_OUTPUTS[password["type"]]
             if password["type"] in ["Hashed_SHA256", "Hashed_SHA512"]:
-                expected_pattern = expected["default"]["pattern"] if server_config["name"] in ["MessageDigest_SHA256", "MessageDigest_SHA512"] else expected["non_compliant"]["pattern"]
-                expected_pass = server_config["name"] in ["MessageDigest_SHA256", "MessageDigest_SHA512"]
+                expected_pattern = expected["default"]["pattern"] if server_config["name"] in ["MessageDigest_SHA256", "MessageDigest_SHA512"] and tomcat_version not in ["7.0", "8.5"] else expected["non_compliant"]["pattern"]
+                expected_pass = server_config["name"] in ["MessageDigest_SHA256", "MessageDigest_SHA512"] and tomcat_version not in ["7.0", "8.5"]
             elif password["type"] == "Salted_PBKDF2":
-                expected_pattern = expected["10.0_10.1"]["pattern"] if server_config["name"] == "SecretKey_PBKDF2" else expected["non_compliant"]["pattern"]
-                expected_pass = server_config["name"] == "SecretKey_PBKDF2"
+                expected_pattern = expected["9.0_10.0_10.1"]["pattern"] if server_config["name"] == "SecretKey_PBKDF2" and tomcat_version in ["9.0", "10.0", "10.1"] else expected["non_compliant"]["pattern"]
+                expected_pass = server_config["name"] == "SecretKey_PBKDF2" and tomcat_version in ["9.0", "10.0", "10.1"]
             else:
                 expected_pattern = expected["pattern"]
                 expected_pass = expected["pass"]
