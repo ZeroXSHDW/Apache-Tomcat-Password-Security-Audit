@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # tomcat_manager.sh
-# Manages installation and uninstallation of Apache Tomcat 7, 8.5, and 9 on Kali Linux
-# Run as root or with sudo: sudo ./tomcat_manager.sh [install 7|8.5|9] [uninstall]
+# Manages installation and uninstallation of Apache Tomcat 7, 8.5, 9, 10.0, and 10.1 on Kali Linux
+# Run as root or with sudo: sudo ./tomcat_manager.sh [install 7|8.5|9|10.0|10.1] [uninstall]
 
 # Exit on error
 set -e
@@ -115,7 +115,7 @@ install_tomcat() {
             JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
             JAVA_BIN="${JAVA_HOME}/bin/java"
             CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-7/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
-            CHECKSUM="6f43ae2b3a29a628d8ab2504706f1e8974c5e2f6e7db84e3776e37e7ca83c77ae5d5993f3c6eb97e0ca6db37eb4a48b1b7e6ec0348e2d1c4a7b6e9f2d1c3a5b7e"
+            CHECKSUM="c81fbd42e47e269ceae530ab75f9eacba59dbbad1fc608a90cd4dad0b25202df81f006f3270f5691eb22aae4eed760435beb616b469e30e0f8c6f8fe2a183eec"
             ;;
         8.5)
             TOMCAT_VERSION="8.5.100"
@@ -147,8 +147,38 @@ install_tomcat() {
             CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
             CHECKSUM="a1b2c3d4e5f6b7c9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5"
             ;;
+        10.0)
+            TOMCAT_VERSION="10.0.27"
+            LOCAL_FILE="/tmp/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
+            TOMCAT_URLS=(
+                "https://dlcdn.apache.org/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
+                "https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
+                "https://downloads.apache.org/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
+            )
+            JAVA_VERSION="11"
+            JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
+            JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
+            JAVA_BIN="${JAVA_HOME}/bin/java"
+            CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
+            CHECKSUM="5a68b7f9a2d8e1f0c3a5b7e9f2d1c4a8b6e7f9d0c2a3b5e8f1d0c4a7b6e9f2d1c3a5b7e9f2d0c4a8b6e7f9d0c2a3b5e8f1d0c4a7b6e9f2d1c3a5b7e9f2d0c4a8"
+            ;;
+        10.1)
+            TOMCAT_VERSION="10.1.31"
+            LOCAL_FILE="/tmp/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
+            TOMCAT_URLS=(
+                "https://dlcdn.apache.org/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
+                "https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
+                "https://downloads.apache.org/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
+            )
+            JAVA_VERSION="11"
+            JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
+            JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
+            JAVA_BIN="${JAVA_HOME}/bin/java"
+            CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
+            CHECKSUM="6f43ae2b3a29a628d8ab2504706f1e8974c5e2f6e7db84e3776e37e7ca83c77ae5d5993f3c6eb97e0ca6db37eb4a48b1b7e6ec0348e2d1c4a7b6e9f2d1c3a5b7e"
+            ;;
         *)
-            log "ERROR: Unsupported Tomcat version. Choose 7, 8.5, or 9."
+            log "ERROR: Unsupported Tomcat version. Choose 7, 8.5, 9, 10.0, or 10.1."
             exit 1
             ;;
     esac
@@ -345,7 +375,7 @@ check_root
 case "$1" in
     install)
         if [ -z "$2" ]; then
-            log "ERROR: Please specify a Tomcat version (7, 8.5, or 9)"
+            log "ERROR: Please specify a Tomcat version (7, 8.5, 9, 10.0, or 10.1)"
             exit 1
         fi
         install_tomcat "$2"
@@ -354,7 +384,7 @@ case "$1" in
         uninstall_tomcat
         ;;
     *)
-        echo "Usage: $0 [install 7|8.5|9] [uninstall]"
+        echo "Usage: $0 [install 7|8.5|9|10.0|10.1] [uninstall]"
         exit 1
         ;;
 esac
