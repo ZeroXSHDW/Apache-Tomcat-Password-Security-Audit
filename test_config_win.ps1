@@ -170,7 +170,12 @@ $testCases = @()
 $version = "10.0"
 foreach ($handler in $credentialHandlers) {
     foreach ($password in $passwords) {
+        if (-not $handler.Name -or -not $password.Type) {
+            Write-Log "Skipping invalid test case: Handler=$($handler.Name), Password=$($password.Type)"
+            continue
+        }
         $testName = "${version}_$($handler.Name)_$($password.Type)"
+        Write-Log "Generated test case: $testName"
         $serverXml = $serverXmlBase -f $handler.Xml
         $usersXml = $usersXmlBase -f $password.Value
         $expectedSecure = $password.ExpectedSecure
@@ -193,6 +198,13 @@ foreach ($handler in $credentialHandlers) {
         }
     }
 }
+
+# Verify test cases
+if ($testCases.Count -eq 0) {
+    Write-Log "Error: No test cases generated"
+    exit 1
+}
+Write-Log "Generated $($testCases.Count) test cases"
 
 # Run tests
 $totalTests = $testCases.Count
@@ -249,8 +261,12 @@ foreach ($test in $testCases) {
     # Run script with timeout
     try {
         $job = Start-Job -ScriptBlock {
-            param($script)
-            & $script 2>&1
+            param($scriptPath)
+            # Ensure the script path is valid in the job context
+            if (-not (Test-Path $scriptPath)) {
+                throw "Script not found at $scriptPath"
+            }
+            & $scriptPath 2>&1
         } -ArgumentList $scriptPath
         $output = Wait-Job -Job $job -Timeout 10 | Receive-Job
         if ($job.State -eq "Running") {
@@ -274,7 +290,7 @@ foreach ($test in $testCases) {
         Write-Log "Result: PASSED"
         $passedTests++
     } else {
-        Write-Log "Result: FAILED (Expected secure: $($test.ExpectedSecure), Actual output: $output)"
+        Write-Log "Result: FAILED (Expected secure: $($test.ExpectedSecure), Actual secure: $isSecure, Output: $output)"
         $failedTests++
     }
 }
