@@ -12,10 +12,15 @@ function Write-Log {
 
 Write-Log "Starting tests for CheckTomcatConfigWin.ps1..."
 
+# Resolve script path relative to this script's location
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptPath = Join-Path $scriptDir "CheckTomcatConfigWin.ps1"
+Write-Log "Resolved script path: $scriptPath"
+
 # Verify script exists
-$scriptPath = ".\CheckTomcatConfigWin.ps1"
 if (-not (Test-Path $scriptPath)) {
-    Write-Log "Error: CheckTomcatConfigWin.ps1 not found"
+    Write-Log "Error: CheckTomcatConfigWin.ps1 not found at $scriptPath"
+    Write-Log "Please ensure CheckTomcatConfigWin.ps1 is in the same directory as test_config_win.ps1"
     exit 1
 }
 Write-Log "Verified file exists: $scriptPath"
@@ -141,12 +146,12 @@ $passwords = @(
     @{
         Type = "Hashed_SHA256"
         Value = "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
-        ExpectedSecure = $false # Only secure with matching CredentialHandler
+        ExpectedSecure = $false
     },
     @{
         Type = "Hashed_SHA512"
         Value = "c775e7b757ede630cd0aa1113bd102661ab38829ca52a6422ab782862f268646e6b4b3b4f1f2f3f4f5f6f7f8f9f0a1b2c3d4e5f60718293a4b6f7e8c9d0a1b2c"
-        ExpectedSecure = $false # Only secure with matching CredentialHandler
+        ExpectedSecure = $false
     },
     @{
         Type = "Salted_MD5"
@@ -156,7 +161,7 @@ $passwords = @(
     @{
         Type = "Salted_PBKDF2"
         Value = "4b6f7e8c9d0a1b2c3d4e5f60718293a4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef"
-        ExpectedSecure = $false # Only secure with matching CredentialHandler
+        ExpectedSecure = $false
     }
 )
 
@@ -165,7 +170,7 @@ $testCases = @()
 $version = "10.0"
 foreach ($handler in $credentialHandlers) {
     foreach ($password in $passwords) {
-        $testName = "${version}_${handler.Name}_${password.Type}"
+        $testName = "${version}_$($handler.Name)_$($password.Type)"
         $serverXml = $serverXmlBase -f $handler.Xml
         $usersXml = $usersXmlBase -f $password.Value
         $expectedSecure = $password.ExpectedSecure
@@ -256,6 +261,7 @@ foreach ($test in $testCases) {
         Remove-Job -Job $job -Force
     } catch {
         Write-Log "Error executing script: $($_.Exception.Message)"
+        Write-Log "Script path used: $scriptPath"
         $failedTests++
         continue
     }
