@@ -67,11 +67,11 @@ function Check-PasswordSecurity {
 
     # Parameter checks
     $results = @()
-    $results += "  - Parameter: Password Type = $passwordType [$($isSecure ? 'PASS' : 'FAIL')]"
-    $results += "  - Parameter: CredentialHandler = $CredentialHandler [$($CredentialHandler -match 'CredentialHandler' ? 'PASS' : 'FAIL')]"
-    $results += "  - Parameter: Algorithm = $Algorithm [$($Algorithm -match 'SHA-256|SHA-512|PBKDF2' ? 'PASS' : 'FAIL')]"
-    $results += "  - Parameter: Iterations = $Iterations [$($Iterations -ge 10000 ? 'PASS' : 'FAIL')]"
-    $results += "  - Parameter: Salt Length = $SaltLength [$($SaltLength -ge 16 ? 'PASS' : 'FAIL')]"
+    $results += "  - Parameter: Password Type = $passwordType [$(if ($isSecure) { 'PASS' } else { 'FAIL' })]"
+    $results += "  - Parameter: CredentialHandler = $CredentialHandler [$(if ($CredentialHandler -match 'CredentialHandler') { 'PASS' } else { 'FAIL' })]"
+    $results += "  - Parameter: Algorithm = $Algorithm [$(if ($Algorithm -match 'SHA-256|SHA-512|PBKDF2') { 'PASS' } else { 'FAIL' })]"
+    $results += "  - Parameter: Iterations = $Iterations [$(if ($Iterations -ge 10000) { 'PASS' } else { 'FAIL' })]"
+    $results += "  - Parameter: Salt Length = $SaltLength [$(if ($SaltLength -ge 16) { 'PASS' } else { 'FAIL' })]"
 
     # Compliance check
     $isCompliant = $true
@@ -147,7 +147,7 @@ function Check-TomcatConfig {
         }
     }
 
-    Write-Log "Overall Configuration: $($overallSecure ? 'Secure' : 'Insecure')"
+    Write-Log "Overall Configuration: $(if ($overallSecure) { 'Secure' } else { 'Insecure' })"
     Write-Log "Audit completed"
 }
 
