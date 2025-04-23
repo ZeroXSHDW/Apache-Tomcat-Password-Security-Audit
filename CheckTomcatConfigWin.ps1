@@ -1,5 +1,5 @@
 # CheckTomcatConfigWin.ps1
-# Audits Tomcat configuration for password security and compliance (7.0, 8.5, 9.0)
+# Audits Tomcat configuration for password security and compliance (7.0, 8.5, 9.0, 10.0)
 
 param (
     [string]$TomcatConfPath
@@ -29,9 +29,11 @@ function Get-TomcatConfigPath {
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 7.0\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.5\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 9.0\conf",
+        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.0\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
-        "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf"
+        "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
+        "C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf"
     )
     foreach ($path in $possiblePaths) {
         if (Test-Path $path) {
@@ -201,7 +203,7 @@ foreach ($user in $users) {
             } else {
                 Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
             }
-        } else { # Tomcat 9.0
+        } else { # Tomcat 9.0 or 10.0
             if ($credentialHandler -and $credentialHandler.className -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and
                 $credentialHandler.algorithm -eq "PBKDF2WithHmacSHA512" -and
                 [int]$credentialHandler.iterations -ge 10000 -and [int]$credentialHandler.saltLength -ge 16) {
