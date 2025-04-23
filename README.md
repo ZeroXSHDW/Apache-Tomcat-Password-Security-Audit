@@ -2,30 +2,33 @@
 
 ## Overview
 
-The **Tomcat Configuration Security Auditor** is a set of tools designed to audit Apache Tomcat user authentication configurations for compliance with **NIST 800-53 IA-5** and **CIS Tomcat Benchmark** standards. This repository includes scripts for Unix (Linux/macOS) environments, enabling system administrators and security professionals to evaluate password security across various Tomcat versions.
+The **Tomcat Configuration Security Auditor** is a set of tools designed to audit Apache Tomcat user authentication configurations for compliance with **NIST 800-53 IA-5** and **CIS Tomcat Benchmark** standards. This repository includes scripts for both Unix (Linux/macOS) and Windows environments, enabling system administrators and security professionals to evaluate password security across various Tomcat versions.
 
 ### Key Features
 - **Automated Testing**: Scripts test multiple password types and credential handler configurations, modifying `server.xml` and `tomcat-users.xml` to simulate scenarios and validate compliance.
 - **Manual Auditing**: Analyze existing configurations, reporting password types, credential handlers, and compliance status with actionable recommendations.
-- **Unix Support**: Python-based scripts for Linux/macOS, with a Bash script for Tomcat installation.
+- **Cross-Platform Support**: Python-based scripts for Unix (Linux/macOS) and PowerShell scripts for Windows.
 - **Backup and Restore**: Automatically back up and restore configuration files during testing to prevent data loss.
 - **Detailed Logging**: Logs audit and test results to platform-specific locations for traceability.
 - **Compliance Reporting**: Identifies secure/insecure configurations and provides guidance for achieving compliance.
 
 ### Supported Tomcat Versions
-| Version | Unix Support | Notes |
-|---------|--------------|-------|
-| 7.0     | ✅           | Supports `MessageDigestCredentialHandler` (MD5, SHA-1, SHA-256). |
-| 8.5     | ✅           | Adds SHA-512 and `NestedCredentialHandler` support. |
-| 9.0     | ✅           | Includes `SecretKeyCredentialHandler` for PBKDF2. |
-| 10.0    | ✅           | Supports `SecretKeyCredentialHandler` and `NestedCredentialHandler`. |
-| 10.1    | ✅           | Identical features to 10.0. |
+| Version | Unix Support | Windows Support | Notes |
+|---------|--------------|-----------------|-------|
+| 7.0     | ✅           | ✅              | Supports `MessageDigestCredentialHandler` (MD5, SHA-1, SHA-256). |
+| 8.5     | ✅           | ✅              | Adds SHA-512 and `NestedCredentialHandler` support. |
+| 9.0     | ✅           | ✅              | Includes `SecretKeyCredentialHandler` for PBKDF2. |
+| 10.0    | ✅           | ✅              | Supports `SecretKeyCredentialHandler` and `NestedCredentialHandler`. |
+| 10.1    | ✅           | ✅              | Identical features to 10.0. |
 
 ### Repository Contents
 - **Unix Scripts**:
-  - `CheckTomcatConfigUnix.py`: Audits Tomcat configurations on Unix systems for compliance.
+  - `CheckTomcatConfigUnix.py`: Audits Tomcat configurations on Unix systems.
   - `test_config_unix.py`: Automated testing for `CheckTomcatConfigUnix.py`.
   - `tomcat_manager.sh`: Installs/uninstalls Tomcat 7.0, 8.5, 9.0, 10.0, or 10.1 on Unix.
+- **Windows Scripts**:
+  - `CheckTomcatConfigWin.ps1`: Audits Tomcat configurations on Windows.
+  - `test_config_win.ps1`: Automated testing for `CheckTomcatConfigWin.ps1`.
 - **Documentation**:
   - `README.md`: This file, detailing setup, usage, and configuration.
 
@@ -38,6 +41,13 @@ The **Tomcat Configuration Security Auditor** is a set of tools designed to audi
 - **Dependencies**: `wget`, `curl`, `sha512sum` for `tomcat_manager.sh`.
 - **OpenJDK**: Java 8 for Tomcat 7.0, Java 11 for Tomcat 8.5, 9.0, 10.0, 10.1.
 - **System**: Tested on Kali Linux; compatible with Ubuntu, Debian, CentOS, and other Linux distributions.
+
+### Windows
+- **PowerShell**: 5.1 or later (included in Windows 10/11).
+- **Tomcat**: 7.0, 8.5, 9.0, 10.0, or 10.1 installed (e.g., `C:\Program Files\Apache Software Foundation\Tomcat 9.0`).
+- **Permissions**: Write access to Tomcat’s `conf` directory and Administrator privileges for installation.
+- **Java**: Java 8 for Tomcat 7.0, Java 11 for Tomcat 8.5, 9.0, 10.0, 10.1.
+- **System**: Tested on Windows 10/11; compatible with Windows Server editions.
 
 ## Setup
 
@@ -83,9 +93,37 @@ The **Tomcat Configuration Security Auditor** is a set of tools designed to audi
    ls -l /opt/tomcat/conf/server.xml /opt/tomcat/conf/tomcat-users.xml
    ```
 
+### Windows
+1. **Clone Repository**:
+   ```powershell
+   git clone <repository-url> C:\Users\<User>\tomcat-audit
+   cd C:\Users\<User>\tomcat-audit
+   ```
+2. **Set Execution Policy** (if needed):
+   ```powershell
+   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+   ```
+3. **Install Tomcat** (if needed):
+   - Download the desired Tomcat version from `https://tomcat.apache.org/`.
+   - Use the Windows installer or extract the ZIP file to `C:\Program Files\Apache Software Foundation\Tomcat <version>`.
+   - Follow official instructions at `https://tomcat.apache.org/` for setup.
+4. **Install Java** (if needed):
+   - Download from `https://adoptium.net/` or `https://www.oracle.com/java/`.
+   - For Tomcat 7.0: Install Java 8.
+   - For Tomcat 8.5, 9.0, 10.0, 10.1: Install Java 11.
+   - Set `JAVA_HOME` environment variable:
+     ```powershell
+     [Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\Program Files\Java\jdk-11", "Machine")
+     ```
+5. **Verify Tomcat**:
+   ```powershell
+   dir "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf\server.xml"
+   dir "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf\tomcat-users.xml"
+   ```
+
 ## Usage
 
-### Automated Testing
+### Unix: Automated Testing
 Run comprehensive tests for supported Tomcat versions:
 ```bash
 sudo ./test_config_unix.py
@@ -110,7 +148,7 @@ sudo ./test_config_unix.py
     Tests failed: 0
   ```
 
-### Manual Auditing
+### Unix: Manual Auditing
 Audit current configuration:
 ```bash
 sudo ./CheckTomcatConfigUnix.py
@@ -120,6 +158,40 @@ sudo ./CheckTomcatConfigUnix.py
   ```
   Checking Apache Tomcat configuration security...
   Detected Tomcat version 9.0 at /opt/tomcat/conf
+  - User 'testuser': Salted_PBKDF2 password (secure)
+    - Parameter: Password Type = Salted_PBKDF2 [PASS]
+    - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark
+  Overall Configuration: Secure
+  ```
+
+### Windows: Automated Testing
+Run tests for supported Tomcat versions:
+```powershell
+.\test_config_win.ps1
+```
+- **Output**: Logs to `$env:LOCALAPPDATA\Temp\TestTomcatConfig.log` (e.g., `C:\Users\<User>\AppData\Local\Temp`).
+- **Test Cases**:
+  - Tomcat 7.0: 15 tests (3 server configs × 5 password types).
+  - Tomcat 8.5: 35 tests (5 server configs × 7 password types).
+  - Tomcat 9.0/10.0/10.1: 42 tests each (6 server configs × 7 password types).
+- **Example**:
+  ```
+  [2025-04-23 14:10:00] Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf
+  [2025-04-23 14:10:00] Running test: 10.0_SecretKeyCredentialHandler_PBKDF2_Salted_PBKDF2
+  Test output: - User 'testuser': Salted_PBKDF2 password (secure)
+  [2025-04-23 14:10:05] All tests completed successfully
+  ```
+
+### Windows: Manual Auditing
+Audit current configuration:
+```powershell
+.\CheckTomcatConfigWin.ps1
+```
+- **Output**: Logs to `$env:LOCALAPPDATA\Temp\TestTomcatConfig.log`.
+- **Example** (secure):
+  ```
+  Checking Apache Tomcat configuration security...
+  Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf
   - User 'testuser': Salted_PBKDF2 password (secure)
     - Parameter: Password Type = Salted_PBKDF2 [PASS]
     - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark
@@ -163,10 +235,15 @@ Add to `tomcat-users.xml`:
 - **Salted_PBKDF2**: 32-char hex with 16-char salt, secure (9.0+).
 
 ## Logging
-- **Tests**: `~/TestTomcatConfig.log`.
-- **Audits/Installation**: `/tmp/TomcatManager.log`.
+- **Unix**:
+  - Tests: `~/TestTomcatConfig.log`.
+  - Audits/Installation: `/tmp/TomcatManager.log`.
+- **Windows**:
+  - Tests/Audits: `$env:LOCALAPPDATA\Temp\TestTomcatConfig.log` (e.g., `C:\Users\<User>\AppData\Local\Temp`).
 
 ## Troubleshooting
+
+### Unix
 - **Tomcat Not Found**:
   - Ensure Tomcat is installed (`sudo ./tomcat_manager.sh install 9`).
   - Check `/opt/tomcat` or other paths listed in `CheckTomcatConfigUnix.py`.
@@ -190,8 +267,35 @@ Add to `tomcat-users.xml`:
     sudo update-alternatives --config java
     ```
 
+### Windows
+- **Tomcat Not Found**:
+  - Verify installation path (e.g., `C:\Program Files\Apache Software Foundation\Tomcat 9.0`).
+  - Ensure `server.xml` and `tomcat-users.xml` exist in the `conf` directory.
+- **Permission Issues**:
+  - Run PowerShell as Administrator.
+  - Ensure write access to Tomcat’s `conf` directory and `$env:LOCALAPPDATA\Temp`.
+- **Java Issues**:
+  - Verify Java installation and `JAVA_HOME`:
+    ```powershell
+    java -version
+    echo $env:JAVA_HOME
+    ```
+  - If incorrect, update `JAVA_HOME`:
+    ```powershell
+    [Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\Program Files\Java\jdk-11", "Machine")
+    ```
+- **Execution Policy**:
+  - If scripts fail to run, check execution policy:
+    ```powershell
+    Get-ExecutionPolicy
+    ```
+  - Set to `RemoteSigned` if needed:
+    ```powershell
+    Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+    ```
+
 ## Contributing
-Contributions are welcome! Submit pull requests or issues via the repository’s hosting platform. Ensure changes are tested across supported Tomcat versions.
+Contributions are welcome! Submit pull requests or issues via the repository’s hosting platform. Ensure changes are tested across supported Tomcat versions and platforms.
 
 ## License
 This project is licensed under the MIT License. See `LICENSE` file for details (if provided in the repository).
