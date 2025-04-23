@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # test_config_unix.py
-# Automated testing for CheckTomcatConfigUnix.py across Tomcat 7.0, 8.5, 9.0, 10.0, and 10.1
+# Automated testing for CheckTomcatConfigUnix.py across Tomcat 10.0 and 10.1
 
 import os
 import sys
@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 import re
-import tempfile
 
 # Log setup
 log_file = os.path.expanduser("~/TestTomcatConfig.log")
@@ -37,15 +36,9 @@ def get_tomcat_config_path():
         if os.path.exists(conf_path) and os.path.exists(os.path.join(conf_path, "server.xml")):
             return conf_path
     possible_paths = [
-        "/usr/local/tomcat/conf",
         "/opt/tomcat/conf",
-        "/var/lib/tomcat7/conf",
-        "/var/lib/tomcat8/conf",
-        "/var/lib/tomcat9/conf",
+        "/usr/local/tomcat/conf",
         "/var/lib/tomcat10/conf",
-        "/usr/share/tomcat7/conf",
-        "/usr/share/tomcat8/conf",
-        "/usr/share/tomcat9/conf",
         "/usr/share/tomcat10/conf"
     ]
     for path in possible_paths:
@@ -61,15 +54,9 @@ def detect_tomcat_version(tomcat_home):
             for line in f:
                 if line.startswith("Apache Tomcat Version"):
                     version = line.split()[-1]
-                    if version.startswith("7."): return "7.0"
-                    elif version.startswith("8."): return "8.5"
-                    elif version.startswith("9."): return "9.0"
-                    elif version.startswith("10.0"): return "10.0"
+                    if version.startswith("10.0"): return "10.0"
                     elif version.startswith("10.1"): return "10.1"
-    if "tomcat7" in tomcat_home.lower(): return "7.0"
-    elif "tomcat8" in tomcat_home.lower(): return "8.5"
-    elif "tomcat9" in tomcat_home.lower(): return "9.0"
-    elif "tomcat10" in tomcat_home.lower(): return "10.0"
+    if "tomcat10" in tomcat_home.lower(): return "10.0"
     return "Unknown"
 
 # Backup configuration files
@@ -234,7 +221,7 @@ EXPECTED_OUTPUTS = {
         "pass": False
     },
     "Salted_PBKDF2": {
-        "9.0_10.0_10.1": {
+        "10.0_10.1": {
             "pattern": r"User 'testuser': Salted_PBKDF2 password \(secure\).*Parameter: Password Type = Salted_PBKDF2 \[PASS\].*Parameter: CredentialHandler = org.apache.catalina.realm.SecretKeyCredentialHandler \[PASS\].*Parameter: Algorithm = PBKDF2WithHmacSHA512 \[PASS\].*Parameter: Iterations = 10000 \[PASS\].*Parameter: Salt Length = 16 \[PASS\].*Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark",
             "pass": True
         },
@@ -269,6 +256,11 @@ def run_tests():
     tomcat_version = detect_tomcat_version(os.path.dirname(conf_path))
     write_log(f"Found Tomcat at {conf_path}, version: {tomcat_version}")
 
+    # Handle unknown version
+    if tomcat_version == "Unknown":
+        write_log("Warning: Could not determine Tomcat version. Defaulting to 10.0 for testing.")
+        tomcat_version = "10.0"
+
     # Backup original files
     write_log(f"Backed up original files to {backup_dir}")
     backup_configs(conf_path)
@@ -278,7 +270,7 @@ def run_tests():
 
     # Run tests for the detected version
     if tomcat_version not in TEST_CASES:
-        write_log(f"Warning: Unsupported Tomcat version {tomcat_version}. Skipping tests.")
+        write_log(f"Error: Unsupported Tomcat version {tomcat_version}. Supported versions: 10.0, 10.1")
         sys.exit(1)
 
     for server_config in TEST_CASES[tomcat_version]["server_configs"]:
@@ -310,7 +302,7 @@ def run_tests():
                 expected_pattern = expected["default"]["pattern"] if server_config["name"] in ["MessageDigest_SHA256", "MessageDigest_SHA512"] else expected["non_compliant"]["pattern"]
                 expected_pass = server_config["name"] in ["MessageDigest_SHA256", "MessageDigest_SHA512"]
             elif password["type"] == "Salted_PBKDF2":
-                expected_pattern = expected["9.0_10.0_10.1"]["pattern"] if server_config["name"] == "SecretKey_PBKDF2" else expected["non_compliant"]["pattern"]
+                expected_pattern = expected["10.0_10.1"]["pattern"] if server_config["name"] == "SecretKey_PBKDF2" else expected["non_compliant"]["pattern"]
                 expected_pass = server_config["name"] == "SecretKey_PBKDF2"
             else:
                 expected_pattern = expected["pattern"]
