@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CheckTomcatConfigUnix.py
-# Audits Apache Tomcat configuration for security issues
+# Audits Apache Tomcat configuration for security issues (7.0, 8.5, 9.0, 10.0, 10.1)
 
 import os
 import sys
@@ -42,9 +42,11 @@ def get_tomcat_config_path():
         "/var/lib/tomcat7/conf",
         "/var/lib/tomcat8/conf",
         "/var/lib/tomcat9/conf",
+        "/var/lib/tomcat10/conf",
         "/usr/share/tomcat7/conf",
         "/usr/share/tomcat8/conf",
-        "/usr/share/tomcat9/conf"
+        "/usr/share/tomcat9/conf",
+        "/usr/share/tomcat10/conf"
     ]
     for path in possible_paths:
         if os.path.exists(path) and os.path.exists(os.path.join(path, "server.xml")):
@@ -68,12 +70,18 @@ def detect_tomcat_version(tomcat_home):
                         return "8.5"
                     elif version.startswith("9."):
                         return "9.0"
+                    elif version.startswith("10.0"):
+                        return "10.0"
+                    elif version.startswith("10.1"):
+                        return "10.1"
     if "tomcat7" in tomcat_home.lower():
         return "7.0"
     elif "tomcat8" in tomcat_home.lower():
         return "8.5"
     elif "tomcat9" in tomcat_home.lower():
         return "9.0"
+    elif "tomcat10" in tomcat_home.lower():
+        return "10.0"
     return "Unknown"
 
 # Detect Tomcat configuration directory
@@ -171,16 +179,15 @@ for user in users:
     handler_class = credential_handler.get("className", "None") if credential_handler is not None else "None"
     params.append(f"Parameter: CredentialHandler = {handler_class} [{'PASS' if credential_handler is not None else 'FAIL'}]")
 
-    # Parameter: Algorithm (only for MessageDigestCredentialHandler cases)
+    # Parameter: Algorithm
     algorithm = credential_handler.get("algorithm", "None") if credential_handler is not None else "None"
-    if credential_handler is not None and handler_class == "org.apache.catalina.realm.MessageDigestCredentialHandler":
-        params.append(f"Parameter: Algorithm = {algorithm} [{'PASS' if algorithm in ['SHA-256', 'SHA-512'] else 'FAIL'}]")
+    params.append(f"Parameter: Algorithm = {algorithm} [{'PASS' if algorithm in ['SHA-256', 'SHA-512', 'PBKDF2WithHmacSHA512'] else 'FAIL'}]")
 
-    # Parameters: Iterations and Salt Length (only for SHA-256 CredentialHandler cases)
-    if credential_handler is not None and algorithm == "SHA-256":
-        iterations = int(credential_handler.get("iterations", 0)) if credential_handler is not None else 0
+    # Parameters: Iterations and Salt Length
+    if credential_handler is not None:
+        iterations = int(credential_handler.get("iterations", 0)) if credential_handler.get("iterations") else 0
         params.append(f"Parameter: Iterations = {iterations} [{'PASS' if iterations >= 10000 else 'FAIL'}]")
-        salt_length = int(credential_handler.get("saltLength", 0)) if credential_handler is not None else 0
+        salt_length = int(credential_handler.get("saltLength", 0)) if credential_handler.get("saltLength") else 0
         params.append(f"Parameter: Salt Length = {salt_length} [{'PASS' if salt_length >= 16 else 'FAIL'}]")
 
     # Log parameters
@@ -206,7 +213,7 @@ for user in users:
     elif password_type == "Hashed_SHA256":
         if tomcat_version == "7.0":
             write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark for Tomcat 7.0", indent=2, marker="  - ")
-        elif credential_handler is None or algorithm != "SHA-256" or (credential_handler is not None and (int(credential_handler.get("iterations", 0)) < 10000 or int(credential_handler.get("saltLength", 0)) < 16)):
+        elif credential_handler is None or algorithm != "SHA-256" or iterations < 10000 or salt_length < 16:
             write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
             write_log("Hashed_SHA256 passwords should use salt and iterations", indent=3, marker="    - ")
             write_log("Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000", indent=3, marker="    - ")
@@ -219,7 +226,7 @@ for user in users:
             write_log("SHA-512 not supported in Tomcat 7.0", indent=3, marker="    - ")
             write_log("Recommendation: Use SHA-256", indent=3, marker="    - ")
             is_secure = False
-        elif credential_handler is None or algorithm != "SHA-512" or (credential_handler is not None and (int(credential_handler.get("iterations", 0)) < 10000 or int(credential_handler.get("saltLength", 0)) < 16)):
+        elif credential_handler is None or algorithm != "SHA-512" or iterations < 10000 or salt_length < 16:
             write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
             write_log("Hashed_SHA512 passwords should use salt and iterations", indent=3, marker="    - ")
             write_log("Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000", indent=3, marker="    - ")
@@ -233,16 +240,16 @@ for user in users:
             write_log("Recommendation: Use SHA-256", indent=3, marker="    - ")
             is_secure = False
         elif tomcat_version == "8.5":
-            if credential_handler is None or algorithm not in ["SHA-256", "SHA-512"] or (credential_handler is not None and (int(credential_handler.get("iterations", 0)) < 10000 or int(credential_handler.get("saltLength", 0)) < 16)):
+            if credential_handler is None or algorithm not in ["SHA-256", "SHA-512"] or iterations < 10000 or salt_length < 16:
                 write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
                 write_log("Salted_PBKDF2 requires compatible MessageDigestCredentialHandler", indent=3, marker="    - ")
                 write_log("Recommendation: Configure MessageDigestCredentialHandler with SHA-256/SHA-512, saltLength >= 16, iterations >= 10000", indent=3, marker="    - ")
                 is_secure = False
             else:
                 write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-        else:  # Tomcat 9.0 or Unknown
+        else:  # Tomcat 9.0, 10.0, 10.1, or Unknown
             if credential_handler is not None and handler_class == "org.apache.catalina.realm.SecretKeyCredentialHandler" and \
-               algorithm == "PBKDF2WithHmacSHA512" and int(credential_handler.get("iterations", 0)) >= 10000 and int(credential_handler.get("saltLength", 0)) >= 16:
+               algorithm == "PBKDF2WithHmacSHA512" and iterations >= 10000 and salt_length >= 16:
                 write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
             else:
                 write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
