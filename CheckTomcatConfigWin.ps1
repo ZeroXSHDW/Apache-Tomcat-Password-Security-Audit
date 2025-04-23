@@ -159,6 +159,13 @@ foreach ($user in $users) {
                 "Salted_MD5"
             }
         }
+        "^[a-f0-9]{64,}:[a-f0-9]{16,}$" {
+            if ($credentialHandler -and $credentialHandler.className -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and $credentialHandler.algorithm -eq "PBKDF2WithHmacSHA512") {
+                "Salted_PBKDF2"
+            } else {
+                "Unknown"
+            }
+        }
         default { "Plaintext" }
     }
 
