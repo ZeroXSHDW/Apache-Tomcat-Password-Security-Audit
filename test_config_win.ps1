@@ -157,4 +157,28 @@ foreach ($serverTest in $serverTests) {
         $user = $users.SelectSingleNode("//user[@username='testuser']")
         if (-not $user) {
             $user = $users.CreateElement("user")
-            $user.SetAttribute("username", "testuser
+            $user.SetAttribute("username", "testuser")
+            $user.SetAttribute("roles", "manager")
+            $users.'tomcat-users'.AppendChild($user)
+        }
+        $user.SetAttribute("password", $passwordValues[$passwordTest])
+        # Save with explicit UTF-8 encoding
+        $writerSettings = New-Object System.Xml.XmlWriterSettings
+        $writerSettings.Encoding = [System.Text.Encoding]::UTF8
+        $writerSettings.Indent = $true
+        $writer = [System.Xml.XmlWriter]::Create($usersXml, $writerSettings)
+        $users.Save($writer)
+        $writer.Close()
+
+        # Run CheckTomcatConfigWin.ps1
+        $output = & ".\CheckTomcatConfigWin.ps1" -TomcatConfPath $tomcatConfPath 2>&1
+        Write-Log "Test output: $output"
+    }
+}
+
+# Restore original files
+Copy-Item "$backupDir\server.xml.bak" $serverXml -Force
+Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force
+Write-Log "Restored original configuration files"
+
+Write-Log "All tests completed successfully"
