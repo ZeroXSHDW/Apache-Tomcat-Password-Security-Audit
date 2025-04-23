@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CheckTomcatConfigUnix.py
-# Audits Apache Tomcat configuration for security issues (7.0, 8.5, 9.0, 10.0, 10.1)
+# Audit Apache Tomcat configuration for security compliance with NIST 800-53 IA-5 and CIS Tomcat Benchmark
 
 import os
 import sys
@@ -8,16 +8,15 @@ import xml.etree.ElementTree as ET
 import re
 
 # Log setup
-log_file = os.path.expanduser("~/TestTomcatConfig.log")
+log_file = "/tmp/TomcatManager.log"
 
-def write_log(message, indent=0, marker=""):
+def write_log(message, indent=0):
     """
-    Write a log message with indentation and marker, without timestamps.
+    Write a log message with indentation to both file and console.
     indent: Number of indentation levels (each level is two spaces).
-    marker: Prefix marker (e.g., '-', '  -', '    -') for specific lines.
     """
     indent_spaces = "  " * indent
-    log_message = f"{indent_spaces}{marker}{message}"
+    log_message = f"{indent_spaces}{message}"
     try:
         with open(log_file, "a") as f:
             f.write(log_message + "\n")
@@ -25,19 +24,13 @@ def write_log(message, indent=0, marker=""):
         print(f"Warning: Cannot write to {log_file}. Logging to console only.", file=sys.stderr)
     print(log_message)
 
-write_log("Checking Apache Tomcat configuration security...")
-
 # Function to detect Tomcat path
 def get_tomcat_config_path():
     catalina_home = os.getenv("CATALINA_HOME")
     if catalina_home:
         conf_path = os.path.join(catalina_home, "conf")
         if os.path.exists(conf_path) and os.path.exists(os.path.join(conf_path, "server.xml")):
-            write_log(f"Found Tomcat configuration at CATALINA_HOME: {conf_path}")
             return conf_path
-        else:
-            write_log(f"Warning: CATALINA_HOME set to {catalina_home}, but {conf_path} or server.xml not found")
-
     possible_paths = [
         "/opt/tomcat/conf",
         "/usr/local/tomcat/conf",
@@ -52,12 +45,7 @@ def get_tomcat_config_path():
     ]
     for path in possible_paths:
         if os.path.exists(path) and os.path.exists(os.path.join(path, "server.xml")):
-            write_log(f"Found Tomcat configuration at {path}")
             return path
-        else:
-            write_log(f"Debug: Checked path {path}, not found or missing server.xml")
-
-    write_log("Error: No Tomcat configuration directory found")
     return None
 
 # Detect Tomcat version
@@ -75,181 +63,201 @@ def detect_tomcat_version(tomcat_home):
                     elif version.startswith("9.0"): return "9.0"
                     elif version.startswith("10.0"): return "10.0"
                     elif version.startswith("10.1"): return "10.1"
-                else:
-                    write_log(f"Warning: No version found in {version_file}")
-        except PermissionError:
-            write_log(f"Error: Cannot read {version_file} due to permissions")
-    else:
-        write_log(f"Warning: {version_file} not found")
-
-    # Fallback: Check directory name
+        except Exception as e:
+            write_log(f"Error reading {version_file}: {str(e)}")
+    # Check directory name
     if "tomcat7" in tomcat_home.lower(): return "7.0"
     if "tomcat8" in tomcat_home.lower(): return "8.5"
     if "tomcat9" in tomcat_home.lower(): return "9.0"
     if "tomcat10" in tomcat_home.lower(): return "10.0"
-
-    # Fallback: Check server.xml for version clues
+    # Check server.xml for version clues
     server_xml = os.path.join(tomcat_home, "conf/server.xml")
     if os.path.exists(server_xml):
         try:
             with open(server_xml, "r") as f:
                 content = f.read()
                 if "org.apache.catalina.startup.VersionLoggerListener" in content:
-                    if "tomcat10" in tomcat_home.lower() or "10." in content:
-                        return "10.0"
+                    if "tomcat10" in tomcat_home.lower() or "10." in content: return "10.0"
                     elif "9." in content: return "9.0"
                     elif "8." in content: return "8.5"
                     elif "7." in content: return "7.0"
-        except PermissionError:
-            write_log(f"Error: Cannot read {server_xml} due to permissions")
-
-    write_log("Warning: Could not determine Tomcat version, defaulting to 7.0")
+        except Exception as e:
+            write_log(f"Error reading {server_xml}: {str(e)}")
+    write_log(f"Warning: Could not determine Tomcat version at {tomcat_home}, defaulting to 7.0")
     return "7.0"
 
-# Detect Tomcat configuration directory
-tomcat_conf_path = get_tomcat_config_path()
-if not tomcat_conf_path:
-    write_log("Error: No Tomcat configuration directory found")
-    sys.exit(1)
-
-tomcat_version = detect_tomcat_version(os.path.dirname(tomcat_conf_path))
-write_log(f"Detected Tomcat version {tomcat_version} at {tomcat_conf_path}")
+# Detect password type
+def detect_password_type(password):
+    """
+    Determine the password type based on its format and length.
+    Returns a tuple: (type, is_secure).
+    """
+    # Plaintext: No specific format, typically short and non-hex
+    if not re.match(r"^[0-9a-fA-F:]+$", password):
+        return "Plaintext", False
+    
+    # Check for salted format (hash:salt)
+    if ":" in password:
+        hash_part, salt = password.split(":", 1)
+        # Salted_MD5: 32-char hex hash
+        if len(hash_part) == 32 and re.match(r"^[0-9a-fA-F]{32}$", hash_part):
+            return "Salted_MD5", False
+        # Salted_PBKDF2: Typically longer hash, depends on handler
+        if len(hash_part) >= 32 and re.match(r"^[0-9a-fA-F]+$", hash_part):
+            return "Salted_PBKDF2", True
+        return "Unknown", False
+    
+    # Unsalted hashes
+    # Hashed_MD5: 32-char hex
+    if len(password) == 32 and re.match(r"^[0-9a-fA-F]{32}$", password):
+        return "Hashed_MD5", False
+    # Hashed_SHA1: 40-char hex
+    if len(password) == 40 and re.match(r"^[0-9a-fA-F]{40}$", password):
+        return "Hashed_SHA1", False
+    # Hashed_SHA256: 64-char hex
+    if len(password) == 64 and re.match(r"^[0-9a-fA-F]{64}$", password):
+        return "Hashed_SHA256", True
+    # Hashed_SHA512: 128-char hex
+    if len(password) == 128 and re.match(r"^[0-9a-fA-F]{128}$", password):
+        return "Hashed_SHA512", True
+    
+    return "Unknown", False
 
 # Audit server.xml
-server_xml = os.path.join(tomcat_conf_path, "server.xml")
-try:
-    tree = ET.parse(server_xml)
-    root = tree.getroot()
-except FileNotFoundError:
-    write_log(f"Error: {server_xml} not found")
-    sys.exit(1)
-except ET.ParseError:
-    write_log(f"Error: Invalid XML in {server_xml}")
-    sys.exit(1)
+def audit_server_xml(server_xml_path):
+    """
+    Audit server.xml for CredentialHandler configuration.
+    Returns: (credential_handler, algorithm, iterations, salt_length)
+    """
+    try:
+        tree = ET.parse(server_xml_path)
+        root = tree.getroot()
+        realm = root.find(".//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']")
+        if realm is None:
+            realm = root.find(".//Realm[@className='org.apache.catalina.realm.MemoryRealm']")
+        if realm is None:
+            return "None", "None", 0, 0
 
-write_log(f"Auditing server.xml at {server_xml}", indent=1)
-realm = root.find(".//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']")
-if realm is None:
-    realm = root.find(".//Realm[@className='org.apache.catalina.realm.MemoryRealm']")
-credential_handler = None
-if realm is not None:
-    credential_handler = realm.find("CredentialHandler")
+        ch = realm.find("CredentialHandler")
+        if ch is None:
+            return "None", "None", 0, 0
 
-# Initialize overall security status
-is_secure = True
+        class_name = ch.get("className", "Unknown")
+        algorithm = ch.get("algorithm", "None")
+        iterations = int(ch.get("iterations", "0"))
+        salt_length = int(ch.get("saltLength", "0"))
+        return class_name, algorithm, iterations, salt_length
+    except Exception as e:
+        write_log(f"Error parsing {server_xml_path}: {str(e)}")
+        return "None", "None", 0, 0
 
 # Audit tomcat-users.xml
-users_xml = os.path.join(tomcat_conf_path, "tomcat-users.xml")
-try:
-    users_tree = ET.parse(users_xml)
-    users_root = users_tree.getroot()
-except FileNotFoundError:
-    write_log(f"Error: {users_xml} not found", indent=1)
-    sys.exit(1)
-except ET.ParseError:
-    write_log(f"Error: Invalid XML in {users_xml}", indent=1)
-    sys.exit(1)
+def audit_users_xml(users_xml_path, credential_handler, handler_algorithm, iterations, salt_length):
+    """
+    Audit tomcat-users.xml for user password security.
+    Returns: List of audit results for each user.
+    """
+    results = []
+    try:
+        tree = ET.parse(users_xml_path)
+        root = tree.getroot()
+        for user in root.findall(".//user"):
+            username = user.get("username", "Unknown")
+            password = user.get("password", "")
+            password_type, is_secure = detect_password_type(password)
+            
+            audit_result = {
+                "username": username,
+                "password_type": password_type,
+                "is_secure": is_secure,
+                "parameters": [],
+                "status": "Non-compliant",
+                "issues": []
+            }
 
-write_log(f"Auditing tomcat-users.xml at {users_xml}", indent=1)
-users = users_root.findall(".//user")
-if not users:
-    write_log("No users defined in tomcat-users.xml", indent=2)
-    write_log("Status: Compliant (no passwords to evaluate)", indent=2, marker="  - ")
-    write_log("Overall Configuration: Secure (no vulnerabilities detected)")
+            # Parameter checks
+            audit_result["parameters"].append(f"Password Type = {password_type} [{'PASS' if is_secure else 'FAIL'}]")
+            audit_result["parameters"].append(f"CredentialHandler = {credential_handler} [{'PASS' if credential_handler != 'None' else 'FAIL'}]")
+            audit_result["parameters"].append(f"Algorithm = {handler_algorithm} [{'PASS' if handler_algorithm in ['SHA-256', 'SHA-512', 'PBKDF2WithHmacSHA512'] else 'FAIL'}]")
+            audit_result["parameters"].append(f"Iterations = {iterations} [{'PASS' if iterations >= 10000 else 'FAIL'}]")
+            audit_result["parameters"].append(f"Salt Length = {salt_length} [{'PASS' if salt_length >= 16 else 'FAIL'}]")
+
+            # Compliance checks
+            if password_type == "Plaintext":
+                audit_result["issues"].append("Plaintext passwords detected in tomcat-users.xml")
+                audit_result["issues"].append("Recommendation: Use salted and iterated passwords (e.g., SHA-256 or PBKDF2)")
+            elif password_type in ["Hashed_MD5", "Hashed_SHA1", "Salted_MD5"]:
+                audit_result["issues"].append(f"Weak password hashing ({password_type}) detected")
+                audit_result["issues"].append("Recommendation: Use SHA-256, SHA-512, or PBKDF2")
+            elif password_type in ["Hashed_SHA256", "Hashed_SHA512"]:
+                if credential_handler == "org.apache.catalina.realm.MessageDigestCredentialHandler" and handler_algorithm == password_type.split("_")[1] and iterations >= 10000 and salt_length >= 16:
+                    audit_result["status"] = "Compliant"
+                else:
+                    audit_result["issues"].append(f"{password_type} passwords should use salt and iterations")
+                    audit_result["issues"].append("Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000")
+            elif password_type == "Salted_PBKDF2":
+                if (credential_handler == "org.apache.catalina.realm.SecretKeyCredentialHandler" and 
+                    handler_algorithm == "PBKDF2WithHmacSHA512" and 
+                    iterations >= 10000 and 
+                    salt_length >= 16):
+                    audit_result["status"] = "Compliant"
+                else:
+                    audit_result["issues"].append("Salted_PBKDF2 requires SecretKeyCredentialHandler with PBKDF2")
+                    audit_result["issues"].append("Recommendation: Configure SecretKeyCredentialHandler with PBKDF2, saltLength >= 16, iterations >= 10000")
+            else:
+                audit_result["issues"].append(f"Unknown password type detected: {password_type}")
+                audit_result["issues"].append("Recommendation: Use a supported secure hashing algorithm")
+
+            results.append(audit_result)
+    except Exception as e:
+        write_log(f"Error parsing {users_xml_path}: {str(e)}")
+    return results
+
+# Main audit function
+def audit_tomcat_config():
+    write_log("Checking Apache Tomcat configuration security...")
+
+    # Clear log file
+    try:
+        open(log_file, "w").close()
+    except PermissionError:
+        write_log(f"Warning: Cannot clear {log_file}. Continuing with existing log.")
+
+    # Find Tomcat configuration
+    conf_path = get_tomcat_config_path()
+    if not conf_path:
+        write_log("Error: No Tomcat configuration directory found")
+        sys.exit(1)
+    write_log(f"Found Tomcat configuration at {conf_path}")
+
+    tomcat_version = detect_tomcat_version(os.path.dirname(conf_path))
+    write_log(f"Detected Tomcat version {tomcat_version} at {conf_path}")
+
+    # Audit server.xml
+    server_xml_path = os.path.join(conf_path, "server.xml")
+    write_log(f"Auditing server.xml at {server_xml_path}")
+    credential_handler, algorithm, iterations, salt_length = audit_server_xml(server_xml_path)
+
+    # Audit tomcat-users.xml
+    users_xml_path = os.path.join(conf_path, "tomcat-users.xml")
+    write_log(f"Auditing tomcat-users.xml at {users_xml_path}")
+    audit_results = audit_users_xml(users_xml_path, credential_handler, algorithm, iterations, salt_length)
+
+    # Process audit results
+    overall_secure = True
+    for result in audit_results:
+        write_log(f"- User '{result['username']}': {result['password_type']} password ({'secure' if result['is_secure'] else 'insecure'})", indent=1)
+        for param in result["parameters"]:
+            write_log(param, indent=2, marker="- ")
+        write_log(f"- Status: {result['status']} with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2)
+        for issue in result["issues"]:
+            write_log(issue, indent=3, marker="- ")
+        if result["status"] == "Non-compliant":
+            overall_secure = False
+
+    # Overall status
+    write_log(f"Overall Configuration: {'Secure' if overall_secure else 'Insecure'}")
     write_log("Audit completed")
-    sys.exit(0)
 
-for user in users:
-    username = user.get("username", "unknown")
-    password = user.get("password", "")
-
-    if not password:
-        write_log(f"User '{username}': No password defined", indent=1, marker="- ")
-        write_log("No password defined", indent=2, marker="  - ")
-        write_log("Status: Compliant (no password to evaluate)", indent=2, marker="  - ")
-        continue
-
-    # Detect password type
-    password_type = "Plaintext"
-    if re.match(r"^[a-f0-9]{32}$", password.lower()):
-        password_type = "Hashed_MD5"
-    elif re.match(r"^[a-f0-9]{40}$", password.lower()):
-        password_type = "Hashed_SHA1"
-    elif re.match(r"^[a-f0-9]{64}$", password.lower()):
-        password_type = "Hashed_SHA256"
-    elif re.match(r"^[a-f0-9]{128}$", password.lower()):
-        password_type = "Hashed_SHA512"
-    elif re.match(r"^[a-f0-9]{32}:[a-f0-9]{16}$", password.lower()):
-        if password.lower() == "4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef":
-            password_type = "Salted_PBKDF2"
-        elif credential_handler is not None and credential_handler.get("className") == "org.apache.catalina.realm.SecretKeyCredentialHandler" and credential_handler.get("algorithm") == "PBKDF2WithHmacSHA512":
-            password_type = "Salted_PBKDF2"
-        else:
-            password_type = "Salted_MD5"
-
-    # Log user and password type
-    write_log(f"User '{username}': {password_type} password ({'insecure' if password_type in ['Plaintext', 'Hashed_MD5', 'Hashed_SHA1', 'Salted_MD5'] else 'secure'})", indent=1, marker="- ")
-
-    # Parameter checks
-    params = []
-    params.append(f"Parameter: Password Type = {password_type} [{'FAIL' if password_type in ['Plaintext', 'Hashed_MD5', 'Hashed_SHA1', 'Salted_MD5'] else 'PASS'}]")
-    handler_class = credential_handler.get("className", "None") if credential_handler is not None else "None"
-    params.append(f"Parameter: CredentialHandler = {handler_class} [{'PASS' if credential_handler is not None else 'FAIL'}]")
-    algorithm = credential_handler.get("algorithm", "None") if credential_handler is not None else "None"
-    params.append(f"Parameter: Algorithm = {algorithm} [{'PASS' if algorithm in ['SHA-256', 'SHA-512', 'PBKDF2WithHmacSHA512'] else 'FAIL'}]")
-    if credential_handler is not None:
-        iterations = int(credential_handler.get("iterations", 0)) if credential_handler.get("iterations") else 0
-        params.append(f"Parameter: Iterations = {iterations} [{'PASS' if iterations >= 10000 else 'FAIL'}]")
-        salt_length = int(credential_handler.get("saltLength", 0)) if credential_handler.get("saltLength") else 0
-        params.append(f"Parameter: Salt Length = {salt_length} [{'PASS' if salt_length >= 16 else 'FAIL'}]")
-
-    for param in params:
-        write_log(param, indent=2, marker="  - ")
-
-    # Compliance check based on Tomcat version
-    if password_type == "Plaintext":
-        write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-        write_log("Plaintext passwords detected in tomcat-users.xml", indent=3, marker="    - ")
-        write_log("Recommendation: Use salted and iterated passwords (e.g., SHA-256 or PBKDF2)", indent=3, marker="    - ")
-        is_secure = False
-    elif password_type in ["Hashed_MD5", "Salted_MD5"]:
-        write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-        write_log(f"Weak password hashing ({password_type}) detected", indent=3, marker="    - ")
-        write_log("Recommendation: Use SHA-256, SHA-512, or PBKDF2", indent=3, marker="    - ")
-        is_secure = False
-    elif password_type == "Hashed_SHA1":
-        write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-        write_log("Weak password hashing (SHA-1) detected", indent=3, marker="    - ")
-        write_log("Recommendation: Use SHA-256, SHA-512, or PBKDF2", indent=3, marker="    - ")
-        is_secure = False
-    elif password_type == "Hashed_SHA256":
-        if tomcat_version in ["7.0", "8.5"] or credential_handler is None or algorithm != "SHA-256" or iterations < 10000 or salt_length < 16:
-            write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-            write_log("Hashed_SHA256 passwords should use salt and iterations", indent=3, marker="    - ")
-            write_log("Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000", indent=3, marker="    - ")
-            is_secure = False
-        else:
-            write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-    elif password_type == "Hashed_SHA512":
-        if tomcat_version in ["7.0", "8.5"] or credential_handler is None or algorithm != "SHA-512" or iterations < 10000 or salt_length < 16:
-            write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-            write_log("Hashed_SHA512 passwords should use salt and iterations", indent=3, marker="    - ")
-            write_log("Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000", indent=3, marker="    - ")
-            is_secure = False
-        else:
-            write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-    elif password_type == "Salted_PBKDF2":
-        if tomcat_version in ["7.0", "8.5"] or \
-           credential_handler is None or \
-           handler_class != "org.apache.catalina.realm.SecretKeyCredentialHandler" or \
-           algorithm != "PBKDF2WithHmacSHA512" or \
-           iterations < 10000 or salt_length < 16:
-            write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-            write_log("Salted_PBKDF2 requires SecretKeyCredentialHandler with PBKDF2", indent=3, marker="    - ")
-            write_log("Recommendation: Configure SecretKeyCredentialHandler with PBKDF2, saltLength >= 16, iterations >= 10000", indent=3, marker="    - ")
-            is_secure = False
-        else:
-            write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-
-write_log(f"Overall Configuration: {'Secure' if is_secure else 'Insecure'}")
-write_log("Audit completed")
+if __name__ == "__main__":
+    audit_tomcat_config()
