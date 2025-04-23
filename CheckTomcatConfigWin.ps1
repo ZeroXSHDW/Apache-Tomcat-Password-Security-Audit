@@ -22,6 +22,43 @@ function Get-TomcatVersion {
     return "Unknown"
 }
 
+# Function to parse server.xml for CredentialHandler details
+function Get-CredentialHandler {
+    param($ServerXmlPath)
+    try {
+        $xml = [xml](Get-Content $ServerXmlPath)
+        $credentialHandler = $xml.Server.Service.Engine.Host.Realm.CredentialHandler
+        if ($credentialHandler) {
+            return @{
+                className = $credentialHandler.className
+                algorithm = $credentialHandler.algorithm
+                iterations = [int]($credentialHandler.iterations ? $credentialHandler.iterations : 0)
+                saltLength = [int]($credentialHandler.saltLength ? $credentialHandler.saltLength : 0)
+            }
+        }
+        return $null
+    } catch {
+        Write-Log "Error parsing server.xml: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+# Function to parse tomcat-users.xml for user password
+function Get-UserPassword {
+    param($UsersXmlPath)
+    try {
+        $xml = [xml](Get-Content $UsersXmlPath)
+        $user = $xml.'tomcat-users'.user | Where-Object { $_.username -eq "testuser" }
+        if ($user) {
+            return $user.password
+        }
+        return $null
+    } catch {
+        Write-Log "Error parsing tomcat-users.xml: $($_.Exception.Message)"
+        return $null
+    }
+}
+
 # Function to check password security
 function Check-PasswordSecurity {
     param($Password, $CredentialHandler, $Algorithm, $Iterations, $SaltLength)
@@ -132,25 +169,29 @@ function Check-TomcatConfig {
     Write-Log "Checking Apache Tomcat configuration security..."
 
     $tomcatPath = "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.1\conf"
+    $serverXmlPath = Join-Path $tomcatPath "server.xml"
+    $usersXmlPath = Join-Path $tomcatPath "tomcat-users.xml"
     $tomcatVersion = Get-TomcatVersion -TomcatPath $tomcatPath
     Write-Log "Detected Tomcat version $tomcatVersion at $tomcatPath"
 
-    # Simulated configuration for testing
-    $testCases = @(
-        @{ Password = "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447"; CredentialHandler = "org.apache.catalina.realm.MessageDigestCredentialHandler"; Algorithm = "SHA-256"; Iterations = 10000; SaltLength = 16 },
-        @{ Password = "9e1f833ab408c8e136db274ed93b0061f0a5d790d4476e3058e8e6d4e3a3596d2c0a4524ae4b05f8e1f2f3e6f789f01ee9e8d607e9ee92f9b9e8d8c3f3d8427f6"; CredentialHandler = "org.apache.catalina.realm.MessageDigestCredentialHandler"; Algorithm = "SHA-512"; Iterations = 10000; SaltLength = 16 },
-        @{ Password = "4b6f7e8c9d0a1b2c3d4e5f60718293a4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef"; CredentialHandler = "org.apache.catalina.realm.SecretKeyCredentialHandler"; Algorithm = "PBKDF2WithHmacSHA512"; Iterations = 10000; SaltLength = 16 }
-    )
+    # Get configuration from XML files
+    $credentialHandler = Get-CredentialHandler -ServerXmlPath $serverXmlPath
+    $password = Get-UserPassword -UsersXmlPath $usersXmlPath
 
-    $overallSecure = $true
-    foreach ($case in $testCases) {
-        $isCompliant = Check-PasswordSecurity -Password $case.Password -CredentialHandler $case.CredentialHandler -Algorithm $case.Algorithm -Iterations $case.Iterations -SaltLength $case.SaltLength
-        if (-not $isCompliant) {
-            $overallSecure = $false
-        }
+    if (-not $password) {
+        Write-Log "Error: No password found for testuser in tomcat-users.xml"
+        return
     }
 
-    Write-Log "Overall Configuration: $(if ($overallSecure) { 'Secure' } else { 'Insecure' })"
+    $handlerClass = $credentialHandler ? $credentialHandler.className : "None"
+    $algorithm = $credentialHandler ? $credentialHandler.algorithm : "None"
+    $iterations = $credentialHandler ? $credentialHandler.iterations : 0
+    $saltLength = $credentialHandler ? $credentialHandler.saltLength : 0
+
+    # Evaluate configuration
+    $isCompliant = Check-PasswordSecurity -Password $password -CredentialHandler $handlerClass -Algorithm $algorithm -Iterations $iterations -SaltLength $saltLength
+
+    Write-Log "Overall Configuration: $(if ($isCompliant) { 'Secure' } else { 'Insecure' })"
     Write-Log "Audit completed"
 }
 
