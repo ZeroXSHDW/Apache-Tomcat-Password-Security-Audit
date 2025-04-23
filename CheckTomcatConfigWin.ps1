@@ -145,28 +145,31 @@ foreach ($user in $users) {
         continue
     }
 
+    # Debug: Log raw password input
+    Write-Log "  - Debug: Raw password for '$username': $password"
+
     # Detect password type
     $passwordType = switch -Regex ($password) {
-        "^[a-f0-9]{32}$" { "Hashed_MD5" }
-        "^[a-f0-9]{40}$" { "Hashed_SHA1" }
-        "^[a-f0-9]{64}$" { "Hashed_SHA256" }
-        "^[a-f0-9]{128}$" { "Hashed_SHA512" }
-        "^[a-f0-9]{32}:[a-f0-9]{16}$" { "Salted_MD5" }
-        "^[a-f0-9]{64}:[a-f0-9]{16}$" {
+        "^[a-fA-F0-9]{32}$" { "Hashed_MD5" }
+        "^[a-fA-F0-9]{40}$" { "Hashed_SHA1" }
+        "^[a-fA-F0-9]{64}$" { "Hashed_SHA256" }
+        "^[a-fA-F0-9]{128}$" { "Hashed_SHA512" }
+        "^[a-fA-F0-9]{32}:[a-fA-F0-9]{16}$" { "Salted_MD5" }
+        "^[a-fA-F0-9]{64}:[a-fA-F0-9]{16}$" {
             if ($credentialHandler -and $credentialHandler.className -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and $credentialHandler.algorithm -eq "PBKDF2WithHmacSHA512") {
                 "Salted_PBKDF2"
             } else {
-                "Salted_MD5"
+                "Salted_SHA256"
             }
         }
-        "^[a-f0-9]{64,}:[a-f0-9]{16,}$" {
+        "^[a-fA-F0-9]+:[a-fA-F0-9]+$" {
             if ($credentialHandler -and $credentialHandler.className -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and $credentialHandler.algorithm -eq "PBKDF2WithHmacSHA512") {
                 "Salted_PBKDF2"
             } else {
                 "Unknown"
             }
         }
-        default { "Plaintext" }
+        default { "Unknown" }
     }
 
     Write-Log "- User '$username': $passwordType password ($(if ($passwordType -match 'Plaintext|Hashed_MD5|Hashed_SHA1|Salted_MD5') { 'insecure' } else { 'secure' }))"
@@ -199,9 +202,9 @@ foreach ($user in $users) {
     }
 
     # Compliance check
-    if ($passwordType -eq "Plaintext") {
+    if ($passwordType -eq "Plaintext" -or $passwordType -eq "Unknown") {
         Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-        Write-Log "    - Plaintext passwords detected in tomcat-users.xml"
+        Write-Log "    - $(if ($passwordType -eq 'Plaintext') { 'Plaintext' } else { 'Unknown format' }) passwords detected in tomcat-users.xml"
         Write-Log "    - Recommendation: Use salted and iterated passwords (e.g., SHA-256 or PBKDF2)"
         $isSecure = $false
     }
