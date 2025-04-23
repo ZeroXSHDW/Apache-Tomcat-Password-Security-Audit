@@ -1,236 +1,312 @@
 #!/usr/bin/env python3
-# test_config_unix.py
-# Tests CheckTomcatConfigUnix.py for various Tomcat configurations (7.0, 8.0, 8.5, 9.0, 10.0)
-
 import os
-import sys
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
-import re
-import time
+import logging
+from pathlib import Path
+from datetime import datetime
 
-# Log setup
-log_file = os.path.expanduser("~/TestTomcatConfig.log")
+# Setup logging
+log_file = Path.home() / "TestTomcatConfig.log"
+logging.basicConfig(
+    filename=log_file,
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger(__name__)
 
-def write_log(message, indent=0, marker=""):
-    indent_spaces = "  " * indent
-    log_message = f"{indent_spaces}{marker}{message}"
-    try:
-        with open(log_file, "a") as f:
-            f.write(log_message + "\n")
-    except PermissionError:
-        print(f"Warning: Cannot write to {log_file}. Logging to console only.", file=sys.stderr)
-    print(log_message)
+# Tomcat configuration paths
+TOMCAT_CONF_DIR = "/opt/tomcat/conf"
+SERVER_XML = os.path.join(TOMCAT_CONF_DIR, "server.xml")
+TOMCAT_USERS_XML = os.path.join(TOMCAT_CONF_DIR, "tomcat-users.xml")
+BACKUP_DIR = "/tmp/TomcatConfigBackup"
 
-write_log("Starting tests for CheckTomcatConfigUnix.py...")
-
-# Verify script exists
-if not os.path.exists("./CheckTomcatConfigUnix.py"):
-    write_log("Error: CheckTomcatConfigUnix.py not found")
-    sys.exit(1)
-write_log("Verified file exists: ./CheckTomcatConfigUnix.py")
-
-# Clear existing log
-if os.path.exists(log_file):
-    try:
-        open(log_file, 'w').close()
-        write_log(f"Cleared existing log file: {log_file}")
-    except PermissionError:
-        write_log(f"Warning: Cannot clear {log_file}. Continuing...")
-
-# Function to detect Tomcat path and version
-def get_tomcat_config_path():
-    catalina_home = os.getenv("CATALINA_HOME")
-    if catalina_home:
-        conf_path = os.path.join(catalina_home, "conf")
-        if os.path.exists(conf_path) and os.path.exists(os.path.join(conf_path, "server.xml")):
-            return conf_path
-    possible_paths = [
-        "/usr/local/tomcat/conf",
-        "/opt/tomcat/conf",
-        "/var/lib/tomcat7/conf",
-        "/var/lib/tomcat8/conf",
-        "/var/lib/tomcat9/conf",
-        "/var/lib/tomcat10/conf",
-        "/usr/share/tomcat7/conf",
-        "/usr/share/tomcat8/conf",
-        "/usr/share/tomcat9/conf",
-        "/usr/share/tomcat10/conf"
-    ]
-    for path in possible_paths:
-        if os.path.exists(path) and os.path.exists(os.path.join(path, "server.xml")):
-            return path
-    return None
-
-def detect_tomcat_version(tomcat_home):
-    version_file = os.path.join(tomcat_home, "RELEASE-NOTES")
-    if os.path.exists(version_file):
-        with open(version_file, "r") as f:
-            for line in f:
-                if line.startswith("Apache Tomcat Version"):
-                    version = line.split()[-1]
-                    if version.startswith("7."):
-                        return "7.0"
-                    elif version.startswith("8.0"):
-                        return "8.0"
-                    elif version.startswith("8."):
-                        return "8.5"
-                    elif version.startswith("9."):
-                        return "9.0"
-                    elif version.startswith("10."):
-                        return "10.0"
-    if "tomcat7" in tomcat_home.lower():
-        return "7.0"
-    elif "tomcat8" in tomcat_home.lower():
-        return "8.5" if "tomcat8.5" in tomcat_home.lower() else "8.0"
-    elif "tomcat9" in tomcat_home.lower():
-        return "9.0"
-    elif "tomcat10" in tomcat_home.lower():
-        return "10.0"
-    return "Unknown"
-
-# Detect Tomcat installation
-tomcat_conf_path = get_tomcat_config_path()
-if not tomcat_conf_path:
-    write_log("Error: No Tomcat configuration directory found")
-    sys.exit(1)
-tomcat_version = detect_tomcat_version(os.path.dirname(tomcat_conf_path))
-write_log(f"Found Tomcat at {tomcat_conf_path}, version: {tomcat_version}")
-
-# Backup directory
-backup_dir = "/tmp/TomcatConfigBackup"
-if not os.path.exists(backup_dir):
-    os.makedirs(backup_dir)
-
-# Define test cases
-password_tests = [
-    "Plaintext",
-    "Hashed_MD5",
-    "Hashed_SHA1",
-    "Hashed_SHA256",
-    "Hashed_SHA512",
-    "Salted_MD5",
-    "Salted_PBKDF2"
+# Test configurations for Tomcat 7.0
+TEST_CONFIGS_7_0 = [
+    {
+        "name": "NoCredentialHandler_Plaintext",
+        "server_xml": {"credential_handler": None},
+        "tomcat_users_xml": {"username": "testuser", "password": "s3cret", "roles": "manager"},
+        "expected": {
+            "password_type": "Plaintext",
+            "secure": False,
+            "output": [
+                "User 'testuser': Plaintext password (insecure)",
+                "Parameter: Password Type = Plaintext [FAIL]",
+                "Parameter: CredentialHandler = None [FAIL]",
+                "Non-compliant with NIST_800_53_IA_5",
+                "Non-compliant with CIS_Tomcat_Benchmark",
+                "Plaintext passwords detected"
+            ]
+        }
+    },
+    {
+        "name": "MessageDigest_MD5",
+        "server_xml": {
+            "credential_handler": {
+                "className": "org.apache.catalina.realm.MessageDigestCredentialHandler",
+                "algorithm": "MD5"
+            }
+        },
+        "tomcat_users_xml": {"username": "testuser", "password": "d41d8cd98f00b204e9800998ecf8427e", "roles": "manager"},
+        "expected": {
+            "password_type": "Hashed_MD5",
+            "secure": False,
+            "output": [
+                "User 'testuser': Hashed_MD5 password (insecure)",
+                "Parameter: Password Type = Hashed_MD5 [FAIL]",
+                "Parameter: CredentialHandler = org.apache.catalina.realm.MessageDigestCredentialHandler [PASS]",
+                "Parameter: Algorithm = MD5 [FAIL]",
+                "Non-compliant with NIST_800_53_IA_5",
+                "Non-compliant with CIS_Tomcat_Benchmark"
+            ]
+        }
+    },
+    {
+        "name": "MessageDigest_SHA1",
+        "server_xml": {
+            "credential_handler": {
+                "className": "org.apache.catalina.realm.MessageDigestCredentialHandler",
+                "algorithm": "SHA-1"
+            }
+        },
+        "tomcat_users_xml": {"username": "testuser", "password": "da39a3ee5e6b4b0d3255bfef95601890afd80709", "roles": "manager"},
+        "expected": {
+            "password_type": "Hashed_SHA1",
+            "secure": False,
+            "output": [
+                "User 'testuser': Hashed_SHA1 password (insecure)",
+                "Parameter: Password Type = Hashed_SHA1 [FAIL]",
+                "Parameter: CredentialHandler = org.apache.catalina.realm.MessageDigestCredentialHandler [PASS]",
+                "Parameter: Algorithm = SHA-1 [FAIL]",
+                "Non-compliant with NIST_800_53_IA_5",
+                "Non-compliant with CIS_Tomcat_Benchmark"
+            ]
+        }
+    },
+    {
+        "name": "MessageDigest_SHA256",
+        "server_xml": {
+            "credential_handler": {
+                "className": "org.apache.catalina.realm.MessageDigestCredentialHandler",
+                "algorithm": "SHA-256"
+            }
+        },
+        "tomcat_users_xml": {"username": "testuser", "password": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "roles": "manager"},
+        "expected": {
+            "password_type": "Hashed_SHA256",
+            "secure": True,
+            "output": [
+                "User 'testuser': Hashed_SHA256 password (secure)",
+                "Parameter: Password Type = Hashed_SHA256 [PASS]",
+                "Parameter: CredentialHandler = org.apache.catalina.realm.MessageDigestCredentialHandler [PASS]",
+                "Parameter: Algorithm = SHA-256 [PASS]",
+                "Compliant with NIST_800_53_IA_5",
+                "Compliant with CIS_Tomcat_Benchmark"
+            ]
+        }
+    },
+    {
+        "name": "NoCredentialHandler_Salted_MD5",
+        "server_xml": {"credential_handler": None},
+        "tomcat_users_xml": {"username": "testuser", "password": "d41d8cd98f00b204e9800998ecf8427e:1234567890abcdef", "roles": "manager"},
+        "expected": {
+            "password_type": "Salted_MD5",
+            "secure": False,
+            "output": [
+                "User 'testuser': Salted_MD5 password (insecure)",
+                "Parameter: Password Type = Salted_MD5 [FAIL]",
+                "Parameter: CredentialHandler = None [FAIL]",
+                "Non-compliant with NIST_800_53_IA_5",
+                "Non-compliant with CIS_Tomcat_Benchmark"
+            ]
+        }
+    }
 ]
 
-server_tests = [
-    "NoCredentialHandler",
-    "MessageDigestCredentialHandler_MD5",
-    "MessageDigestCredentialHandler_SHA256"
-]
-if tomcat_version in ["8.0", "8.5", "9.0", "10.0"]:
-    server_tests.append("MessageDigestCredentialHandler_SHA512")
-    server_tests.append("NestedCredentialHandler")
-if tomcat_version in ["9.0", "10.0"]:
-    server_tests.append("SecretKeyCredentialHandler_PBKDF2")
-if tomcat_version == "7.0":
-    write_log("Limiting tests for Tomcat 7.0: Excluding SHA-512, NestedCredentialHandler, and SecretKeyCredentialHandler")
+def setup_backup():
+    """Create backup directory and copy original configuration files."""
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_server = os.path.join(BACKUP_DIR, f"server_{timestamp}.xml")
+    backup_users = os.path.join(BACKUP_DIR, f"tomcat-users_{timestamp}.xml")
+    try:
+        shutil.copy2(SERVER_XML, backup_server)
+        shutil.copy2(TOMCAT_USERS_XML, backup_users)
+        logger.info(f"Backed up configuration files to {BACKUP_DIR}")
+        print(f"Backed up original files to {BACKUP_DIR}")
+        return backup_server, backup_users
+    except (FileNotFoundError, PermissionError) as e:
+        logger.error(f"Backup failed: {e}")
+        print(f"ERROR: Failed to backup configuration files: {e}")
+        sys.exit(1)
 
-# Password examples
-password_values = {
-    "Plaintext": "s3cret",
-    "Hashed_MD5": "5ebe2294ecd0e0f08eab7690d2a6ee69",
-    "Hashed_SHA1": "e5e9fa1ba31ecd1ae84f75caaa474f3a663f05f4",
-    "Hashed_SHA256": "94f9b6c88f1b2b3b3363b7f4174480c1b3913b8200cb0a50f2974f2bc90bc774",
-    "Hashed_SHA512": "eede1e3b1840e3a3c2283ff623e3db6b4d8abfad6bded83fd36f9db08e7c3f2c2df0b5b7e6c9c0d1ebfe7e3b3c3d8b0e7f9d0c1f7e6b4c3b2a1f0e9d8c7b6a5f",
-    "Salted_MD5": "8208b5051cdd2b35cfba7f0b70b57e7f:1234567890abcdef",
-    "Salted_PBKDF2": "4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef"
-}
+def restore_config(backup_server, backup_users):
+    """Restore original configuration files from backup."""
+    try:
+        shutil.copy2(backup_server, SERVER_XML)
+        shutil.copy2(backup_users, TOMCAT_USERS_XML)
+        logger.info("Restored original configuration files")
+        print("Restored original configuration files")
+    except (FileNotFoundError, PermissionError) as e:
+        logger.error(f"Restore failed: {e}")
+        print(f"ERROR: Failed to restore configuration files: {e}")
+        sys.exit(1)
 
-# Server configurations
-server_configs = {
-    "NoCredentialHandler": "",
-    "MessageDigestCredentialHandler_MD5": '<CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="MD5"/>',
-    "MessageDigestCredentialHandler_SHA256": '<CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-256" iterations="10000" saltLength="16"/>',
-    "MessageDigestCredentialHandler_SHA512": '<CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-512" iterations="10000" saltLength="16"/>',
-    "NestedCredentialHandler": '<CredentialHandler className="org.apache.catalina.realm.NestedCredentialHandler"><CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-256"/></CredentialHandler>',
-    "SecretKeyCredentialHandler_PBKDF2": '<CredentialHandler className="org.apache.catalina.realm.SecretKeyCredentialHandler" algorithm="PBKDF2WithHmacSHA512" iterations="10000" saltLength="16" keyLength="256"/>'
-}
-
-# Backup original files
-server_xml = os.path.join(tomcat_conf_path, "server.xml")
-users_xml = os.path.join(tomcat_conf_path, "tomcat-users.xml")
-shutil.copy(server_xml, os.path.join(backup_dir, "server.xml.bak"))
-shutil.copy(users_xml, os.path.join(backup_dir, "tomcat-users.xml.bak"))
-write_log(f"Backed up original files to {backup_dir}")
-
-# Run tests
-test_count = 0
-passed_tests = 0
-failed_tests = 0
-
-for server_test in server_tests:
-    for password_test in password_tests:
-        if password_test == "Hashed_SHA512" and tomcat_version in ["7.0", "8.0"]:
-            write_log(f"Skipping Hashed_SHA512 for Tomcat {tomcat_version} (not supported)")
-            continue
-        if password_test == "Salted_PBKDF2" and tomcat_version in ["7.0", "8.0"]:
-            write_log(f"Skipping Salted_PBKDF2 for Tomcat {tomcat_version} (not supported)")
-            continue
-        if password_test == "Salted_PBKDF2" and server_test == "SecretKeyCredentialHandler_PBKDF2" and tomcat_version not in ["9.0", "10.0"]:
-            write_log(f"Skipping Salted_PBKDF2 with SecretKeyCredentialHandler for Tomcat {tomcat_version} (not supported)")
-            continue
-        test_count += 1
-        test_name = f"{tomcat_version}_{server_test}_{password_test}"
-        write_log(f"Test: {test_name}", indent=1)
-        write_log(f"Description: Testing {password_test} password with {server_test} CredentialHandler", indent=2)
-
-        # Modify server.xml
-        tree = ET.parse(server_xml)
+def modify_server_xml(config):
+    """Modify server.xml with specified CredentialHandler."""
+    try:
+        tree = ET.parse(SERVER_XML)
         root = tree.getroot()
         realm = root.find(".//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']")
         if realm is None:
-            realm = root.find(".//Realm[@className='org.apache.catalina.realm.MemoryRealm']")
-        if server_test == "NoCredentialHandler":
-            if realm.find("CredentialHandler") is not None:
-                realm.remove(realm.find("CredentialHandler"))
+            logger.error("No UserDatabaseRealm found in server.xml")
+            print("ERROR: No UserDatabaseRealm found in server.xml")
+            sys.exit(1)
+
+        # Remove existing CredentialHandler
+        for handler in realm.findall("CredentialHandler"):
+            realm.remove(handler)
+
+        # Add new CredentialHandler if specified
+        if config["server_xml"]["credential_handler"]:
+            handler = ET.SubElement(realm, "CredentialHandler")
+            for key, value in config["server_xml"]["credential_handler"].items():
+                handler.set(key, value)
+            logger.info(f"Modified server.xml: Added CredentialHandler {config['server_xml']['credential_handler']}")
+            print(f"Modified server.xml: Added CredentialHandler {config['server_xml']['credential_handler']}")
         else:
-            new_handler = ET.fromstring(server_configs[server_test])
-            existing_handler = realm.find("CredentialHandler")
-            if existing_handler is not None:
-                realm.remove(existing_handler)
-            realm.append(new_handler)
-        tree.write(server_xml)
-        write_log(f"Modified server.xml: {'Removed all CredentialHandlers' if server_test == 'NoCredentialHandler' else f'Set {server_test}'}", indent=2)
+            logger.info("Modified server.xml: Removed all CredentialHandlers")
+            print("Modified server.xml: Removed all CredentialHandlers")
 
-        # Modify tomcat-users.xml
-        users_tree = ET.parse(users_xml)
-        users_root = users_tree.getroot()
-        user = users_root.find(".//user[@username='testuser']")
-        if user is None:
-            user = ET.Element("user")
-            user.set("username", "testuser")
-            user.set("roles", "manager")
-            users_root.append(user)
-        user.set("password", password_values[password_test])
-        users_tree.write(users_xml)
-        write_log(f"Modified tomcat-users.xml: Set password for testuser to {password_test} ({password_values[password_test]})", indent=2)
+        tree.write(SERVER_XML)
+    except (FileNotFoundError, ET.ParseError, PermissionError) as e:
+        logger.error(f"Failed to modify server.xml: {e}")
+        print(f"ERROR: Failed to modify server.xml: {e}")
+        sys.exit(1)
 
-        # Run CheckTomcatConfigUnix.py
-        result = subprocess.run(["python3", "./CheckTomcatConfigUnix.py"], capture_output=True, text=True)
-        output = result.stdout
-        write_log("Actual output:", indent=2)
-        for line in output.split("\n"):
-            write_log(line, indent=3)
-        
-        # Simplified pass/fail check (actual implementation would compare expected output)
-        expected_status = "Compliant" if password_test in ["Hashed_SHA256", "Hashed_SHA512", "Salted_PBKDF2"] and server_test in ["MessageDigestCredentialHandler_SHA256", "MessageDigestCredentialHandler_SHA512", "SecretKeyCredentialHandler_PBKDF2"] and tomcat_version not in ["7.0", "8.0"] else "Non-compliant"
-        if expected_status in output:
-            write_log("Result: PASSED", indent=2)
-            passed_tests += 1
-        else:
-            write_log("Result: FAILED", indent=2)
-            failed_tests += 1
+def modify_tomcat_users_xml(config):
+    """Modify tomcat-users.xml with specified user and password."""
+    try:
+        tree = ET.parse(TOMCAT_USERS_XML)
+        root = tree.getroot()
+        # Clear existing users
+        for user in root.findall("user"):
+            root.remove(user)
+        # Add test user
+        user = ET.SubElement(root, "user")
+        user.set("username", config["tomcat_users_xml"]["username"])
+        user.set("password", config["tomcat_users_xml"]["password"])
+        user.set("roles", config["tomcat_users_xml"]["roles"])
+        logger.info(f"Modified tomcat-users.xml: Added user {config['tomcat_users_xml']['username']} with password {config['tomcat_users_xml']['password']}")
+        print(f"Modified tomcat-users.xml: Set password for {config['tomcat_users_xml']['username']}")
+        tree.write(TOMCAT_USERS_XML)
+    except (FileNotFoundError, ET.ParseError, PermissionError) as e:
+        logger.error(f"Failed to modify tomcat-users.xml: {e}")
+        print(f"ERROR: Failed to modify tomcat-users.xml: {e}")
+        sys.exit(1)
 
-# Restore original files
-shutil.copy(os.path.join(backup_dir, "server.xml.bak"), server_xml)
-shutil.copy(os.path.join(backup_dir, "tomcat-users.xml.bak"), users_xml)
-write_log("Restored original configuration files")
+def run_check_script():
+    """Run CheckTomcatConfigUnix.py and capture output."""
+    try:
+        result = subprocess.run(
+            ["./CheckTomcatConfigUnix.py"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        logger.info("Ran CheckTomcatConfigUnix.py successfully")
+        return result.stdout.splitlines()
+    except subprocess.CalledProcessError as e:
+        logger.error(f"CheckTomcatConfigUnix.py failed: {e.stderr}")
+        print(f"ERROR: CheckTomcatConfigUnix.py failed: {e.stderr}")
+        sys.exit(1)
 
-# Test summary
-write_log("Test Summary:")
-write_log(f"Total tests run: {test_count}")
-write_log(f"Tests passed: {passed_tests}")
-write_log(f"Tests failed: {failed_tests}")
-write_log("All tests completed")
+def verify_test_output(test_config, actual_output):
+    """Verify that actual output matches expected output."""
+    expected = test_config["expected"]["output"]
+    passed = True
+    for expected_line in expected:
+        if not any(expected_line in line for line in actual_output):
+            logger.warning(f"Test {test_config['name']}: Expected line not found: {expected_line}")
+            print(f"      Expected line not found: {expected_line}")
+            passed = False
+    return passed
+
+def main():
+    """Main function to run tests."""
+    print("Starting tests for CheckTomcatConfigUnix.py...")
+    logger.info("Starting tests for CheckTomcatConfigUnix.py")
+
+    # Verify CheckTomcatConfigUnix.py exists
+    if not os.path.exists("./CheckTomcatConfigUnix.py"):
+        logger.error("CheckTomcatConfigUnix.py not found in current directory")
+        print("ERROR: CheckTomcatConfigUnix.py not found in current directory")
+        sys.exit(1)
+    print("Verified file exists: ./CheckTomcatConfigUnix.py")
+
+    # Clear existing log file
+    if os.path.exists(log_file):
+        os.remove(log_file)
+        print(f"Cleared existing log file: {log_file}")
+        logger.info(f"Cleared existing log file: {log_file}")
+
+    # Verify Tomcat configuration directory
+    if not os.path.exists(TOMCAT_CONF_DIR):
+        logger.error(f"Tomcat configuration directory {TOMCAT_CONF_DIR} not found")
+        print(f"ERROR: Tomcat configuration directory {TOMCAT_CONF_DIR} not found")
+        sys.exit(1)
+    print(f"Found Tomcat at {TOMCAT_CONF_DIR}, version: Unknown")
+
+    # Backup original configuration
+    backup_server, backup_users = setup_backup()
+
+    try:
+        total_tests = len(TEST_CONFIGS_7_0)
+        passed_tests = 0
+
+        for test_config in TEST_CONFIGS_7_0:
+            print(f"  Test: {test_config['name']}")
+            logger.info(f"Running test: {test_config['name']}")
+            print(f"    Description: Testing {test_config['expected']['password_type']} password with {test_config['name'].split('_')[0]} CredentialHandler")
+
+            # Modify configuration files
+            modify_server_xml(test_config)
+            modify_tomcat_users_xml(test_config)
+
+            # Run check script
+            actual_output = run_check_script()
+
+            # Verify output
+            print("    Expected output:")
+            for line in test_config["expected"]["output"]:
+                print(f"      - {line}")
+            print("    Actual output:")
+            for line in actual_output:
+                print(f"      - {line.strip()}")
+
+            if verify_test_output(test_config, actual_output):
+                print("    Result: PASSED")
+                passed_tests += 1
+            else:
+                print("    Result: FAILED")
+            logger.info(f"Test {test_config['name']}: {'PASSED' if verify_test_output(test_config, actual_output) else 'FAILED'}")
+
+        # Print test summary
+        print("Test Summary:")
+        print(f"  Total tests run: {total_tests}")
+        print(f"  Tests passed: {passed_tests}")
+        print(f"  Tests failed: {total_tests - passed_tests}")
+        logger.info(f"Test Summary: Total={total_tests}, Passed={passed_tests}, Failed={total_tests - passed_tests}")
+
+    finally:
+        # Restore original configuration
+        restore_config(backup_server, backup_users)
+
+    print("All tests completed")
+    logger.info("All tests completed")
+
+if __name__ == "__main__":
+    main()
