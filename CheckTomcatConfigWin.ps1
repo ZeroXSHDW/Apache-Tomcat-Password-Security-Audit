@@ -191,10 +191,11 @@ function Check-TomcatConfig {
         return
     }
 
-    $handlerClass = $credentialHandler ? $credentialHandler.className : "None"
-    $algorithm = $credentialHandler ? $credentialHandler.algorithm : "None"
-    $iterations = $credentialHandler ? $credentialHandler.iterations : 0
-    $saltLength = $credentialHandler ? $credentialHandler.saltLength : 0
+    # Assign default values if credentialHandler is null
+    $handlerClass = if ($credentialHandler) { $credentialHandler.className } else { "None" }
+    $algorithm = if ($credentialHandler) { $credentialHandler.algorithm } else { "None" }
+    $iterations = if ($credentialHandler) { $credentialHandler.iterations } else { 0 }
+    $saltLength = if ($credentialHandler) { $credentialHandler.saltLength } else { 0 }
 
     # Evaluate configuration
     $isCompliant = Check-PasswordSecurity -Password $password -CredentialHandler $handlerClass -Algorithm $algorithm -Iterations $iterations -SaltLength $saltLength
