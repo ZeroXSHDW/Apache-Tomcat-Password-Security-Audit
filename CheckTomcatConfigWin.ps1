@@ -136,7 +136,7 @@ if (-not $users) {
 
 foreach ($user in $users) {
     $username = $user.username
-    $password = $user.password.Trim()  # Trim to remove any whitespace
+    $password = $user.password
 
     # Skip users without passwords
     if (-not $password) {
@@ -145,11 +145,21 @@ foreach ($user in $users) {
         continue
     }
 
-    # Log raw password for debugging
+    # Sanitize password: Trim and remove non-hex or colon characters for regex matching
+    $password = $password.Trim()
+    $cleanPassword = $password -replace "[^a-fA-F0-9:]", ""
+    
+    # Log raw and cleaned password for debugging
     Write-Log "Raw password for user '$username': '$password'"
+    Write-Log "Cleaned password for user '$username': '$cleanPassword'"
+    
+    # Log byte representation to detect hidden characters
+    $passwordBytes = [System.Text.Encoding]::UTF8.GetBytes($password)
+    $byteString = ($passwordBytes | ForEach-Object { $_.ToString("X2") }) -join " "
+    Write-Log "Password byte representation: $byteString"
 
     # Detect password type
-    $passwordType = switch -Regex ($password) {
+    $passwordType = switch -Regex ($cleanPassword) {
         "^[a-fA-F0-9]{32}$" { "Hashed_MD5" }
         "^[a-fA-F0-9]{40}$" { "Hashed_SHA1" }
         "^[a-fA-F0-9]{64}$" { "Hashed_SHA256" }
