@@ -1,5 +1,9 @@
-# CheckTomcatConfig.ps1
+# CheckTomcatConfigWin.ps1
 # Audits Tomcat configuration for password security and compliance (7.0, 8.5, 9.0)
+
+param (
+    [string]$TomcatConfPath
+)
 
 # Log setup
 $logFile = "$env:LOCALAPPDATA\Temp\TestTomcatConfig.log"
@@ -14,6 +18,13 @@ Write-Log "Checking Apache Tomcat configuration security..."
 
 # Detect Tomcat path and version
 function Get-TomcatConfigPath {
+    if ($TomcatConfPath -and (Test-Path $TomcatConfPath)) {
+        $serverXml = Join-Path $TomcatConfPath "server.xml"
+        if (Test-Path $serverXml) {
+            $version = if ($TomcatConfPath -match "Tomcat\s*(\d+\.\d+)") { $matches[1] } else { "Unknown" }
+            return @{ Path = $TomcatConfPath; Version = $version }
+        }
+    }
     $possiblePaths = @(
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 7.0\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.5\conf",
@@ -103,33 +114,23 @@ foreach ($user in $users) {
     $params = @()
 
     # Parameter: Password Type
-    $params += "- Parameter: Password Type = $passwordType [$(
-        if ($passwordType -match 'Plaintext|MD5|SHA1') { 'FAIL' } else { 'PASS' }
-    )]"
+    $params += "- Parameter: Password Type = $passwordType [$(if ($passwordType -match 'Plaintext|MD5|SHA1') { 'FAIL' } else { 'PASS' })]"
 
     # Parameter: CredentialHandler Presence
     $handlerClass = if ($credentialHandler) { $credentialHandler.className } else { "None" }
-    $params += "- Parameter: CredentialHandler = $handlerClass [$(
-        if ($credentialHandler) { 'PASS' } else { 'FAIL' }
-    )]"
+    $params += "- Parameter: CredentialHandler = $handlerClass [$(if ($credentialHandler) { 'PASS' } else { 'FAIL' })]"
 
     # Parameter: Algorithm
     $algorithm = if ($credentialHandler -and $credentialHandler.algorithm) { $credentialHandler.algorithm } else { "None" }
-    $params += "- Parameter: Algorithm = $algorithm [$(
-        if ($algorithm -in @('SHA-256', 'SHA-512', 'PBKDF2WithHmacSHA512')) { 'PASS' } else { 'FAIL' }
-    )]"
+    $params += "- Parameter: Algorithm = $algorithm [$(if ($algorithm -in @('SHA-256', 'SHA-512', 'PBKDF2WithHmacSHA512')) { 'PASS' } else { 'FAIL' })]"
 
     # Parameter: Iterations (if applicable)
     $iterations = if ($credentialHandler -and $credentialHandler.iterations) { [int]$credentialHandler.iterations } else { 0 }
-    $params += "- Parameter: Iterations = $iterations [$(
-        if ($iterations -ge 10000) { 'PASS' } else { 'FAIL' }
-    )]"
+    $params += "- Parameter: Iterations = $iterations [$(if ($iterations -ge 10000) { 'PASS' } else { 'FAIL' })]"
 
     # Parameter: Salt Length (if applicable)
     $saltLength = if ($credentialHandler -and $credentialHandler.saltLength) { [int]$credentialHandler.saltLength } else { 0 }
-    $params += "- Parameter: Salt Length = $saltLength [$(
-        if ($saltLength -ge 16) { 'PASS' } else { 'FAIL' }
-    )]"
+    $params += "- Parameter: Salt Length = $saltLength [$(if ($saltLength -ge 16) { 'PASS' } else { 'FAIL' })]"
 
     # Log parameters
     foreach ($param in $params) {
