@@ -685,22 +685,25 @@ foreach ($test in $tests) {
         Write-Log "Test output: $outputString"
     } catch {
         Write-Log "Test failed due to script execution error: $($_.Exception.Message)"
+        Write-Log "Result: FAILED"
         $failedTests++
         continue
     }
 
     # Check result
-    $isSecure = $outputString -match "Overall Configuration: Secure"
-    $expectedSecure = $test.ExpectedSecure
     if ($outputString -match "ParseException") {
         Write-Log "Result: FAILED (Script failed to execute due to syntax error)"
         $failedTests++
-    } elseif ($isSecure -eq $expectedSecure) {
-        Write-Log "Result: PASSED"
-        $passedTests++
     } else {
-        Write-Log "Result: FAILED (Expected secure: $expectedSecure, Actual output: $outputString)"
-        $failedTests++
+        $isSecure = $outputString -match "Overall Configuration: Secure"
+        $expectedSecure = $test.ExpectedSecure
+        if ($isSecure -eq $expectedSecure) {
+            Write-Log "Result: PASSED"
+            $passedTests++
+        } else {
+            Write-Log "Result: FAILED (Expected secure: $expectedSecure, Actual output: $outputString)"
+            $failedTests++
+        }
     }
 }
 
