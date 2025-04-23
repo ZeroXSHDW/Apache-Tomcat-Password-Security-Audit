@@ -1,5 +1,5 @@
 # test_config_win.ps1
-# Tests CheckTomcatConfigWin.ps1 for various Tomcat configurations (7.0, 8.5, 9.0, 10.0)
+# Tests CheckTomcatConfigWin.ps1 for various Tomcat configurations (7.0, 8.5, 9.0, 10.0, 10.1)
 
 # Log setup
 $logFile = "$env:LOCALAPPDATA\Temp\TestTomcatConfig.log"
@@ -32,10 +32,12 @@ function Get-TomcatConfigPath {
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.5\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 9.0\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.0\conf",
+        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.1\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
-        "C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf"
+        "C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf",
+        "C:\Program Files\Apache Software Foundation\Tomcat 10.1\conf"
     )
     foreach ($path in $possiblePaths) {
         if (Test-Path $path) {
@@ -81,11 +83,11 @@ $serverTests = @(
     "MessageDigestCredentialHandler_MD5",
     "MessageDigestCredentialHandler_SHA256"
 )
-if ($tomcatVersion -in @("8.5", "9.0", "10.0")) {
+if ($tomcatVersion -in @("8.5", "9.0", "10.0", "10.1")) {
     $serverTests += "MessageDigestCredentialHandler_SHA512"
     $serverTests += "NestedCredentialHandler"
 }
-if ($tomcatVersion -in @("9.0", "10.0")) {
+if ($tomcatVersion -in @("9.0", "10.0", "10.1")) {
     $serverTests += "SecretKeyCredentialHandler_PBKDF2"
 }
 if ($tomcatVersion -eq "7.0") {
@@ -130,7 +132,7 @@ foreach ($serverTest in $serverTests) {
             Write-Log "Skipping Salted_PBKDF2 for Tomcat 7.0 (not supported)"
             continue
         }
-        if ($passwordTest -eq "Salted_PBKDF2" -and $serverTest -eq "SecretKeyCredentialHandler_PBKDF2" -and $tomcatVersion -notin @("9.0", "10.0")) {
+        if ($passwordTest -eq "Salted_PBKDF2" -and $serverTest -eq "SecretKeyCredentialHandler_PBKDF2" -and $tomcatVersion -notin @("9.0", "10.0", "10.1")) {
             Write-Log "Skipping Salted_PBKDF2 with SecretKeyCredentialHandler for Tomcat $tomcatVersion (not supported)"
             continue
         }
