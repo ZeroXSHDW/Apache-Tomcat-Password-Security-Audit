@@ -1,5 +1,5 @@
 # test_config_win.ps1
-# Tests CheckTomcatConfigWin.ps1 for various Tomcat configurations (7.x, 8.0.x, 8.5.x, 9.x, 10.x)
+# Tests for CheckTomcatConfigWin.ps1 to validate Apache Tomcat configuration security
 
 # Log setup
 $logFile = "$env:LOCALAPPDATA\Temp\TestTomcatConfig.log"
@@ -7,17 +7,18 @@ function Write-Log {
     param($Message)
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     "$timestamp $Message" | Out-File -FilePath $logFile -Append -Encoding UTF8
-    Write-Host "[$timestamp] $Message"
+    Write-Output "[$timestamp] $Message"
 }
 
 Write-Log "Starting tests for CheckTomcatConfigWin.ps1..."
 
 # Verify script exists
-if (-not (Test-Path ".\CheckTomcatConfigWin.ps1")) {
+$scriptPath = ".\CheckTomcatConfigWin.ps1"
+if (-not (Test-Path $scriptPath)) {
     Write-Log "Error: CheckTomcatConfigWin.ps1 not found"
     exit 1
 }
-Write-Log "Verified file exists: .\CheckTomcatConfigWin.ps1"
+Write-Log "Verified file exists: $scriptPath"
 
 # Clear existing log
 if (Test-Path $logFile) {
@@ -25,295 +26,687 @@ if (Test-Path $logFile) {
     Write-Log "Cleared existing log file: $logFile"
 }
 
-# Function to detect Tomcat path and version
-function Get-TomcatConfigPath {
-    # Check CATALINA_HOME first
-    $catalinaHome = [System.Environment]::GetEnvironmentVariable("CATALINA_HOME")
-    if ($catalinaHome) {
-        $confPath = Join-Path $catalinaHome "conf"
-        $serverXml = Join-Path $confPath "server.xml"
-        try {
-            if (Test-Path $serverXml -ErrorAction Stop) {
-                $version = if ($catalinaHome -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
-                if ($version -match "^7\.") { $version = "7.0" }
-                elseif ($version -match "^8\.0") { $version = "8.0" }
-                elseif ($version -match "^8\.5") { $version = "8.5" }
-                elseif ($version -match "^9\.") { $version = "9.0" }
-                elseif ($version -match "^10\.") { $version = "10.0" }
-                Write-Log "Found Tomcat configuration at CATALINA_HOME: $confPath"
-                return @{ Path = $confPath; Version = $version }
-            } else {
-                Write-Log "CATALINA_HOME set to $catalinaHome, but no valid conf/server.xml found"
-            }
-        } catch {
-            $errorMsg = $_.ToString()
-            Write-Log "Error accessing ${serverXml} in CATALINA_HOME: ${errorMsg}"
-        }
-    } else {
-        Write-Log "CATALINA_HOME not set"
+# Backup and restore configuration files
+$tomcatConfPath = "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.1\conf"
+$serverXmlPath = Join-Path $tomcatConfPath "server.xml"
+$usersXmlPath = Join-Path $tomcatConfPath "tomcat-users.xml"
+$backupPath = "$env:LOCALAPPDATA\Temp\TomcatConfigBackup"
+
+function Backup-Config {
+    if (-not (Test-Path $backupPath)) {
+        New-Item -ItemType Directory -Path $backupPath | Out-Null
     }
+    Copy-Item $serverXmlPath "$backupPath\server.xml" -Force
+    Copy-Item $usersXmlPath "$backupPath\tomcat-users.xml" -Force
+    Write-Log "Backed up original files to $backupPath"
+}
 
-    # Search common paths
-    $basePaths = @(
-        "C:\Program Files\Apache Software Foundation",
-        "C:\Program Files (x86)\Apache Software Foundation",
-        "C:\Apache\Tomcat",
-        "C:\Tomcat",
-        "C:\ProgramData\Apache\Tomcat"
-    )
-    $versionPatterns = @(
-        "Tomcat 7.*",
-        "Tomcat 8.0.*",
-        "Tomcat 8.5.*",
-        "Tomcat 9.*",
-        "Tomcat 10.*"
-    )
+function Restore-Config {
+    Copy-Item "$backupPath\server.xml" $serverXmlPath -Force
+    Copy-Item "$backupPath\tomcat-users.xml" $usersXmlPath -Force
+    Write-Log "Restored original configuration files"
+}
 
-    foreach ($base in $basePaths) {
-        if (-not (Test-Path $base)) {
-            Write-Log "Base path $base does not exist"
-            continue
+# Test definitions
+$tests = @(
+    # NoCredentialHandler tests
+    @{
+        Name = "10.0_NoCredentialHandler_Plaintext"
+        Version = "10.0"
+        CredentialHandler = $null
+        User = @{
+            username = "testuser"
+            password = "password123"
+            roles = "manager"
         }
-        foreach ($pattern in $versionPatterns) {
-            try {
-                $dirs = Get-ChildItem -Path $base -Directory -Filter $pattern -ErrorAction Stop
-                foreach ($dir in $dirs) {
-                    $confPath = Join-Path $dir.FullName "conf"
-                    $serverXml = Join-Path $confPath "server.xml"
-                    if (Test-Path $serverXml) {
-                        $version = if ($dir.Name -match "Tomcat\s*(\d+\.\d+\.\d+|\d+\.\d+)") { $matches[1] } else { "Unknown" }
-                        if ($version -match "^7\.") { $version = "7.0" }
-                        elseif ($version -match "^8\.0") { $version = "8.0" }
-                        elseif ($version -match "^8\.5") { $version = "8.5" }
-                        elseif ($version -match "^9\.") { $version = "9.0" }
-                        elseif ($version -match "^10\.") { $version = "10.0" }
-                        Write-Log "Found Tomcat configuration at $confPath"
-                        return @{ Path = $confPath; Version = $version }
-                    } else {
-                        Write-Log "No server.xml found in $confPath"
-                    }
-                }
-            } catch {
-                $errorMsg = $_.ToString()
-                Write-Log "Error accessing $base for pattern ${pattern}: ${errorMsg}"
-            }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_NoCredentialHandler_Hashed_MD5"
+        Version = "10.0"
+        CredentialHandler = $null
+        User = @{
+            username = "testuser"
+            password = "5f4dcc3b5aa765d61d8327deb882cf99"
+            roles = "manager"
         }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_NoCredentialHandler_Hashed_SHA1"
+        Version = "10.0"
+        CredentialHandler = $null
+        User = @{
+            username = "testuser"
+            password = "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_NoCredentialHandler_Hashed_SHA256"
+        Version = "10.0"
+        CredentialHandler = $null
+        User = @{
+            username = "testuser"
+            password = "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_NoCredentialHandler_Hashed_SHA512"
+        Version = "10.0"
+        CredentialHandler = $null
+        User = @{
+            username = "testuser"
+            password = "9e1f833ab408c8e136db274ed93b0061f0a5d790d4476e3058e8e6d4e3a3596d2c0a4524ae4b05f8e1f2f3e6f789f01ee9e8d607e9ee92f9b9e8d8c3f3d8427f6"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_NoCredentialHandler_Salted_MD5"
+        Version = "10.0"
+        CredentialHandler = $null
+        User = @{
+            username = "testuser"
+            password = "8208b5051cdd2b35cfba7f0b70b57e7f:1234567890abcdef"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    # MessageDigestCredentialHandler_MD5 tests
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_MD5_Plaintext"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "MD5"
+            iterations = "0"
+            saltLength = "0"
+        }
+        User = @{
+            username = "testuser"
+            password = "password123"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_MD5_Hashed_MD5"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "MD5"
+            iterations = "0"
+            saltLength = "0"
+        }
+        User = @{
+            username = "testuser"
+            password = "5f4dcc3b5aa765d61d8327deb882cf99"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_MD5_Hashed_SHA1"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "MD5"
+            iterations = "0"
+            saltLength = "0"
+        }
+        User = @{
+            username = "testuser"
+            password = "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_MD5_Hashed_SHA256"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "MD5"
+            iterations = "0"
+            saltLength = "0"
+        }
+        User = @{
+            username = "testuser"
+            password = "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_MD5_Hashed_SHA512"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "MD5"
+            iterations = "0"
+            saltLength = "0"
+        }
+        User = @{
+            username = "testuser"
+            password = "9e1f833ab408c8e136db274ed93b0061f0a5d790d4476e3058e8e6d4e3a3596d2c0a4524ae4b05f8e1f2f3e6f789f01ee9e8d607e9ee92f9b9e8d8c3f3d8427f6"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_MD5_Salted_MD5"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "MD5"
+            iterations = "0"
+            saltLength = "0"
+        }
+        User = @{
+            username = "testuser"
+            password = "8208b5051cdd2b35cfba7f0b70b57e7f:1234567890abcdef"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    # MessageDigestCredentialHandler_SHA256 tests
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_SHA256_Plaintext"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "SHA-256"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "password123"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_SHA256_Hashed_MD5"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "SHA-256"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "5f4dcc3b5aa765d61d8327deb882cf99"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_SHA256_Hashed_SHA1"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "SHA-256"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_SHA256_Hashed_SHA256"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "SHA-256"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
+            roles = "manager"
+        }
+        ExpectedSecure = $true
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_SHA256_Hashed_SHA512"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "SHA-256"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "9e1f833ab408c8e136db274ed93b0061f0a5d790d4476e3058e8e6d4e3a3596d2c0a4524ae4b05f8e1f2f3e6f789f01ee9e8d607e9ee92f9b9e8d8c3f3d8427f6"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_SHA256_Salted_MD5"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "SHA-256"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "8208b5051cdd2b35cfba7f0b70b57e7f:1234567890abcdef"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    # MessageDigestCredentialHandler_SHA512 tests
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_SHA512_Plaintext"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "SHA-512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "password123"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_SHA512_Hashed_MD5"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "SHA-512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "5f4dcc3b5aa765d61d8327deb882cf99"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_SHA512_Hashed_SHA1"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "SHA-512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_SHA512_Hashed_SHA256"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "SHA-512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_SHA512_Hashed_SHA512"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "SHA-512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "9e1f833ab408c8e136db274ed93b0061f0a5d790d4476e3058e8e6d4e3a3596d2c0a4524ae4b05f8e1f2f3e6f789f01ee9e8d607e9ee92f9b9e8d8c3f3d8427f6"
+            roles = "manager"
+        }
+        ExpectedSecure = $true
+    },
+    @{
+        Name = "10.0_MessageDigestCredentialHandler_SHA512_Salted_MD5"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            algorithm = "SHA-512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "8208b5051cdd2b35cfba7f0b70b57e7f:1234567890abcdef"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    # NestedCredentialHandler tests
+    @{
+        Name = "10.0_NestedCredentialHandler_Plaintext"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.NestedCredentialHandler"
+            algorithm = "None"
+            iterations = "0"
+            saltLength = "0"
+        }
+        User = @{
+            username = "testuser"
+            password = "password123"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_NestedCredentialHandler_Hashed_MD5"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.NestedCredentialHandler"
+            algorithm = "None"
+            iterations = "0"
+            saltLength = "0"
+        }
+        User = @{
+            username = "testuser"
+            password = "5f4dcc3b5aa765d61d8327deb882cf99"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_NestedCredentialHandler_Hashed_SHA1"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.NestedCredentialHandler"
+            algorithm = "None"
+            iterations = "0"
+            saltLength = "0"
+        }
+        User = @{
+            username = "testuser"
+            password = "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_NestedCredentialHandler_Hashed_SHA256"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.NestedCredentialHandler"
+            algorithm = "None"
+            iterations = "0"
+            saltLength = "0"
+        }
+        User = @{
+            username = "testuser"
+            password = "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_NestedCredentialHandler_Hashed_SHA512"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.NestedCredentialHandler"
+            algorithm = "None"
+            iterations = "0"
+            saltLength = "0"
+        }
+        User = @{
+            username = "testuser"
+            password = "9e1f833ab408c8e136db274ed93b0061f0a5d790d4476e3058e8e6d4e3a3596d2c0a4524ae4b05f8e1f2f3e6f789f01ee9e8d607e9ee92f9b9e8d8c3f3d8427f6"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_NestedCredentialHandler_Salted_MD5"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.NestedCredentialHandler"
+            algorithm = "None"
+            iterations = "0"
+            saltLength = "0"
+        }
+        User = @{
+            username = "testuser"
+            password = "8208b5051cdd2b35cfba7f0b70b57e7f:1234567890abcdef"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    # SecretKeyCredentialHandler tests
+    @{
+        Name = "10.0_SecretKeyCredentialHandler_PBKDF2_Plaintext"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.SecretKeyCredentialHandler"
+            algorithm = "PBKDF2WithHmacSHA512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "password123"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_SecretKeyCredentialHandler_PBKDF2_Hashed_MD5"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.SecretKeyCredentialHandler"
+            algorithm = "PBKDF2WithHmacSHA512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "5f4dcc3b5aa765d61d8327deb882cf99"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_SecretKeyCredentialHandler_PBKDF2_Hashed_SHA1"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.SecretKeyCredentialHandler"
+            algorithm = "PBKDF2WithHmacSHA512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_SecretKeyCredentialHandler_PBKDF2_Hashed_SHA256"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.SecretKeyCredentialHandler"
+            algorithm = "PBKDF2WithHmacSHA512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_SecretKeyCredentialHandler_PBKDF2_Hashed_SHA512"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.SecretKeyCredentialHandler"
+            algorithm = "PBKDF2WithHmacSHA512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "9e1f833ab408c8e136db274ed93b0061f0a5d790d4476e3058e8e6d4e3a3596d2c0a4524ae4b05f8e1f2f3e6f789f01ee9e8d607e9ee92f9b9e8d8c3f3d8427f6"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_SecretKeyCredentialHandler_PBKDF2_Salted_MD5"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.SecretKeyCredentialHandler"
+            algorithm = "PBKDF2WithHmacSHA512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "8208b5051cdd2b35cfba7f0b70b57e7f:1234567890abcdef"
+            roles = "manager"
+        }
+        ExpectedSecure = $false
+    },
+    @{
+        Name = "10.0_SecretKeyCredentialHandler_PBKDF2_Salted_PBKDF2"
+        Version = "10.0"
+        CredentialHandler = @{
+            className = "org.apache.catalina.realm.SecretKeyCredentialHandler"
+            algorithm = "PBKDF2WithHmacSHA512"
+            iterations = "10000"
+            saltLength = "16"
+        }
+        User = @{
+            username = "testuser"
+            password = "4b6f7e8c9d0a1b2c3d4e5f60718293a4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef"
+            roles = "manager"
+        }
+        ExpectedSecure = $true
     }
-    Write-Log "Error: No Tomcat configuration directory found in any searched paths"
-    return $null
-}
-
-# Detect Tomcat installation
-$tomcatInfo = Get-TomcatConfigPath
-if (-not $tomcatInfo) {
-    Write-Log "Error: No Tomcat configuration directory found"
-    exit 1
-}
-$tomcatConfPath = $tomcatInfo.Path
-$tomcatVersion = $tomcatInfo.Version
-Write-Log "Detected Tomcat version $tomcatVersion at $tomcatConfPath"
-
-# Backup directory
-$backupDir = "$env:LOCALAPPDATA\Temp\TomcatConfigBackup"
-if (-not (Test-Path $backupDir)) {
-    New-Item -ItemType Directory -Path $backupDir | Out-Null
-}
-
-# Define test cases
-$passwordTests = @(
-    "Plaintext",
-    "Hashed_MD5",
-    "Hashed_SHA1",
-    "Hashed_SHA256",
-    "Hashed_SHA512",
-    "Salted_MD5",
-    "Salted_PBKDF2"
 )
 
-$serverTests = @(
-    "NoCredentialHandler",
-    "MessageDigestCredentialHandler_MD5",
-    "MessageDigestCredentialHandler_SHA256"
-)
-if ($tomcatVersion -in @("8.0", "8.5", "9.0", "10.0")) {
-    $serverTests += "MessageDigestCredentialHandler_SHA512"
-    $serverTests += "NestedCredentialHandler"
-}
-if ($tomcatVersion -in @("9.0", "10.0")) {
-    $serverTests += "SecretKeyCredentialHandler_PBKDF2"
-}
-if ($tomcatVersion -eq "7.0") {
-    Write-Log "Limiting tests for Tomcat 7.0: Excluding SHA-512, NestedCredentialHandler, and SecretKeyCredentialHandler"
-}
-
-# Password examples
-$passwordValues = @{
-    "Plaintext" = "s3cret"
-    "Hashed_MD5" = "5ebe2294ecd0e0f08eab7690d2a6ee69"
-    "Hashed_SHA1" = "e5e9fa1ba31ecd1ae84f75caaa474f3a663f05f4"
-    "Hashed_SHA256" = "94f9b6c88f1b2b3b3363b7f4174480c1b3913b8200cb0a50f2974f2bc90bc774"
-    "Hashed_SHA512" = "eede1e3b1840e3a3c2283ff623e3db6b4d8abfad6bded83fd36f9db08e7c3f2c2df0b5b7e6c9c0d1ebfe7e3b3c3d8b0e7f9d0c1f7e6b4c3b2a1f0e9d8c7b6a5f"
-    "Salted_MD5" = "8208b5051cdd2b35cfba7f0b70b57e7f:1234567890abcdef"
-    "Salted_PBKDF2" = "4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef"
+# Generate configuration files for testing
+function Generate-ServerXml {
+    param($Test)
+    $credentialHandler = $Test.CredentialHandler
+    $xml = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<Server port="8005" shutdown="SHUTDOWN">
+    <Service name="Catalina">
+        <Engine name="Catalina" defaultHost="localhost">
+            <Host name="localhost" appBase="webapps" unpackWARs="true" autoDeploy="true">
+                <Realm className="org.apache.catalina.realm.UserDatabaseRealm" resourceName="UserDatabase">
+                    $(if ($credentialHandler) {
+                        "<CredentialHandler className='$($credentialHandler.className)' algorithm='$($credentialHandler.algorithm)' iterations='$($credentialHandler.iterations)' saltLength='$($credentialHandler.saltLength)' />"
+                    })
+                </Realm>
+            </Host>
+        </Engine>
+    </Service>
+</Server>
+"@
+    $xml | Out-File $serverXmlPath -Encoding UTF8
 }
 
-# Server configurations
-$serverConfigs = @{
-    "NoCredentialHandler" = ""
-    "MessageDigestCredentialHandler_MD5" = '<CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="MD5"/>'
-    "MessageDigestCredentialHandler_SHA256" = '<CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-256" iterations="10000" saltLength="16"/>'
-    "MessageDigestCredentialHandler_SHA512" = '<CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-512" iterations="10000" saltLength="16"/>'
-    "NestedCredentialHandler" = '<CredentialHandler className="org.apache.catalina.realm.NestedCredentialHandler"><CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-256"/></CredentialHandler>'
-    "SecretKeyCredentialHandler_PBKDF2" = '<CredentialHandler className="org.apache.catalina.realm.SecretKeyCredentialHandler" algorithm="PBKDF2WithHmacSHA512" iterations="10000" saltLength="16" keyLength="256"/>'
+function Generate-UsersXml {
+    param($Test)
+    $user = $Test.User
+    $xml = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<tomcat-users>
+    <user username="$($user.username)" password="$($user.password)" roles="$($user.roles)" />
+</tomcat-users>
+"@
+    $xml | Out-File $usersXmlPath -Encoding UTF8
 }
 
-# Backup original files
-$serverXml = Join-Path $tomcatConfPath "server.xml"
-$usersXml = Join-Path $tomcatConfPath "tomcat-users.xml"
-try {
-    Copy-Item $serverXml "$backupDir\server.xml.bak" -Force -ErrorAction Stop
-    Copy-Item $usersXml "$backupDir\tomcat-users.xml.bak" -Force -ErrorAction Stop
-    Write-Log "Backed up original files to $backupDir"
-} catch {
-    $errorMsg = $_.ToString()
-    Write-Log "Error backing up configuration files: ${errorMsg}"
-    exit 1
-}
-
-# Track test results
+# Run tests
 $totalTests = 0
 $passedTests = 0
 $failedTests = 0
 
-# Run tests
-foreach ($serverTest in $serverTests) {
-    foreach ($passwordTest in $passwordTests) {
-        if ($passwordTest -eq "Hashed_SHA512" -and $tomcatVersion -in @("7.0", "8.0")) {
-            Write-Log "Skipping Hashed_SHA512 for Tomcat $tomcatVersion (not supported)"
-            continue
-        }
-        if ($passwordTest -eq "Salted_PBKDF2" -and $tomcatVersion -in @("7.0", "8.0", "8.5")) {
-            Write-Log "Skipping Salted_PBKDF2 for Tomcat $tomcatVersion (not supported)"
-            continue
-        }
-        if ($passwordTest -eq "Salted_PBKDF2" -and $serverTest -ne "SecretKeyCredentialHandler_PBKDF2" -and $tomcatVersion -in @("9.0", "10.0")) {
-            Write-Log "Skipping Salted_PBKDF2 with $serverTest for Tomcat $tomcatVersion (only supported with SecretKeyCredentialHandler)"
-            continue
-        }
-        Write-Log "Running test: ${tomcatVersion}_${serverTest}_${passwordTest} for Tomcat $tomcatVersion"
-        $totalTests++
+Backup-Config
 
-        # Modify server.xml
-        try {
-            $xml = [xml](Get-Content $serverXml -Encoding UTF8 -ErrorAction Stop)
-            $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']")
-            if (-not $realm) {
-                $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.MemoryRealm']")
-            }
-            if ($serverTest -eq "NoCredentialHandler") {
-                if ($realm.CredentialHandler) { $realm.RemoveChild($realm.CredentialHandler) | Out-Null }
-            } else {
-                $newHandler = [xml]$serverConfigs[$serverTest]
-                if ($realm.CredentialHandler) {
-                    $realm.ReplaceChild($xml.ImportNode($newHandler.DocumentElement, $true), $realm.CredentialHandler) | Out-Null
-                } else {
-                    $realm.AppendChild($xml.ImportNode($newHandler.DocumentElement, $true)) | Out-Null
-                }
-            }
-            $xml.Save($serverXml)
-        } catch {
-            $errorMsg = $_.ToString()
-            Write-Log "Error modifying server.xml: ${errorMsg}"
-            exit 1
-        }
+foreach ($test in $tests) {
+    $testName = $test.Name
+    $version = $test.Version
 
-        # Modify tomcat-users.xml
-        try {
-            $users = [xml](Get-Content $usersXml -Encoding UTF8 -ErrorAction Stop)
-            $user = $users.SelectSingleNode("//user[@username='testuser']")
-            if (-not $user) {
-                $user = $users.CreateElement("user")
-                $user.SetAttribute("username", "testuser")
-                $user.SetAttribute("roles", "manager")
-                $users.'tomcat-users'.AppendChild($user) | Out-Null
-            }
-            $user.SetAttribute("password", $passwordValues[$passwordTest])
+    # Skip unsupported tests
+    if ($testName -match "Salted_PBKDF2" -and $test.CredentialHandler.className -ne "org.apache.catalina.realm.SecretKeyCredentialHandler") {
+        Write-Log "Skipping $testName for Tomcat $version (only supported with SecretKeyCredentialHandler)"
+        continue
+    }
 
-            # Save with explicit UTF-8 encoding
-            $writerSettings = New-Object System.Xml.XmlWriterSettings
-            $writerSettings.Encoding = [System.Text.Encoding]::UTF8
-            $writerSettings.Indent = $true
-            $writer = [System.Xml.XmlWriter]::Create($usersXml, $writerSettings)
-            $users.Save($writer)
-            $writer.Close()
-        } catch {
-            $errorMsg = $_.ToString()
-            Write-Log "Error modifying tomcat-users.xml: ${errorMsg}"
-            exit 1
-        }
+    Write-Log "Running test: $testName for Tomcat $version"
+    $totalTests++
 
-        # Run CheckTomcatConfigWin.ps1 and capture output
-        try {
-            $output = & ".\CheckTomcatConfigWin.ps1" 2>&1 | Out-String
-            Write-Log "Test output: $output"
-        } catch {
-            $errorMsg = $_.Exception.Message
-            Write-Log "Error running CheckTomcatConfigWin.ps1: ${errorMsg}"
-            exit 1
-        }
+    # Setup configuration
+    Generate-ServerXml -Test $test
+    Generate-UsersXml -Test $test
 
-        # Validate test result
-        $isSecure = $output -match "Status: Compliant" -or $output -match "Overall Configuration: Secure"
-        $expectedSecure = switch ($passwordTest) {
-            "Plaintext" { $false }
-            "Hashed_MD5" { $false }
-            "Hashed_SHA1" { $false }
-            "Salted_MD5" { $false }
-            "Hashed_SHA256" {
-                $tomcatVersion -eq "7.0" -or (
-                    $serverTest -eq "MessageDigestCredentialHandler_SHA256" -and
-                    $tomcatVersion -notin @("7.0")
-                )
-            }
-            "Hashed_SHA512" {
-                $serverTest -eq "MessageDigestCredentialHandler_SHA512" -and
-                $tomcatVersion -notin @("7.0", "8.0")
-            }
-            "Salted_PBKDF2" {
-                $serverTest -eq "SecretKeyCredentialHandler_PBKDF2" -and
-                $tomcatVersion -in @("9.0", "10.0")
-            }
-            default { $false }
-        }
+    # Run script and capture output
+    $output = & powershell.exe -ExecutionPolicy Bypass -File $scriptPath 2>&1
+    $outputString = $output -join "`n"
+    Write-Log "Test output: $outputString"
 
-        if ($isSecure -eq $expectedSecure) {
-            Write-Log "Result: PASSED"
-            $passedTests++
-        } else {
-            Write-Log "Result: FAILED (Expected secure: $expectedSecure, Actual output: $output)"
-            $failedTests++
-        }
-    } # End passwordTests loop
-} # End serverTests loop
-
-# Restore original files
-try {
-    Copy-Item "$backupDir\server.xml.bak" $serverXml -Force -ErrorAction Stop
-    Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force -ErrorAction Stop
-    Write-Log "Restored original configuration files"
-} catch {
-    $errorMsg = $_.ToString()
-    Write-Log "Error restoring configuration files: ${errorMsg}"
-    exit 1
+    # Check result
+    $isSecure = $outputString -match "Overall Configuration: Secure"
+    $expectedSecure = $test.ExpectedSecure
+    if ($isSecure -eq $expectedSecure) {
+        Write-Log "Result: PASSED"
+        $passedTests++
+    } else {
+        Write-Log "Result: FAILED (Expected secure: $expectedSecure, Actual output: $outputString)"
+        $failedTests++
+    }
 }
+
+Restore-Config
 
 # Summarize results
 Write-Log "Test Summary:"
 Write-Log "  Total tests run: $totalTests"
 Write-Log "  Tests passed: $passedTests"
 Write-Log "  Tests failed: $failedTests"
-if ($failedTests -eq 0) {
-    Write-Log "All tests completed successfully"
-} else {
+
+if ($failedTests -gt 0) {
     Write-Log "Some tests failed. Check $logFile for details"
+    exit 1
+} else {
+    Write-Log "All tests passed successfully"
+    exit 0
 }
