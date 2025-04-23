@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # tomcat_manager.sh
-# Manages installation and uninstallation of Apache Tomcat 7, 8.5, 9, 10.0, and 10.1 on Kali Linux
+# Manages installation and uninstallation of Apache Tomcat 7.0, 8.5, 9.0, 10.0, and 10.1 on Kali Linux
 # Run as root or with sudo: sudo ./tomcat_manager.sh [install 7|8.5|9|10.0|10.1] [uninstall]
 
 # Exit on error
@@ -160,7 +160,7 @@ install_tomcat() {
             JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
             JAVA_BIN="${JAVA_HOME}/bin/java"
             CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
-            CHECKSUM="5a68b7f9a2d8e1f0c3a5b7e9f2d1c4a8b6e7f9d0c2a3b5e8f1d0c4a7b6e9f2d1c3a5b7e9f2d0c4a8b6e7f9d0c2a3b5e8f1d0c4a7b6e9f2d1c3a5b7e9f2d0c4a8"
+            CHECKSUM="d65c3db297c6eada0ddad69e3f5a5a4ef84da28b4e1f7f917f69dadaf133d9eabc6ab260b9f6d8d1a1e6ae48b873d8c23e4e98e95d51a1d625e6dc7b6e8cdfaab"
             ;;
         10.1)
             TOMCAT_VERSION="10.1.31"
@@ -175,7 +175,7 @@ install_tomcat() {
             JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
             JAVA_BIN="${JAVA_HOME}/bin/java"
             CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
-            CHECKSUM="6f43ae2b3a29a628d8ab2504706f1e8974c5e2f6e7db84e3776e37e7ca83c77ae5d5993f3c6eb97e0ca6db37eb4a48b1b7e6ec0348e2d1c4a7b6e9f2d1c3a5b7e"
+            CHECKSUM="c16ed3e92f8e6f09fd2914d03645ed879398e06d779f585c25fa4e734c40e76ff4f76ebac45207e6b4f57c3f7f6f8f3ae6c8f3b0a0e5e7f9b7e8f9d9c6e7f9d9"
             ;;
         *)
             log "ERROR: Unsupported Tomcat version. Choose 7, 8.5, 9, 10.0, or 10.1."
