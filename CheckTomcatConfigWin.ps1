@@ -27,6 +27,7 @@ function Check-PasswordSecurity {
     param($Password, $CredentialHandler, $Algorithm, $Iterations, $SaltLength)
 
     Write-Log "  - Debug: Raw password for 'testuser': $Password"
+    Write-Log "  - Debug: CredentialHandler=$CredentialHandler, Algorithm=$Algorithm, Iterations=$Iterations, SaltLength=$SaltLength"
 
     $passwordType = "Unknown"
     $isSecure = $true
@@ -78,21 +79,22 @@ function Check-PasswordSecurity {
     if ($passwordType -match "MD5|SHA1|Plaintext" -or $Password -eq "password123") {
         $isCompliant = $false
         Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-        Write-Log "    - Weak or plaintext password format detected"
+        Write-Log "    - Reason: Weak or plaintext password format detected"
     }
-    elseif ($passwordType -eq "Hashed_SHA256" -and $CredentialHandler -eq "org.apache.catalina.realm.MessageDigestCredentialHandler" -and $Algorithm -eq "SHA-256" -and $Iterations -ge 10000 -and $SaltLength -ge 16) {
+    elseif ($passwordType -eq "Hashed_SHA256" -and $CredentialHandler -eq "org.apache.catalina.realm.MessageDigestCredentialHandler" -and $Algorithm -match "SHA-256" -and $Iterations -ge 10000 -and $SaltLength -ge 16) {
         Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
     }
-    elseif ($passwordType -eq "Hashed_SHA512" -and $CredentialHandler -eq "org.apache.catalina.realm.MessageDigestCredentialHandler" -and $Algorithm -eq "SHA-512" -and $Iterations -ge 10000 -and $SaltLength -ge 16) {
+    elseif ($passwordType -eq "Hashed_SHA512" -and $CredentialHandler -eq "org.apache.catalina.realm.MessageDigestCredentialHandler" -and $Algorithm -match "SHA-512" -and $Iterations -ge 10000 -and $SaltLength -ge 16) {
         Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
     }
-    elseif ($passwordType -eq "Salted_PBKDF2" -and $CredentialHandler -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and $Algorithm -eq "PBKDF2WithHmacSHA512" -and $Iterations -ge 10000 -and $SaltLength -ge 16) {
+    elseif ($passwordType -eq "Salted_PBKDF2" -and $CredentialHandler -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and $Algorithm -match "PBKDF2WithHmacSHA512" -and $Iterations -ge 10000 -and $SaltLength -ge 16) {
         Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
     }
     else {
         $isCompliant = $false
         Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-        Write-Log "    - Configuration does not meet security requirements"
+        Write-Log "    - Reason: Configuration does not meet security requirements"
+        Write-Log "    - Debug: PasswordType=$passwordType, CredentialHandler=$CredentialHandler, Algorithm=$Algorithm, Iterations=$Iterations, SaltLength=$SaltLength"
     }
 
     Write-Log ($results -join "`n")
@@ -135,6 +137,7 @@ function Check-TomcatConfig {
 
     # Simulated configuration for testing
     $testCases = @(
+        @{ Password = "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447"; CredentialHandler = "org.apache.catalina.realm.MessageDigestCredentialHandler"; Algorithm = "SHA-256"; Iterations = 10000; SaltLength = 16 },
         @{ Password = "9e1f833ab408c8e136db274ed93b0061f0a5d790d4476e3058e8e6d4e3a3596d2c0a4524ae4b05f8e1f2f3e6f789f01ee9e8d607e9ee92f9b9e8d8c3f3d8427f6"; CredentialHandler = "org.apache.catalina.realm.MessageDigestCredentialHandler"; Algorithm = "SHA-512"; Iterations = 10000; SaltLength = 16 },
         @{ Password = "4b6f7e8c9d0a1b2c3d4e5f60718293a4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef"; CredentialHandler = "org.apache.catalina.realm.SecretKeyCredentialHandler"; Algorithm = "PBKDF2WithHmacSHA512"; Iterations = 10000; SaltLength = 16 }
     )
