@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CheckTomcatConfigUnix.py
-# Audits Apache Tomcat configuration for security issues (10.0, 10.1)
+# Audits Apache Tomcat configuration for security issues (7.0, 8.5, 9.0, 10.0, 10.1)
 
 import os
 import sys
@@ -41,7 +41,13 @@ def get_tomcat_config_path():
     possible_paths = [
         "/opt/tomcat/conf",
         "/usr/local/tomcat/conf",
+        "/var/lib/tomcat7/conf",
+        "/var/lib/tomcat8/conf",
+        "/var/lib/tomcat9/conf",
         "/var/lib/tomcat10/conf",
+        "/usr/share/tomcat7/conf",
+        "/usr/share/tomcat8/conf",
+        "/usr/share/tomcat9/conf",
         "/usr/share/tomcat10/conf"
     ]
     for path in possible_paths:
@@ -64,12 +70,11 @@ def detect_tomcat_version(tomcat_home):
                 match = re.search(r"Apache Tomcat Version\s+([0-9]+\.[0-9]+\.[0-9]+)", content)
                 if match:
                     version = match.group(1)
-                    if version.startswith("10.0"):
-                        write_log(f"Detected version {version} from RELEASE-NOTES")
-                        return "10.0"
-                    elif version.startswith("10.1"):
-                        write_log(f"Detected version {version} from RELEASE-NOTES")
-                        return "10.1"
+                    if version.startswith("7.0"): return "7.0"
+                    elif version.startswith("8.5"): return "8.5"
+                    elif version.startswith("9.0"): return "9.0"
+                    elif version.startswith("10.0"): return "10.0"
+                    elif version.startswith("10.1"): return "10.1"
                 else:
                     write_log(f"Warning: No version found in {version_file}")
         except PermissionError:
@@ -77,25 +82,29 @@ def detect_tomcat_version(tomcat_home):
     else:
         write_log(f"Warning: {version_file} not found")
 
-    # Fallback: Check directory name or server.xml
-    if "tomcat10" in tomcat_home.lower():
-        write_log("Falling back to version 10.0 based on directory name")
-        return "10.0"
-    
-    # Check server.xml for version clues
+    # Fallback: Check directory name
+    if "tomcat7" in tomcat_home.lower(): return "7.0"
+    if "tomcat8" in tomcat_home.lower(): return "8.5"
+    if "tomcat9" in tomcat_home.lower(): return "9.0"
+    if "tomcat10" in tomcat_home.lower(): return "10.0"
+
+    # Fallback: Check server.xml for version clues
     server_xml = os.path.join(tomcat_home, "conf/server.xml")
     if os.path.exists(server_xml):
         try:
             with open(server_xml, "r") as f:
                 content = f.read()
                 if "org.apache.catalina.startup.VersionLoggerListener" in content:
-                    write_log("Falling back to version 10.0 based on server.xml content")
-                    return "10.0"
+                    if "tomcat10" in tomcat_home.lower() or "10." in content:
+                        return "10.0"
+                    elif "9." in content: return "9.0"
+                    elif "8." in content: return "8.5"
+                    elif "7." in content: return "7.0"
         except PermissionError:
             write_log(f"Error: Cannot read {server_xml} due to permissions")
 
-    write_log("Warning: Could not determine Tomcat version, defaulting to 10.0")
-    return "10.0"
+    write_log("Warning: Could not determine Tomcat version, defaulting to 7.0")
+    return "7.0"
 
 # Detect Tomcat configuration directory
 tomcat_conf_path = get_tomcat_config_path()
@@ -197,7 +206,7 @@ for user in users:
     for param in params:
         write_log(param, indent=2, marker="  - ")
 
-    # Compliance check
+    # Compliance check based on Tomcat version
     if password_type == "Plaintext":
         write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
         write_log("Plaintext passwords detected in tomcat-users.xml", indent=3, marker="    - ")
@@ -214,7 +223,7 @@ for user in users:
         write_log("Recommendation: Use SHA-256, SHA-512, or PBKDF2", indent=3, marker="    - ")
         is_secure = False
     elif password_type == "Hashed_SHA256":
-        if credential_handler is None or algorithm != "SHA-256" or iterations < 10000 or salt_length < 16:
+        if tomcat_version in ["7.0", "8.5"] or credential_handler is None or algorithm != "SHA-256" or iterations < 10000 or salt_length < 16:
             write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
             write_log("Hashed_SHA256 passwords should use salt and iterations", indent=3, marker="    - ")
             write_log("Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000", indent=3, marker="    - ")
@@ -222,7 +231,7 @@ for user in users:
         else:
             write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
     elif password_type == "Hashed_SHA512":
-        if credential_handler is None or algorithm != "SHA-512" or iterations < 10000 or salt_length < 16:
+        if tomcat_version in ["7.0", "8.5"] or credential_handler is None or algorithm != "SHA-512" or iterations < 10000 or salt_length < 16:
             write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
             write_log("Hashed_SHA512 passwords should use salt and iterations", indent=3, marker="    - ")
             write_log("Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000", indent=3, marker="    - ")
@@ -230,14 +239,17 @@ for user in users:
         else:
             write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
     elif password_type == "Salted_PBKDF2":
-        if credential_handler is not None and handler_class == "org.apache.catalina.realm.SecretKeyCredentialHandler" and \
-           algorithm == "PBKDF2WithHmacSHA512" and iterations >= 10000 and salt_length >= 16:
-            write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
-        else:
+        if tomcat_version in ["7.0", "8.5"] or \
+           credential_handler is None or \
+           handler_class != "org.apache.catalina.realm.SecretKeyCredentialHandler" or \
+           algorithm != "PBKDF2WithHmacSHA512" or \
+           iterations < 10000 or salt_length < 16:
             write_log("Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
             write_log("Salted_PBKDF2 requires SecretKeyCredentialHandler with PBKDF2", indent=3, marker="    - ")
             write_log("Recommendation: Configure SecretKeyCredentialHandler with PBKDF2, saltLength >= 16, iterations >= 10000", indent=3, marker="    - ")
             is_secure = False
+        else:
+            write_log("Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark", indent=2, marker="  - ")
 
 write_log(f"Overall Configuration: {'Secure' if is_secure else 'Insecure'}")
 write_log("Audit completed")
