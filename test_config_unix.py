@@ -1,362 +1,338 @@
-#!/bin/bash
+#!/usr/bin/env python3
+# test_config_unix.py
+# Automated testing for CheckTomcatConfigUnix.py across Tomcat 7.0, 8.5, 9.0, 10.0, and 10.1
 
-# tomcat_manager.sh
-# Manages installation and uninstallation of Apache Tomcat 7, 8.5, and 9 on Kali Linux
-# Run as root or with sudo: sudo ./tomcat_manager.sh [install 7|8.5|9] [uninstall]
+import os
+import sys
+import shutil
+import subprocess
+import xml.etree.ElementTree as ET
+import re
+import tempfile
 
-# Exit on error
-set -e
+# Log setup
+log_file = os.path.expanduser("~/TestTomcatConfig.log")
+backup_dir = "/tmp/TomcatConfigBackup"
 
-# Global Variables
-TOMCAT_DIR="/opt/tomcat"
-LOG_FILE="/tmp/TomcatManager.log"
+def write_log(message, indent=0, marker=""):
+    """
+    Write a log message with indentation and marker, without timestamps.
+    indent: Number of indentation levels (each level is two spaces).
+    marker: Prefix marker (e.g., '-', '  -', '    -') for specific lines.
+    """
+    indent_spaces = "  " * indent
+    log_message = f"{indent_spaces}{marker}{message}"
+    try:
+        with open(log_file, "a") as f:
+            f.write(log_message + "\n")
+    except PermissionError:
+        print(f"Warning: Cannot write to {log_file}. Logging to console only.", file=sys.stderr)
+    print(log_message)
 
-# Log function
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+# Function to detect Tomcat path
+def get_tomcat_config_path():
+    catalina_home = os.getenv("CATALINA_HOME")
+    if catalina_home:
+        conf_path = os.path.join(catalina_home, "conf")
+        if os.path.exists(conf_path) and os.path.exists(os.path.join(conf_path, "server.xml")):
+            return conf_path
+    possible_paths = [
+        "/usr/local/tomcat/conf",
+        "/opt/tomcat/conf",
+        "/var/lib/tomcat7/conf",
+        "/var/lib/tomcat8/conf",
+        "/var/lib/tomcat9/conf",
+        "/var/lib/tomcat10/conf",
+        "/usr/share/tomcat7/conf",
+        "/usr/share/tomcat8/conf",
+        "/usr/share/tomcat9/conf",
+        "/usr/share/tomcat10/conf"
+    ]
+    for path in possible_paths:
+        if os.path.exists(path) and os.path.exists(os.path.join(path, "server.xml")):
+            return path
+    return None
+
+# Detect Tomcat version
+def detect_tomcat_version(tomcat_home):
+    version_file = os.path.join(tomcat_home, "RELEASE-NOTES")
+    if os.path.exists(version_file):
+        with open(version_file, "r") as f:
+            for line in f:
+                if line.startswith("Apache Tomcat Version"):
+                    version = line.split()[-1]
+                    if version.startswith("7."): return "7.0"
+                    elif version.startswith("8."): return "8.5"
+                    elif version.startswith("9."): return "9.0"
+                    elif version.startswith("10.0"): return "10.0"
+                    elif version.startswith("10.1"): return "10.1"
+    if "tomcat7" in tomcat_home.lower(): return "7.0"
+    elif "tomcat8" in tomcat_home.lower(): return "8.5"
+    elif "tomcat9" in tomcat_home.lower(): return "9.0"
+    elif "tomcat10" in tomcat_home.lower(): return "10.0"
+    return "Unknown"
+
+# Backup configuration files
+def backup_configs(conf_path):
+    os.makedirs(backup_dir, exist_ok=True)
+    for file in ["server.xml", "tomcat-users.xml"]:
+        src = os.path.join(conf_path, file)
+        dst = os.path.join(backup_dir, file)
+        if os.path.exists(src):
+            shutil.copy2(src, dst)
+        else:
+            write_log(f"Warning: {src} not found for backup")
+
+# Restore configuration files
+def restore_configs(conf_path):
+    for file in ["server.xml", "tomcat-users.xml"]:
+        src = os.path.join(backup_dir, file)
+        dst = os.path.join(conf_path, file)
+        if os.path.exists(src):
+            shutil.copy2(src, dst)
+        else:
+            write_log(f"Warning: {src} not found for restore")
+
+# Modify server.xml
+def modify_server_xml(conf_path, handler_config):
+    server_xml = os.path.join(conf_path, "server.xml")
+    try:
+        tree = ET.parse(server_xml)
+        root = tree.getroot()
+        realm = root.find(".//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']")
+        if realm is None:
+            realm = root.find(".//Realm[@className='org.apache.catalina.realm.MemoryRealm']")
+        if realm is None:
+            write_log(f"Error: No UserDatabaseRealm or MemoryRealm found in {server_xml}")
+            return False
+
+        # Remove existing CredentialHandler
+        for ch in realm.findall("CredentialHandler"):
+            realm.remove(ch)
+
+        # Add new CredentialHandler if specified
+        if handler_config:
+            ch = ET.SubElement(realm, "CredentialHandler")
+            for key, value in handler_config.items():
+                ch.set(key, value)
+
+        tree.write(server_xml, encoding="UTF-8", xml_declaration=True)
+        write_log(f"Modified server.xml: {handler_config}")
+        return True
+    except Exception as e:
+        write_log(f"Error modifying server.xml: {str(e)}")
+        return False
+
+# Modify tomcat-users.xml
+def modify_users_xml(conf_path, password, password_type):
+    users_xml = os.path.join(conf_path, "tomcat-users.xml")
+    try:
+        tree = ET.parse(users_xml)
+        root = tree.getroot()
+        # Clear existing users
+        for user in root.findall(".//user"):
+            root.remove(user)
+        # Add test user
+        user = ET.SubElement(root, "user")
+        user.set("username", "testuser")
+        user.set("password", password)
+        user.set("roles", "manager")
+        tree.write(users_xml, encoding="UTF-8", xml_declaration=True)
+        write_log(f"Modified tomcat-users.xml: Set password for testuser to {password_type} ({password})")
+        return True
+    except Exception as e:
+        write_log(f"Error modifying tomcat-users.xml: {str(e)}")
+        return False
+
+# Run CheckTomcatConfigUnix.py and capture output
+def run_check_script():
+    try:
+        result = subprocess.run(["./CheckTomcatConfigUnix.py"], capture_output=True, text=True)
+        return result.stdout.strip()
+    except Exception as e:
+        write_log(f"Error running CheckTomcatConfigUnix.py: {str(e)}")
+        return ""
+
+# Define test cases
+TEST_CASES = {
+    "10.0": {
+        "server_configs": [
+            {"name": "NoCredentialHandler", "config": None},
+            {"name": "MessageDigest_MD5", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "MD5"}},
+            {"name": "MessageDigest_SHA256", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-256", "iterations": "10000", "saltLength": "16"}},
+            {"name": "MessageDigest_SHA512", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-512", "iterations": "10000", "saltLength": "16"}},
+            {"name": "NestedCredentialHandler", "config": {"className": "org.apache.catalina.realm.NestedCredentialHandler"}},
+            {"name": "SecretKey_PBKDF2", "config": {"className": "org.apache.catalina.realm.SecretKeyCredentialHandler", "algorithm": "PBKDF2WithHmacSHA512", "iterations": "10000", "saltLength": "16", "keyLength": "256"}}
+        ],
+        "passwords": [
+            {"type": "Plaintext", "value": "s3cret"},
+            {"type": "Hashed_MD5", "value": "5ebe2294ecd0e0f08eab7690d2a6ee69"},
+            {"type": "Hashed_SHA1", "value": "e5e9fa1ba31ecd1ae84f75caaa474f3a663f05f4"},
+            {"type": "Hashed_SHA256", "value": "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"},
+            {"type": "Hashed_SHA512", "value": "ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff"},
+            {"type": "Salted_MD5", "value": "5ebe2294ecd0e0f08eab7690d2a6ee69:1234567890abcdef"},
+            {"type": "Salted_PBKDF2", "value": "4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef"}
+        ]
+    },
+    "10.1": {
+        "server_configs": [
+            {"name": "NoCredentialHandler", "config": None},
+            {"name": "MessageDigest_MD5", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "MD5"}},
+            {"name": "MessageDigest_SHA256", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-256", "iterations": "10000", "saltLength": "16"}},
+            {"name": "MessageDigest_SHA512", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-512", "iterations": "10000", "saltLength": "16"}},
+            {"name": "NestedCredentialHandler", "config": {"className": "org.apache.catalina.realm.NestedCredentialHandler"}},
+            {"name": "SecretKey_PBKDF2", "config": {"className": "org.apache.catalina.realm.SecretKeyCredentialHandler", "algorithm": "PBKDF2WithHmacSHA512", "iterations": "10000", "saltLength": "16", "keyLength": "256"}}
+        ],
+        "passwords": [
+            {"type": "Plaintext", "value": "s3cret"},
+            {"type": "Hashed_MD5", "value": "5ebe2294ecd0e0f08eab7690d2a6ee69"},
+            {"type": "Hashed_SHA1", "value": "e5e9fa1ba31ecd1ae84f75caaa474f3a663f05f4"},
+            {"type": "Hashed_SHA256", "value": "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"},
+            {"type": "Hashed_SHA512", "value": "ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff"},
+            {"type": "Salted_MD5", "value": "5ebe2294ecd0e0f08eab7690d2a6ee69:1234567890abcdef"},
+            {"type": "Salted_PBKDF2", "value": "4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef"}
+        ]
+    }
 }
 
-# Check root privileges
-check_root() {
-    if [ "$(id -u)" != "0" ]; then
-        echo "This script must be run as root or with sudo."
-        exit 1
-    fi
+# Expected output patterns
+EXPECTED_OUTPUTS = {
+    "Plaintext": {
+        "pattern": r"User 'testuser': Plaintext password \(insecure\).*Parameter: Password Type = Plaintext \[FAIL\].*Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark.*Plaintext passwords detected",
+        "pass": False
+    },
+    "Hashed_MD5": {
+        "pattern": r"User 'testuser': Hashed_MD5 password \(insecure\).*Parameter: Password Type = Hashed_MD5 \[FAIL\].*Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark.*Weak password hashing \(Hashed_MD5\)",
+        "pass": False
+    },
+    "Hashed_SHA1": {
+        "pattern": r"User 'testuser': Hashed_SHA1 password \(insecure\).*Parameter: Password Type = Hashed_SHA1 \[FAIL\].*Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark.*Weak password hashing \(SHA-1\)",
+        "pass": False
+    },
+    "Hashed_SHA256": {
+        "default": {
+            "pattern": r"User 'testuser': Hashed_SHA256 password \(secure\).*Parameter: Password Type = Hashed_SHA256 \[PASS\].*Parameter: Algorithm = SHA-256 \[PASS\].*Parameter: Iterations = 10000 \[PASS\].*Parameter: Salt Length = 16 \[PASS\].*Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark",
+            "pass": True
+        },
+        "non_compliant": {
+            "pattern": r"User 'testuser': Hashed_SHA256 password \(secure\).*Parameter: Password Type = Hashed_SHA256 \[PASS\].*Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark.*Hashed_SHA256 passwords should use salt and iterations",
+            "pass": False
+        }
+    },
+    "Hashed_SHA512": {
+        "default": {
+            "pattern": r"User 'testuser': Hashed_SHA512 password \(secure\).*Parameter: Password Type = Hashed_SHA512 \[PASS\].*Parameter: Algorithm = SHA-512 \[PASS\].*Parameter: Iterations = 10000 \[PASS\].*Parameter: Salt Length = 16 \[PASS\].*Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark",
+            "pass": True
+        },
+        "non_compliant": {
+            "pattern": r"User 'testuser': Hashed_SHA512 password \(secure\).*Parameter: Password Type = Hashed_SHA512 \[PASS\].*Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark.*Hashed_SHA512 passwords should use salt and iterations",
+            "pass": False
+        }
+    },
+    "Salted_MD5": {
+        "pattern": r"User 'testuser': Salted_MD5 password \(insecure\).*Parameter: Password Type = Salted_MD5 \[FAIL\].*Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark.*Weak password hashing \(Salted_MD5\)",
+        "pass": False
+    },
+    "Salted_PBKDF2": {
+        "9.0_10.0_10.1": {
+            "pattern": r"User 'testuser': Salted_PBKDF2 password \(secure\).*Parameter: Password Type = Salted_PBKDF2 \[PASS\].*Parameter: CredentialHandler = org.apache.catalina.realm.SecretKeyCredentialHandler \[PASS\].*Parameter: Algorithm = PBKDF2WithHmacSHA512 \[PASS\].*Parameter: Iterations = 10000 \[PASS\].*Parameter: Salt Length = 16 \[PASS\].*Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark",
+            "pass": True
+        },
+        "non_compliant": {
+            "pattern": r"User 'testuser': Salted_PBKDF2 password \(secure\).*Parameter: Password Type = Salted_PBKDF2 \[PASS\].*Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark.*Salted_PBKDF2 requires SecretKeyCredentialHandler with PBKDF2",
+            "pass": False
+        }
+    }
 }
 
-# Install OpenJDK 8 manually from Adoptium
-install_openjdk8_manual() {
-    log "Attempting manual installation of OpenJDK 8 from Adoptium..."
-    local JDK_URL="https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u412-b08/OpenJDK8U-jdk_x64_linux_hotspot_8u412b08.tar.gz"
-    local JDK_TAR="/tmp/OpenJDK8U-jdk_x64_linux_hotspot_8u412b08.tar.gz"
-    local JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64"
+# Main testing logic
+def run_tests():
+    write_log("Starting tests for CheckTomcatConfigUnix.py...")
+    
+    # Verify CheckTomcatConfigUnix.py exists
+    if not os.path.exists("CheckTomcatConfigUnix.py"):
+        write_log("Error: CheckTomcatConfigUnix.py not found in current directory")
+        sys.exit(1)
+    write_log("Verified file exists: ./CheckTomcatConfigUnix.py")
 
-    # Download JDK
-    log "Downloading OpenJDK 8 from ${JDK_URL}..."
-    if ! wget --tries=5 --timeout=60 -q --show-progress "$JDK_URL" -O "$JDK_TAR" 2>> "$LOG_FILE"; then
-        log "ERROR: Failed to download OpenJDK 8 from ${JDK_URL}. Check network or URL."
-        exit 1
-    fi
+    # Clear log file
+    try:
+        open(log_file, "w").close()
+    except PermissionError:
+        write_log(f"Warning: Cannot clear {log_file}. Continuing with existing log.")
 
-    # Extract JDK
-    log "Extracting OpenJDK 8 to ${JAVA_HOME}..."
-    mkdir -p "$JAVA_HOME"
-    if ! tar xzf "$JDK_TAR" -C "$JAVA_HOME" --strip-components=1; then
-        log "ERROR: Failed to extract OpenJDK 8 archive."
-        exit 1
-    fi
-    rm "$JDK_TAR"
+    # Find Tomcat configuration
+    conf_path = get_tomcat_config_path()
+    if not conf_path:
+        write_log("Error: No Tomcat configuration directory found")
+        sys.exit(1)
+    tomcat_version = detect_tomcat_version(os.path.dirname(conf_path))
+    write_log(f"Found Tomcat at {conf_path}, version: {tomcat_version}")
 
-    # Update alternatives
-    log "Configuring Java 8 in update-alternatives..."
-    update-alternatives --install /usr/bin/java java "${JAVA_HOME}/bin/java" 1081
-    update-alternatives --install /usr/bin/javac javac "${JAVA_HOME}/bin/javac" 1081
+    # Backup original files
+    write_log(f"Backed up original files to {backup_dir}")
+    backup_configs(conf_path)
 
-    # Verify installation
-    if ! "${JAVA_HOME}/bin/java" -version 2>&1 | grep -q "1\.8\."; then
-        log "ERROR: Manual OpenJDK 8 installation failed. Check ${JAVA_HOME}/bin/java."
-        exit 1
-    fi
-    log "OpenJDK 8 successfully installed at ${JAVA_HOME}"
-}
+    total_tests = 0
+    passed_tests = 0
 
-# Uninstall Tomcat
-uninstall_tomcat() {
-    log "Starting Tomcat uninstallation process..."
+    # Run tests for the detected version
+    if tomcat_version not in TEST_CASES:
+        write_log(f"Warning: Unsupported Tomcat version {tomcat_version}. Skipping tests.")
+        sys.exit(1)
 
-    log "Stopping Tomcat service..."
-    systemctl stop tomcat.service > /dev/null 2>&1 || true
+    for server_config in TEST_CASES[tomcat_version]["server_configs"]:
+        for password in TEST_CASES[tomcat_version]["passwords"]:
+            test_name = f"{tomcat_version}_{server_config['name']}_{password['type']}"
+            total_tests += 1
 
-    log "Disabling Tomcat service..."
-    systemctl disable tomcat.service > /dev/null 2>&1 || true
+            write_log(f"Test: {test_name}", indent=1)
+            write_log(f"Description: Testing {password['type']} password with {server_config['name']} CredentialHandler", indent=2)
 
-    log "Removing systemd service..."
-    rm -f /etc/systemd/system/tomcat.service
-    systemctl daemon-reload
+            # Modify server.xml
+            if not modify_server_xml(conf_path, server_config["config"]):
+                write_log("Result: SKIPPED (failed to modify server.xml)", indent=2)
+                continue
 
-    log "Removing Tomcat directory..."
-    rm -rf "$TOMCAT_DIR"
+            # Modify tomcat-users.xml
+            if not modify_users_xml(conf_path, password["value"], password["type"]):
+                write_log("Result: SKIPPED (failed to modify tomcat-users.xml)", indent=2)
+                continue
 
-    log "Removing tomcat user..."
-    if id "tomcat" > /dev/null 2>&1; then
-        userdel -r tomcat || log "Failed to remove tomcat user"
-        groupdel tomcat || log "Failed to remove tomcat group"
-    else
-        log "Tomcat user not found"
-    fi
+            # Run check script
+            output = run_check_script()
+            write_log("Actual output:", indent=2)
+            write_log(output, indent=3)
 
-    log "Tomcat uninstallation completed successfully"
-}
+            # Determine expected output
+            expected = EXPECTED_OUTPUTS[password["type"]]
+            if password["type"] in ["Hashed_SHA256", "Hashed_SHA512"]:
+                expected_pattern = expected["default"]["pattern"] if server_config["name"] in ["MessageDigest_SHA256", "MessageDigest_SHA512"] else expected["non_compliant"]["pattern"]
+                expected_pass = server_config["name"] in ["MessageDigest_SHA256", "MessageDigest_SHA512"]
+            elif password["type"] == "Salted_PBKDF2":
+                expected_pattern = expected["9.0_10.0_10.1"]["pattern"] if server_config["name"] == "SecretKey_PBKDF2" else expected["non_compliant"]["pattern"]
+                expected_pass = server_config["name"] == "SecretKey_PBKDF2"
+            else:
+                expected_pattern = expected["pattern"]
+                expected_pass = expected["pass"]
 
-# Install Tomcat
-install_tomcat() {
-    local TOMCAT_MAJOR=$1
-    local TOMCAT_VERSION
-    local TOMCAT_URLS
-    local JAVA_HOME
-    local JAVA_VERSION
-    local JAVA_OPTS
-    local JAVA_BIN
-    local CHECKSUM_URL
-    local CHECKSUM
-    local LOCAL_FILE
+            # Check result
+            if re.search(expected_pattern, output, re.DOTALL):
+                write_log("Result: PASSED", indent=2)
+                passed_tests += 1 if expected_pass else 0
+            else:
+                write_log("Result: FAILED (output does not match expected pattern)", indent=2)
 
-    case $TOMCAT_MAJOR in
-        7)
-            TOMCAT_VERSION="7.0.100"
-            LOCAL_FILE="/tmp/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            TOMCAT_URLS=(
-                "https://archive.apache.org/dist/tomcat/tomcat-7/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://dlcdn.apache.org/tomcat/tomcat-7/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://downloads.apache.org/tomcat/tomcat-7/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            )
-            JAVA_VERSION="8"
-            JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64"
-            JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
-            JAVA_BIN="${JAVA_HOME}/bin/java"
-            CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-7/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
-            CHECKSUM="c81fbd42e47e269ceae530ab75f9eacba59dbbad1fc608a90cd4dad0b25202df81f006f3270f5691eb22aae4eed760435beb616b469e30e0f8c6f8fe2a183eec"
-            ;;
-        8.5)
-            TOMCAT_VERSION="8.5.100"
-            LOCAL_FILE="/tmp/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            TOMCAT_URLS=(
-                "https://dlcdn.apache.org/tomcat/tomcat-8/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://archive.apache.org/dist/tomcat/tomcat-8/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://downloads.apache.org/tomcat/tomcat-8/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            )
-            JAVA_VERSION="11"
-            JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
-            JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED"
-            JAVA_BIN="${JAVA_HOME}/bin/java"
-            CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-8/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
-            CHECKSUM="e7f6c4b9a2d8e1f0c3a5b7e9f2d1c4a8b6e7f9d0c2a3b5e8f1d0c4a7b6e9f2d1c3a5b7e9f2d0c4a8b6e7f9d0c2a3b5e8f1d0c4a7b6e9f2d1c3a5b7e9f2d0c4a8"
-            ;;
-        9)
-            TOMCAT_VERSION="9.0.104"
-            LOCAL_FILE="/tmp/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            TOMCAT_URLS=(
-                "https://dlcdn.apache.org/tomcat/tomcat-9/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://downloads.apache.org/tomcat/tomcat-9/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            )
-            JAVA_VERSION="11"
-            JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
-            JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
-            JAVA_BIN="${JAVA_HOME}/bin/java"
-            CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
-            CHECKSUM="a1b2c3d4e5f6b7c9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5"
-            ;;
-        *)
-            log "ERROR: Unsupported Tomcat version. Choose 7, 8.5, or 9."
-            exit 1
-            ;;
-    esac
+    # Restore original configuration
+    write_log("Restored original configuration files")
+    restore_configs(conf_path)
 
-    log "Starting installation of Tomcat ${TOMCAT_MAJOR} (${TOMCAT_VERSION})"
+    # Summarize results
+    write_log("Test Summary:", indent=1)
+    write_log(f"Total tests run: {total_tests}", indent=2)
+    write_log(f"Tests passed: {passed_tests}", indent=2)
+    write_log(f"Tests failed: {total_tests - passed_tests}", indent=2)
+    write_log("All tests completed")
 
-    # Check internet connectivity
-    log "Checking internet connectivity..."
-    if ! ping -c 1 google.com > /dev/null 2>&1; then
-        log "ERROR: No internet connection. Please connect to the internet and try again."
-        exit 1
-    fi
-
-    # Update package list
-    log "Updating package list..."
-    apt update -y
-
-    # Install required Java version
-    log "Installing OpenJDK ${JAVA_VERSION}..."
-    if [ "$JAVA_VERSION" = "8" ]; then
-        if ! apt install -y openjdk-8-jdk 2>/dev/null; then
-            log "WARNING: OpenJDK 8 not found in Kali repositories. Attempting manual installation..."
-            install_openjdk8_manual
-        fi
-    else
-        if ! apt install -y openjdk-${JAVA_VERSION}-jdk; then
-            log "ERROR: Failed to install OpenJDK ${JAVA_VERSION}. Ensure the package is available."
-            exit 1
-        fi
-    fi
-
-    # Verify Java installation
-    log "Verifying Java installation..."
-    if [ ! -f "$JAVA_BIN" ]; then
-        log "ERROR: Java binary ${JAVA_BIN} not found. Ensure ${JAVA_HOME} is correct."
-        log "Attempting to find Java ${JAVA_VERSION} installation..."
-        JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
-        JAVA_BIN="${JAVA_HOME}/bin/java"
-        if [ ! -f "$JAVA_BIN" ]; then
-            log "ERROR: Could not locate Java binary for Java ${JAVA_VERSION}."
-            exit 1
-        fi
-        log "Using JAVA_HOME: ${JAVA_HOME}"
-    fi
-    JAVA_VERSION_OUTPUT=$("$JAVA_BIN" -version 2>&1)
-    log "java -version output: ${JAVA_VERSION_OUTPUT}"
-    if ! echo "$JAVA_VERSION_OUTPUT" | grep -q "1${JAVA_VERSION}\." && ! echo "$JAVA_VERSION_OUTPUT" | grep -q "${JAVA_VERSION}\." && ! echo "$JAVA_VERSION_OUTPUT" | grep -q "openjdk version.*${JAVA_VERSION}"; then
-        log "ERROR: Java ${JAVA_VERSION} not detected with ${JAVA_BIN}."
-        DETECTED_VERSION=$(echo "$JAVA_VERSION_OUTPUT" | head -n 1 | awk '{print $3}' | tr -d '"')
-        if [[ "$DETECTED_VERSION" =~ ^${JAVA_VERSION}\. ]]; then
-            log "WARNING: Detected Java version ${DETECTED_VERSION}, proceeding with installation."
-        else
-            log "ERROR: Detected version ${DETECTED_VERSION} does not match required Java ${JAVA_VERSION}."
-            log "Run 'update-alternatives --config java' to select Java ${JAVA_VERSION} or verify ${JAVA_HOME}."
-            exit 1
-        fi
-    fi
-
-    # Verify JAVA_HOME
-    if [ ! -d "$JAVA_HOME" ]; then
-        log "ERROR: JAVA_HOME directory ${JAVA_HOME} does not exist."
-        exit 1
-    fi
-
-    # Create tomcat user
-    log "Creating tomcat user..."
-    if ! id tomcat > /dev/null 2>&1; then
-        useradd -m -d "$TOMCAT_DIR" -s /bin/false -U tomcat
-    else
-        log "Tomcat user already exists"
-    fi
-
-    # Download Tomcat with fallback
-    log "Downloading Apache Tomcat ${TOMCAT_VERSION}..."
-    cd /tmp
-    DOWNLOADED=false
-    for TOMCAT_URL in "${TOMCAT_URLS[@]}"; do
-        log "Attempting download from ${TOMCAT_URL}..."
-        if wget --tries=5 --timeout=60 --server-response -q --show-progress "$TOMCAT_URL" 2>> "$LOG_FILE"; then
-            log "Successfully downloaded from ${TOMCAT_URL}"
-            DOWNLOADED=true
-            break
-        else
-            log "WARNING: Failed to download from ${TOMCAT_URL}. Trying next URL..."
-            sleep 2
-        fi
-    done
-
-    # Check for local file if download failed
-    if [ "$DOWNLOADED" = false ]; then
-        log "All download URLs failed. Checking for local file at ${LOCAL_FILE}..."
-        if [ -f "$LOCAL_FILE" ]; then
-            log "Found local file ${LOCAL_FILE}. Proceeding with installation..."
-            DOWNLOADED=true
-            mv "$LOCAL_FILE" "apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-        else
-            log "ERROR: Failed to download Tomcat archive from all URLs and no local file found."
-            log "URLs tried: ${TOMCAT_URLS[*]}"
-            log "Place apache-tomcat-${TOMCAT_VERSION}.tar.gz in /tmp and retry."
-            exit 1
-        fi
-    fi
-
-    # Verify downloaded file
-    if [ ! -f "apache-tomcat-${TOMCAT_VERSION}.tar.gz" ]; then
-        log "ERROR: Downloaded Tomcat archive not found."
-        exit 1
-    fi
-
-    # Verify checksum
-    log "Verifying checksum of downloaded file..."
-    COMPUTED_CHECKSUM=$(sha512sum "apache-tomcat-${TOMCAT_VERSION}.tar.gz" | awk '{print $1}')
-    if ! echo "$CHECKSUM apache-tomcat-${TOMCAT_VERSION}.tar.gz" | sha512sum -c - > /dev/null 2>&1; then
-        log "ERROR: Checksum verification failed for apache-tomcat-${TOMCAT_VERSION}.tar.gz."
-        log "Expected SHA512: $CHECKSUM"
-        log "Computed SHA512: $COMPUTED_CHECKSUM"
-        log "Download may be corrupted or tampered with."
-        rm -f "apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-        exit 1
-    fi
-    log "Checksum verification passed."
-
-    # Remove existing installation
-    log "Removing previous installations..."
-    systemctl stop tomcat.service > /dev/null 2>&1 || true
-    rm -rf "$TOMCAT_DIR"
-
-    # Extract Tomcat
-    log "Extracting Tomcat to ${TOMCAT_DIR}..."
-    mkdir -p "$TOMCAT_DIR"
-    if ! tar xzf "apache-tomcat-${TOMCAT_VERSION}.tar.gz" -C "$TOMCAT_DIR" --strip-components=1; then
-        log "ERROR: Failed to extract Tomcat archive."
-        exit 1
-    fi
-    rm "apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-
-    # Set permissions
-    log "Setting permissions..."
-    chown -R tomcat:tomcat "$TOMCAT_DIR"
-    chmod -R u+rwx "$TOMCAT_DIR"
-    chmod +x "$TOMCAT_DIR/bin/"*.sh
-
-    # Create systemd service
-    log "Configuring systemd service..."
-    cat > /etc/systemd/system/tomcat.service << EOF
-[Unit]
-Description=Apache Tomcat Web Application Container
-After=network.target
-
-[Service]
-Type=forking
-Environment="JAVA_HOME=${JAVA_HOME}"
-Environment="CATALINA_PID=${TOMCAT_DIR}/temp/tomcat.pid"
-Environment="CATALINA_HOME=${TOMCAT_DIR}"
-Environment="CATALINA_BASE=${TOMCAT_DIR}"
-Environment="CATALINA_OPTS=-Xms512M -Xmx1024M -server -XX:+UseParallelGC"
-Environment="JAVA_OPTS=${JAVA_OPTS}"
-ExecStart=${TOMCAT_DIR}/bin/startup.sh
-ExecStop=${TOMCAT_DIR}/bin/shutdown.sh
-User=tomcat
-Group=tomcat
-UMask=0007
-RestartSec=10
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # Enable and start service
-    log "Starting Tomcat service..."
-    systemctl daemon-reload
-    systemctl enable tomcat
-    if ! systemctl start tomcat; then
-        log "ERROR: Failed to start Tomcat service. Check logs in ${TOMCAT_DIR}/logs/catalina.out."
-        exit 1
-    fi
-
-    # Verify installation
-    log "Verifying installation..."
-    sleep 10
-    if curl -s -f "http://localhost:8080" > /dev/null; then
-        log "SUCCESS: Tomcat ${TOMCAT_VERSION} is running at http://localhost:8080"
-    else
-        log "WARNING: Tomcat service started but web interface not accessible. Check ${TOMCAT_DIR}/logs/catalina.out."
-    fi
-
-    log "Installation complete. Configure tomcat-users.xml in ${TOMCAT_DIR}/conf for auditing."
-}
-
-# Main script execution
-check_root
-
-case "$1" in
-    install)
-        if [ -z "$2" ]; then
-            log "ERROR: Please specify a Tomcat version (7, 8.5, or 9)"
-            exit 1
-        fi
-        install_tomcat "$2"
-        ;;
-    uninstall)
-        uninstall_tomcat
-        ;;
-    *)
-        echo "Usage: $0 [install 7|8.5|9] [uninstall]"
-        exit 1
-        ;;
-esac
-
-exit 0
+if __name__ == "__main__":
+    run_tests()
