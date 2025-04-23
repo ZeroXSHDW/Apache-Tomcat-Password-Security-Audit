@@ -56,20 +56,39 @@ def get_tomcat_config_path():
 def detect_tomcat_version(tomcat_home):
     version_file = os.path.join(tomcat_home, "RELEASE-NOTES")
     if os.path.exists(version_file):
-        with open(version_file, "r") as f:
-            for line in f:
-                if line.startswith("Apache Tomcat Version"):
-                    version = line.split()[-1]
+        try:
+            with open(version_file, "r") as f:
+                content = f.read()
+                match = re.search(r"Apache Tomcat Version\s+([0-9]+\.[0-9]+\.[0-9]+)", content)
+                if match:
+                    version = match.group(1)
                     if version.startswith("7.0"): return "7.0"
                     elif version.startswith("8.5"): return "8.5"
                     elif version.startswith("9.0"): return "9.0"
                     elif version.startswith("10.0"): return "10.0"
                     elif version.startswith("10.1"): return "10.1"
+        except Exception as e:
+            write_log(f"Error reading {version_file}: {str(e)}")
+    # Check directory name
     if "tomcat7" in tomcat_home.lower(): return "7.0"
     if "tomcat8" in tomcat_home.lower(): return "8.5"
     if "tomcat9" in tomcat_home.lower(): return "9.0"
     if "tomcat10" in tomcat_home.lower(): return "10.0"
-    return "Unknown"
+    # Check server.xml for version clues
+    server_xml = os.path.join(tomcat_home, "conf/server.xml")
+    if os.path.exists(server_xml):
+        try:
+            with open(server_xml, "r") as f:
+                content = f.read()
+                if "org.apache.catalina.startup.VersionLoggerListener" in content:
+                    if "tomcat10" in tomcat_home.lower() or "10." in content: return "10.0"
+                    elif "9." in content: return "9.0"
+                    elif "8." in content: return "8.5"
+                    elif "7." in content: return "7.0"
+        except Exception as e:
+            write_log(f"Error reading {server_xml}: {str(e)}")
+    write_log(f"Warning: Could not determine Tomcat version at {tomcat_home}, defaulting to 7.0")
+    return "7.0"
 
 # Backup configuration files
 def backup_configs(conf_path):
@@ -146,7 +165,7 @@ def modify_users_xml(conf_path, password, password_type):
 # Run CheckTomcatConfigUnix.py and capture output
 def run_check_script():
     try:
-        result = subprocess.run(["./CheckTomcatConfigUnix.py"], capture_output=True, text=True)
+        result = subprocess.run(["python3", "CheckTomcatConfigUnix.py"], capture_output=True, text=True)
         return result.stdout.strip()
     except Exception as e:
         write_log(f"Error running CheckTomcatConfigUnix.py: {str(e)}")
@@ -237,7 +256,7 @@ TEST_CASES = {
             {"name": "MessageDigest_SHA256", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-256", "iterations": "10000", "saltLength": "16"}},
             {"name": "MessageDigest_SHA512", "config": {"className": "org.apache.catalina.realm.MessageDigestCredentialHandler", "algorithm": "SHA-512", "iterations": "10000", "saltLength": "16"}},
             {"name": "NestedCredentialHandler", "config": {"className": "org.apache.catalina.realm.NestedCredentialHandler"}},
-            {"name": "SecretKey_PBKDF2", "config": {"className": "org.apache.catalina.realm.SecretKeyCredentialHandler", "algorithm": "PBKDF2WithHmacSHA512", "iterations": "10000", "saltLength": "16", "keyLength": "256"}}
+            {"name": "SecretKey_PBKDF2", "config": {"className": "org.apache.catalina.realm SecretKeyCredentialHandler", "algorithm": "PBKDF2WithHmacSHA512", "iterations": "10000", "saltLength": "16", "keyLength": "256"}}
         ],
         "passwords": [
             {"type": "Plaintext", "value": "s3cret"},
