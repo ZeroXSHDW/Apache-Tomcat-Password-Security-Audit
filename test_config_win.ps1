@@ -1,5 +1,5 @@
-# test_config.ps1
-# Tests CheckTomcatConfig.ps1 for various Tomcat configurations (7.0, 8.5, 9.0)
+# test_config_win.ps1
+# Tests CheckTomcatConfigWin.ps1 for various Tomcat configurations (7.0, 8.5, 9.0)
 
 # Log setup
 $logFile = "$env:LOCALAPPDATA\Temp\TestTomcatConfig.log"
@@ -10,14 +10,14 @@ function Write-Log {
     Write-Host "[$timestamp] $Message"
 }
 
-Write-Log "Starting tests for CheckTomcatConfig.ps1..."
+Write-Log "Starting tests for CheckTomcatConfigWin.ps1..."
 
 # Verify script exists
-if (-not (Test-Path ".\CheckTomcatConfig.ps1")) {
-    Write-Log "Error: CheckTomcatConfig.ps1 not found"
+if (-not (Test-Path ".\CheckTomcatConfigWin.ps1")) {
+    Write-Log "Error: CheckTomcatConfigWin.ps1 not found"
     exit
 }
-Write-Log "Verified file exists: .\CheckTomcatConfig.ps1"
+Write-Log "Verified file exists: .\CheckTomcatConfigWin.ps1"
 
 # Clear existing log
 if (Test-Path $logFile) {
@@ -157,28 +157,4 @@ foreach ($serverTest in $serverTests) {
         $user = $users.SelectSingleNode("//user[@username='testuser']")
         if (-not $user) {
             $user = $users.CreateElement("user")
-            $user.SetAttribute("username", "testuser")
-            $user.SetAttribute("roles", "manager")
-            $users.'tomcat-users'.AppendChild($user)
-        }
-        $user.SetAttribute("password", $passwordValues[$passwordTest])
-        # Save with explicit UTF-8 encoding
-        $writerSettings = New-Object System.Xml.XmlWriterSettings
-        $writerSettings.Encoding = [System.Text.Encoding]::UTF8
-        $writerSettings.Indent = $true
-        $writer = [System.Xml.XmlWriter]::Create($usersXml, $writerSettings)
-        $users.Save($writer)
-        $writer.Close()
-
-        # Run CheckTomcatConfig.ps1
-        $output = & ".\CheckTomcatConfig.ps1" 2>&1
-        Write-Log "Test output: $output"
-    }
-}
-
-# Restore original files
-Copy-Item "$backupDir\server.xml.bak" $serverXml -Force
-Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force
-Write-Log "Restored original configuration files"
-
-Write-Log "All tests completed successfully"
+            $user.SetAttribute("username", "testuser
