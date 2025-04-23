@@ -16,6 +16,7 @@ Write-Log "Starting tests for CheckTomcatConfigWin.ps1..."
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $scriptPath = Join-Path $scriptDir "CheckTomcatConfigWin.ps1"
 Write-Log "Resolved script path: $scriptPath"
+Write-Log "Current working directory: $(Get-Location)"
 
 # Verify script exists
 if (-not (Test-Path $scriptPath)) {
@@ -169,9 +170,13 @@ $passwords = @(
 $testCases = @()
 $version = "10.0"
 foreach ($handler in $credentialHandlers) {
+    if (-not $handler.Name) {
+        Write-Log "Error: Invalid handler configuration, missing Name"
+        continue
+    }
     foreach ($password in $passwords) {
-        if (-not $handler.Name -or -not $password.Type) {
-            Write-Log "Skipping invalid test case: Handler=$($handler.Name), Password=$($password.Type)"
+        if (-not $password.Type) {
+            Write-Log "Error: Invalid password configuration, missing Type"
             continue
         }
         $testName = "${version}_$($handler.Name)_$($password.Type)"
@@ -233,7 +238,10 @@ foreach ($test in $testCases) {
             Set-Content -Path $path -Value $content -Encoding UTF8 -ErrorAction Stop
         } -ArgumentList $serverXmlPath, $test.ServerXml
         Wait-Job -Job $job -Timeout 5 | Out-Null
-        if ($job.State -eq "Running") { throw "Timeout writing server.xml" }
+        if ($job.State -eq "Running") {
+            Stop-Job -Job $job
+            throw "Timeout writing server.xml"
+        }
         Receive-Job -Job $job -ErrorAction Stop
         Remove-Job -Job $job -Force
 
@@ -242,7 +250,10 @@ foreach ($test in $testCases) {
             Set-Content -Path $path -Value $content -Encoding UTF8 -ErrorAction Stop
         } -ArgumentList $usersXmlPath, $test.UsersXml
         Wait-Job -Job $job -Timeout 5 | Out-Null
-        if ($job.State -eq "Running") { throw "Timeout writing tomcat-users.xml" }
+        if ($job.State -eq "Running") {
+            Stop-Job -Job $job
+            throw "Timeout writing tomcat-users.xml"
+        }
         Receive-Job -Job $job -ErrorAction Stop
         Remove-Job -Job $job -Force
     } catch {
@@ -262,18 +273,19 @@ foreach ($test in $testCases) {
     try {
         $job = Start-Job -ScriptBlock {
             param($scriptPath)
-            # Ensure the script path is valid in the job context
+            Write-Output "Job working directory: $(Get-Location)"
+            Write-Output "Executing script: $scriptPath"
             if (-not (Test-Path $scriptPath)) {
                 throw "Script not found at $scriptPath"
             }
             & $scriptPath 2>&1
         } -ArgumentList $scriptPath
-        $output = Wait-Job -Job $job -Timeout 10 | Receive-Job
+        $output = Wait-Job -Job $job -Timeout 10
         if ($job.State -eq "Running") {
             Stop-Job -Job $job
             throw "Timeout executing CheckTomcatConfigWin.ps1"
         }
-        $output = $output | Out-String
+        $output = Receive-Job -Job $job | Out-String
         Remove-Job -Job $job -Force
     } catch {
         Write-Log "Error executing script: $($_.Exception.Message)"
