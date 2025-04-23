@@ -151,7 +151,8 @@ foreach ($user in $users) {
         "^[a-f0-9]{40}$" { "Hashed_SHA1" }
         "^[a-f0-9]{64}$" { "Hashed_SHA256" }
         "^[a-f0-9]{128}$" { "Hashed_SHA512" }
-        "^[a-f0-9]{32}:[a-f0-9]{16}$" {
+        "^[a-f0-9]{32}:[a-f0-9]{16}$" { "Salted_MD5" }
+        "^[a-f0-9]{64}:[a-f0-9]{16}$" {
             if ($credentialHandler -and $credentialHandler.className -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and $credentialHandler.algorithm -eq "PBKDF2WithHmacSHA512") {
                 "Salted_PBKDF2"
             } else {
