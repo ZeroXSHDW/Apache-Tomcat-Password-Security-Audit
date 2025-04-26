@@ -33,7 +33,7 @@
   - `TomcatManager.ps1`: Installs/uninstalls Tomcat 7.0, 8.5, 9.0, 10.0, or 10.1 on Windows.
 - **Documentation**:
   - `README.md`: This file, detailing setup, usage, and configuration.
-  - `LICENSE`: MIT License details.
+  - `LICENSE`: Apache 2.0 License details.
 - **Assets**:
   - `assets/` folder: Contains the project banner image (`banner.png`) used in this README.
 
@@ -324,4 +324,4 @@ Add to `tomcat-users.xml`:
 Contributions are welcome! Submit pull requests or issues via the repository’s hosting platform. Ensure changes are tested across supported Tomcat versions and platforms.
 
 ## License
-This project is licensed under the MIT License. See `LICENSE` file for details.
+This project is licensed under the Apache 2.0 License. See `LICENSE` file for details.
