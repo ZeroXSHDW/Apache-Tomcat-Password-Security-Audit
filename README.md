@@ -1,4 +1,4 @@
-# Apache Tomcat - NIST & CIS Password Compliance Security - Security Auditor
+# Apache Tomcat - Password Security Auditor Tool - NIST & CIS Benchmark - 
 
 ![Tomcat Configuration Security Auditor Banner](assets/banner.jpg)
 
