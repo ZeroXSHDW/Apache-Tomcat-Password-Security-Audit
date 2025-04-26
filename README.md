@@ -1,6 +1,6 @@
 # Apache Tomcat - Password - NIST / CIS Benchmark Standard - Configuration - Security Auditor
 
-![Tomcat Configuration Security Auditor Banner](assets/banner.jpg)
+![Tomcat Configuration Security Auditor Banner](assets/banner.j)
 
 ## Overview
 
