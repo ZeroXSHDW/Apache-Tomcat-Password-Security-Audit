@@ -1,4 +1,4 @@
-# Tomcat Configuration Security Auditor
+# Apache Tomcat - NIST & CIS Password Compliance Security - Security Auditor
 
 ![Tomcat Configuration Security Auditor Banner](assets/banner.jpg)
 
