@@ -1,10 +1,10 @@
-# Tomcat Configuration Security Auditor
+# Apache Tomcat - Password - NIST / CIS Benchmark Standard - Configuration - Security Auditor
 
 ![Tomcat Configuration Security Auditor Banner](assets/banner.jpg)
 
 ## Overview
 
-The **Tomcat Configuration Security Auditor** is a set of tools designed to audit Apache Tomcat user authentication configurations for compliance with **NIST 800-53 IA-5** and **CIS Tomcat Benchmark** standards. This repository includes scripts for both Unix (Linux/macOS) and Windows environments, enabling system administrators and security professionals to evaluate password security across various Tomcat versions.
+**Apache Tomcat - Password - NIST / CIS Benchmark Standard - Configuration - Security Auditor** is a set of tools designed to audit Apache Tomcat user authentication configurations for compliance with **NIST 800-53 IA-5** and **CIS Tomcat Benchmark** standards. This repository includes scripts for both Unix (Linux/macOS) and Windows environments, enabling system administrators and security professionals to evaluate password security across various Tomcat versions.
 
 ### Key Features
 - **Automated Testing**: Scripts test multiple password types and credential handler configurations, modifying `server.xml` and `tomcat-users.xml` to simulate scenarios and validate compliance.
