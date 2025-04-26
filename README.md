@@ -1,6 +1,6 @@
 # Tomcat Configuration Security Auditor
 
-![Tomcat Configuration Security Auditor Banner](assets/banner.png)
+![Tomcat Configuration Security Auditor Banner](assets/banner.jpg)
 
 ## Overview
 
