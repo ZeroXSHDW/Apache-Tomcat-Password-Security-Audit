@@ -103,7 +103,7 @@ function Install-OpenJDK8Manual {
     # Verify installation
     Write-Log "Verifying Java installation..."
     try {
-        $javaVersion = & $javaExe -version 2>&1 | Out-String
+        $javaVersion = & $javaExe -version 2>&1 | ForEach-Object { $_ -replace '^.*?(openjdk version.*)$', '$1' } | Out-String
         Write-Log "java -version output: $javaVersion"
         if ($javaVersion -notmatch "1\.8\." -and $javaVersion -notmatch "8u") {
             Write-Log "ERROR: Installed Java version is not 8. Output: $javaVersion"
@@ -193,7 +193,7 @@ function Install-OpenJDK11Manual {
     # Verify installation
     Write-Log "Verifying Java installation..."
     try {
-        $javaVersion = & $javaExe -version 2>&1 | Out-String
+        $javaVersion = & $javaExe -version 2>&1 | ForEach-Object { $_ -replace '^.*?(openjdk version.*)$', '$1' } | Out-String
         Write-Log "java -version output: $javaVersion"
         if ($javaVersion -notmatch "11\.") {
             Write-Log "ERROR: Installed Java version is not 11. Output: $javaVersion"
@@ -254,33 +254,33 @@ function Install-Tomcat {
     switch ($TomcatMajor) {
         "7" {
             $TOMCAT_VERSION = "7.0.100"
-            $LOCAL_FILE = "$env:TEMP\apache-tomcat-$TOMCAT_VERSION.zip"
+            $LOCAL_FILE = "$env:TEMP\apache-tomcat-$TOMCAT_VERSION-windows-x64.zip"
             $TOMCAT_URLS = @(
-                "https://archive.apache.org/dist/tomcat/tomcat-7/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION.zip",
-                "https://dlcdn.apache.org/tomcat/tomcat-7/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION.zip",
-                "https://downloads.apache.org/tomcat/tomcat-7/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION.zip"
+                "https://archive.apache.org/dist/tomcat/tomcat-7/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION-windows-x64.zip",
+                "https://dlcdn.apache.org/tomcat/tomcat-7/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION-windows-x64.zip",
+                "https://downloads.apache.org/tomcat/tomcat-7/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION-windows-x64.zip"
             )
             $JAVA_VERSION = "8"
             $JAVA_HOME = "C:\Program Files\Java\jdk8u412-b08"
             $JAVA_OPTS = "-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
             $JAVA_BIN = "$JAVA_HOME\bin\java.exe"
-            $CHECKSUM_URL = "https://archive.apache.org/dist/tomcat/tomcat-7/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION.zip.sha512"
-            $CHECKSUM = "c81fbd42e47e269ceae530ab75f9eacba59dbbad1fc608a90cd4dad0b25202df81f006f3270f5691eb22aae4eed760435beb616b469e30e0f8c6f8fe2a183eec"
+            $CHECKSUM_URL = "https://archive.apache.org/dist/tomcat/tomcat-7/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION-windows-x64.zip.sha512"
+            $CHECKSUM = "75265bdf9bd5366fe33cbd1f5c7d01319c4803d2432f786f610237e0ae5cd00abda50a996a3d4df5adcb5ec814df0c7ebc80529e4505ce4ff749d50b36686efa"
         }
         "8.5" {
             $TOMCAT_VERSION = "8.5.100"
-            $LOCAL_FILE = "$env:TEMP\apache-tomcat-$TOMCAT_VERSION.zip"
+            $LOCAL_FILE = "$env:TEMP\apache-tomcat-$TOMCAT_VERSION-windows-x64.zip"
             $TOMCAT_URLS = @(
-                "https://dlcdn.apache.org/tomcat/tomcat-8/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION.zip",
-                "https://archive.apache.org/dist/tomcat/tomcat-8/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION.zip",
-                "https://downloads.apache.org/tomcat/tomcat-8/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION.zip"
+                "https://dlcdn.apache.org/tomcat/tomcat-8/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION-windows-x64.zip",
+                "https://archive.apache.org/dist/tomcat/tomcat-8/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION-windows-x64.zip",
+                "https://downloads.apache.org/tomcat/tomcat-8/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION-windows-x64.zip"
             )
             $JAVA_VERSION = "11"
             $JAVA_HOME = "C:\Program Files\Java\jdk-11"
             $JAVA_OPTS = "-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED"
             $JAVA_BIN = "$JAVA_HOME\bin\java.exe"
-            $CHECKSUM_URL = "https://archive.apache.org/dist/tomcat/tomcat-8/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION.zip.sha512"
-            $CHECKSUM = "e7f6c4b9a2d8e1f0c3a5b7e9f2d1c4a8b6e7f9d0c2a3b5e8f1d0c4a7b6e9f2d1c3a5b7e9f2d0c4a8b6e7f9d0c2a3b5e8f1d0c4a7b6e9f2d1c3a5b7e9f2d0c4a8"
+            $CHECKSUM_URL = "https://archive.apache.org/dist/tomcat/tomcat-8/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION-windows-x64.zip.sha512"
+            $CHECKSUM = "6493b64743374040cccc98ee8225c0f145587541d8f79de76803208e879e01a156da66e3e32bc5564f340a638c48d6e24b723cae28b2e83ee18db82c54527e1b"
         }
         "9" {
             $TOMCAT_VERSION = "9.0.104"
@@ -295,7 +295,7 @@ function Install-Tomcat {
             $JAVA_OPTS = "-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
             $JAVA_BIN = "$JAVA_HOME\bin\java.exe"
             $CHECKSUM_URL = "https://archive.apache.org/dist/tomcat/tomcat-9/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION.zip.sha512"
-            $CHECKSUM = "a1b2c3d4e5f6b7c9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5"
+            $CHECKSUM = "822db923d14a8600a62f9c87504f2e33dc8f3263cab46320288fd40312aad45aa0933fb50dcab68a1f5fd397180cb9a0e262a255647db247fc8426a78b012a50"
         }
         "10.0" {
             $TOMCAT_VERSION = "10.0.27"
@@ -310,7 +310,7 @@ function Install-Tomcat {
             $JAVA_OPTS = "-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
             $JAVA_BIN = "$JAVA_HOME\bin\java.exe"
             $CHECKSUM_URL = "https://archive.apache.org/dist/tomcat/tomcat-10/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION.zip.sha512"
-            $CHECKSUM = "d65c3db297c6eada0ddad69e3f5a5a4ef84da28b4e1f7f917f69dadaf133d9eabc6ab260b9f6d8d1a1e6ae48b873d8c23e4e98e95d51a1d625e6dc7b6e8cdfaab"
+            $CHECKSUM = "dd42eaef1a95a9a45033aea113196b9a033e805c0a4ca326d700616637186f4f7238aa048d0df60cfcdea682cc3f8471105ee94d984939d07c62289583fd6281"
         }
         "10.1" {
             $TOMCAT_VERSION = "10.1.31"
@@ -325,7 +325,7 @@ function Install-Tomcat {
             $JAVA_OPTS = "-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
             $JAVA_BIN = "$JAVA_HOME\bin\java.exe"
             $CHECKSUM_URL = "https://archive.apache.org/dist/tomcat/tomcat-10/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION.zip.sha512"
-            $CHECKSUM = "c16ed3e92f8e6f09fd2914d03645ed879398e06d779f585c25fa4e734c40e76ff4f76ebac45207e6b4f57c3f7f6f8f3ae6c8f3b0a0e5e7f9b7e8f9d9c6e7f9d9"
+            $CHECKSUM = "1f17166d97a4e41b066a75ee77bca12b2a834a8121fb1a354485d79f43668fd49200e991b13bf573ac4481fd061310b760f06788fbee28f459ab4f15c8dd355c"
         }
         default {
             Write-Log "ERROR: Unsupported Tomcat version. Choose 7, 8.5, 9, 10.0, or 10.1."
@@ -364,7 +364,7 @@ function Install-Tomcat {
         Write-Log "ERROR: Java binary $JAVA_BIN not found. Ensure $JAVA_HOME is correct."
         exit 1
     }
-    $JAVA_VERSION_OUTPUT = & $JAVA_BIN -version 2>&1 | Out-String
+    $JAVA_VERSION_OUTPUT = & $JAVA_BIN -version 2>&1 | ForEach-Object { $_ -replace '^.*?(openjdk version.*)$', '$1' } | Out-String
     Write-Log "java -version output: $JAVA_VERSION_OUTPUT"
     if ($JAVA_VERSION_OUTPUT -notmatch "1${JAVA_VERSION}\." -and $JAVA_VERSION_OUTPUT -notmatch "${JAVA_VERSION}\." -and $JAVA_VERSION_OUTPUT -notmatch "openjdk version.*${JAVA_VERSION}") {
         Write-Log "ERROR: Java $JAVA_VERSION not detected with $JAVA_BIN."
@@ -444,26 +444,45 @@ function Install-Tomcat {
     # Extract Tomcat
     Write-Log "Extracting Tomcat to $TOMCAT_DIR..."
     New-Item -ItemType Directory -Path $TOMCAT_DIR -Force | Out-Null
-    Expand-Archive -Path "$env:TEMP\apache-tomcat-$TOMCAT_VERSION.zip" -DestinationPath $TOMCAT_DIR -Force
+    try {
+        Expand-Archive -Path "$env:TEMP\apache-tomcat-$TOMCAT_VERSION.zip" -DestinationPath $TOMCAT_DIR -Force
+    } catch {
+        Write-Log "ERROR: Failed to extract Tomcat archive. Exception: $($_.Exception.Message)"
+        exit 1
+    }
     $extractedFolder = Get-ChildItem -Path $TOMCAT_DIR -Directory | Select-Object -First 1
-    Get-ChildItem -Path "$TOMCAT_DIR\$($extractedFolder.Name)" | Move-Item -Destination $TOMCAT_DIR
+    Get-ChildItem -Path "$TOMCAT_DIR\$($extractedFolder.Name)" | Move-Item -Destination $TOMCAT_DIR -Force
     Remove-Item -Path "$TOMCAT_DIR\$($extractedFolder.Name)" -Recurse -Force
     Remove-Item -Path "$env:TEMP\apache-tomcat-$TOMCAT_VERSION.zip" -Force
 
+    # Verify service.bat exists
+    $serviceBin = "$TOMCAT_DIR\bin\service.bat"
+    if (-not (Test-Path $serviceBin)) {
+        Write-Log "ERROR: service.bat not found in $TOMCAT_DIR\bin. The downloaded Tomcat archive may not be a valid Windows distribution."
+        Write-Log "Downloaded from: $TOMCAT_URL"
+        Write-Log "Ensure the archive is a Windows-specific ZIP file containing bin\service.bat."
+        exit 1
+    }
+
     # Set permissions
     Write-Log "Setting permissions..."
-    $acl = Get-Acl $TOMCAT_DIR
-    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("tomcat", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
-    $acl.SetAccessRule($rule)
-    Set-Acl -Path $TOMCAT_DIR -AclObject $acl
+    try {
+        $acl = Get-Acl $TOMCAT_DIR
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule("tomcat", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow")
+        $acl.SetAccessRule($rule)
+        Set-Acl -Path $TOMCAT_DIR -AclObject $acl
+    } catch {
+        Write-Log "ERROR: Failed to set permissions on $TOMCAT_DIR. Exception: $($_.Exception.Message)"
+        exit 1
+    }
 
     # Install Tomcat as a service
     Write-Log "Installing Tomcat as a Windows service..."
-    $serviceBin = "$TOMCAT_DIR\bin\service.bat"
-    if (Test-Path $serviceBin) {
+    try {
         & $serviceBin install | Out-Null
-    } else {
-        Write-Log "ERROR: service.bat not found in $TOMCAT_DIR\bin."
+    } catch {
+        Write-Log "ERROR: Failed to run service.bat to install Tomcat service. Exception: $($_.Exception.Message)"
+        Write-Log "Check $TOMCAT_DIR\bin\service.bat and ensure it is executable."
         exit 1
     }
 
@@ -479,14 +498,25 @@ Environment="CATALINA_BASE=$TOMCAT_DIR"
 Environment="CATALINA_OPTS=-Xms512M -Xmx1024M -server -XX:+UseParallelGC"
 Environment="JAVA_OPTS=$JAVA_OPTS"
 "@
-    Set-Content -Path "$TOMCAT_DIR\bin\tomcat_service_config.txt" -Value $serviceConfig
-    sc.exe config Tomcat start= auto | Out-Null
+    try {
+        Set-Content -Path "$TOMCAT_DIR\bin\tomcat_service_config.txt" -Value $serviceConfig
+        sc.exe config Tomcat start= auto | Out-Null
+    } catch {
+        Write-Log "ERROR: Failed to configure Tomcat service. Exception: $($_.Exception.Message)"
+        exit 1
+    }
 
     # Start service
     Write-Log "Starting Tomcat service..."
-    Start-Service -Name "Tomcat" -ErrorAction SilentlyContinue
-    if ((Get-Service -Name "Tomcat").Status -ne "Running") {
-        Write-Log "ERROR: Failed to start Tomcat service. Check logs in $TOMCAT_DIR\logs\catalina.out."
+    try {
+        Start-Service -Name "Tomcat" -ErrorAction Stop
+        if ((Get-Service -Name "Tomcat").Status -ne "Running") {
+            Write-Log "ERROR: Failed to start Tomcat service. Check logs in $TOMCAT_DIR\logs\catalina.out."
+            exit 1
+        }
+    } catch {
+        Write-Log "ERROR: Failed to start Tomcat service. Exception: $($_.Exception.Message)"
+        Write-Log "Check logs in $TOMCAT_DIR\logs\catalina.out for details."
         exit 1
     }
 
@@ -494,7 +524,7 @@ Environment="JAVA_OPTS=$JAVA_OPTS"
     Write-Log "Verifying installation..."
     Start-Sleep -Seconds 10
     try {
-        $response = Invoke-WebRequest -Uri "http://localhost:8080" -UseBasicParsing
+        $response = Invoke-WebRequest -Uri "http://localhost:8080" -UseBasicParsing -TimeoutSec 10
         if ($response.StatusCode -eq 200) {
             Write-Log "SUCCESS: Tomcat $TOMCAT_VERSION is running at http://localhost:8080"
         }
