@@ -436,6 +436,7 @@ function Install-Tomcat {
     $service = Get-Service -Name "Tomcat" -ErrorAction SilentlyContinue
     if ($service) {
         Stop-Service -Name "Tomcat" -Force -ErrorAction SilentlyContinue
+        sc.exe delete Tomcat | Out-Null
     }
     if (Test-Path $TOMCAT_DIR) {
         Remove-Item -Path $TOMCAT_DIR -Recurse -Force
@@ -479,45 +480,85 @@ function Install-Tomcat {
     # Install Tomcat as a service
     Write-Log "Installing Tomcat as a Windows service..."
     $serviceBin = "$TOMCAT_DIR\bin\service.bat"
+    $serviceInstalled = $false
     if (Test-Path $serviceBin) {
         Write-Log "Using service.bat to install Tomcat service..."
         try {
             & $serviceBin install | Out-Null
+            $serviceInstalled = $true
+            Write-Log "Service installed via service.bat."
         } catch {
             Write-Log "ERROR: Failed to run service.bat to install Tomcat service. Exception: $($_.Exception.Message)"
             Write-Log "Falling back to manual service creation..."
             Install-TomcatServiceManually -TomcatDir $TOMCAT_DIR -JavaHome $JAVA_HOME -JavaOpts $JAVA_OPTS -TomcatVersion $TOMCAT_VERSION
+            $serviceInstalled = $true
         }
     } else {
         Write-Log "service.bat not found in $TOMCAT_DIR\bin. Creating service manually..."
-        Install-TomcatServiceManually -TomcatDir $TOMCAT_DIR -JavaHome $JAVA_HOME -JavaOpts $JAVA_OPTS -TomcatVersion $TOMCAT_VERSION
+        try {
+            Install-TomcatServiceManually -TomcatDir $TOMCAT_DIR -JavaHome $JAVA_HOME -JavaOpts $JAVA_OPTS -TomcatVersion $TOMCAT_VERSION
+            $serviceInstalled = $true
+            Write-Log "Service installed manually."
+        } catch {
+            Write-Log "ERROR: Manual service creation failed. Exception: $($_.Exception.Message)"
+            $serviceInstalled = $false
+        }
     }
 
-    # Configure service
-    Write-Log "Configuring Tomcat service..."
-    try {
-        sc.exe config Tomcat start= auto | Out-Null
-    } catch {
-        Write-Log "ERROR: Failed to configure Tomcat service. Exception: $($_.Exception.Message)"
-        exit 1
+    # Configure service if installed
+    if ($serviceInstalled) {
+        Write-Log "Configuring Tomcat service..."
+        try {
+            sc.exe config Tomcat start= auto | Out-Null
+        } catch {
+            Write-Log "ERROR: Failed to configure Tomcat service. Exception: $($_.Exception.Message)"
+            $serviceInstalled = $false
+        }
     }
 
-    # Wait for service registration to complete
-    Write-Log "Waiting 5 seconds for service registration..."
-    Start-Sleep -Seconds 5
+    # Wait for service registration
+    if ($serviceInstalled) {
+        Write-Log "Waiting 5 seconds for service registration..."
+        Start-Sleep -Seconds 5
+    }
 
-    # Start service
-    Write-Log "Starting Tomcat service..."
-    try {
-        Start-Service -Name "Tomcat" -ErrorAction Stop
-        if ((Get-Service -Name "Tomcat").Status -ne "Running") {
-            Write-Log "ERROR: Failed to start Tomcat service. Check logs in $TOMCAT_DIR\logs\catalina.out."
+    # Attempt to start service
+    if ($serviceInstalled) {
+        Write-Log "Starting Tomcat service..."
+        try {
+            Start-Service -Name "Tomcat" -ErrorAction Stop
+            if ((Get-Service -Name "Tomcat").Status -ne "Running") {
+                Write-Log "ERROR: Failed to start Tomcat service. Check logs in $TOMCAT_DIR\logs\catalina.out."
+                $serviceInstalled = $false
+            } else {
+                Write-Log "Tomcat service started successfully."
+            }
+        } catch {
+            Write-Log "ERROR: Failed to start Tomcat service. Exception: $($_.Exception.Message)"
+            Write-Log "Check logs in $TOMCAT_DIR\logs\catalina.out for details."
+            $serviceInstalled = $false
+        }
+    }
+
+    # Fallback to startup.bat if service installation or start failed
+    if (-not $serviceInstalled) {
+        Write-Log "Service installation or start failed. Falling back to running startup.bat..."
+        try {
+            $startupBat = "$TOMCAT_DIR\bin\startup.bat"
+            if (Test-Path $startupBat) {
+                Write-Log "Running $startupBat..."
+                Start-Process -FilePath "cmd.exe" -ArgumentList "/c $startupBat" -WorkingDirectory "$TOMCAT_DIR\bin" -NoNewWindow
+                Write-Log "Started Tomcat via startup.bat. Note: This runs in a console and won't persist after script exits."
+                Start-Sleep -Seconds 10  # Wait for Tomcat to initialize
+            } else {
+                Write-Log "ERROR: startup.bat not found at $startupBat. Cannot start Tomcat."
+                exit 1
+            }
+        } catch {
+            Write-Log "ERROR: Failed to run startup.bat. Exception: $($_.Exception.Message)"
+            Write-Log "Check $TOMCAT_DIR\logs\catalina.out for details."
             exit 1
         }
-    } catch {
-        Write-Log "ERROR: Failed to start Tomcat service. Exception: $($_.Exception.Message)"
-        Write-Log "Check logs in $TOMCAT_DIR\logs\catalina.out for details."
-        exit 1
     }
 
     # Verify installation
@@ -529,10 +570,13 @@ function Install-Tomcat {
             Write-Log "SUCCESS: Tomcat $TOMCAT_VERSION is running at http://localhost:8080"
         }
     } catch {
-        Write-Log "WARNING: Tomcat service started but web interface not accessible. Check $TOMCAT_DIR\logs\catalina.out."
+        Write-Log "WARNING: Tomcat started but web interface not accessible. Check $TOMCAT_DIR\logs\catalina.out."
     }
 
     Write-Log "Installation complete. Configure tomcat-users.xml in $TOMCAT_DIR\conf for auditing."
+    if (-not $serviceInstalled) {
+        Write-Log "WARNING: Tomcat is running via startup.bat, not as a service. You must manually run $TOMCAT_DIR\bin\startup.bat to restart it after system reboot."
+    }
 }
 
 # Function to manually create Tomcat service
@@ -547,7 +591,7 @@ function Install-TomcatServiceManually {
     $catalinaBin = "$TomcatDir\bin\catalina.bat"
     if (-not (Test-Path $catalinaBin)) {
         Write-Log "ERROR: catalina.bat not found in $TomcatDir\bin. Cannot create service."
-        exit 1
+        throw "Missing catalina.bat"
     }
 
     $serviceName = "Tomcat"
@@ -561,7 +605,7 @@ function Install-TomcatServiceManually {
         Write-Log "Tomcat service created manually."
     } catch {
         Write-Log "ERROR: Failed to create Tomcat service manually. Exception: $($_.Exception.Message)"
-        exit 1
+        throw $_.Exception
     }
 }
 
