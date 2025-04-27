@@ -39,15 +39,35 @@ function Install-OpenJDK8Manual {
         $webClient = New-Object System.Net.WebClient
         $webClient.DownloadFile($JDK_URL, $JDK_ZIP)
     } catch {
-        Write-Log "ERROR: Failed to download OpenJDK 8 from $JDK_URL. Check network or URL."
+        Write-Log "ERROR: Failed to download OpenJDK 8 from $JDK_URL. Exception: $($_.Exception.Message)"
+        Write-Log "Check your network connection or verify the URL."
+        exit 1
+    }
+
+    # Verify downloaded file exists
+    if (-not (Test-Path $JDK_ZIP)) {
+        Write-Log "ERROR: Downloaded JDK ZIP file not found at $JDK_ZIP."
         exit 1
     }
 
     # Extract JDK
     Write-Log "Extracting OpenJDK 8 to $JAVA_HOME..."
-    New-Item -ItemType Directory -Path $JAVA_HOME -Force | Out-Null
-    Expand-Archive -Path $JDK_ZIP -DestinationPath $JAVA_HOME -Force
-    Remove-Item $JDK_ZIP
+    try {
+        New-Item -ItemType Directory -Path $JAVA_HOME -Force | Out-Null
+        Expand-Archive -Path $JDK_ZIP -DestinationPath $JAVA_HOME -Force
+    } catch {
+        Write-Log "ERROR: Failed to extract JDK ZIP file. Exception: $($_.Exception.Message)"
+        Write-Log "Ensure you have write permissions to $JAVA_HOME and sufficient disk space."
+        exit 1
+    }
+    Remove-Item $JDK_ZIP -Force
+
+    # Verify java.exe exists
+    $javaExe = "$JAVA_HOME\bin\java.exe"
+    if (-not (Test-Path $javaExe)) {
+        Write-Log "ERROR: java.exe not found at $javaExe after extraction."
+        exit 1
+    }
 
     # Set JAVA_HOME environment variable
     Write-Log "Setting JAVA_HOME environment variable..."
@@ -62,9 +82,16 @@ function Install-OpenJDK8Manual {
     }
 
     # Verify installation
-    $javaVersion = & "$JAVA_HOME\bin\java.exe" -version 2>&1 | Out-String
-    if ($javaVersion -notmatch "1\.8\.") {
-        Write-Log "ERROR: Manual OpenJDK 8 installation failed. Check $JAVA_HOME\bin\java.exe."
+    Write-Log "Verifying Java installation..."
+    try {
+        $javaVersion = & $javaExe -version 2>&1 | Out-String
+        Write-Log "java -version output: $javaVersion"
+        if ($javaVersion -notmatch "1\.8\." -and $javaVersion -notmatch "8u") {
+            Write-Log "ERROR: Installed Java version is not 8. Output: $javaVersion"
+            exit 1
+        }
+    } catch {
+        Write-Log "ERROR: Failed to run java -version. Exception: $($_.Exception.Message)"
         exit 1
     }
     Write-Log "OpenJDK 8 successfully installed at $JAVA_HOME"
