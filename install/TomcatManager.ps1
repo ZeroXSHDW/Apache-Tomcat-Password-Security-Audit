@@ -32,6 +32,7 @@ function Install-OpenJDK8Manual {
     $JDK_URL = "https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u412-b08/OpenJDK8U-jdk_x64_windows_hotspot_8u412b08.zip"
     $JDK_ZIP = "$env:TEMP\OpenJDK8U-jdk_x64_windows_hotspot_8u412b08.zip"
     $JAVA_HOME = "C:\Program Files\Java\jdk8u412-b08"
+    $TEMP_EXTRACT_PATH = "$env:TEMP\jdk8u412-b08"
 
     # Download JDK
     Write-Log "Downloading OpenJDK 8 from $JDK_URL..."
@@ -50,22 +51,40 @@ function Install-OpenJDK8Manual {
         exit 1
     }
 
-    # Extract JDK
-    Write-Log "Extracting OpenJDK 8 to $JAVA_HOME..."
+    # Extract JDK to temporary location
+    Write-Log "Extracting OpenJDK 8 to temporary path $TEMP_EXTRACT_PATH..."
     try {
-        New-Item -ItemType Directory -Path $JAVA_HOME -Force | Out-Null
-        Expand-Archive -Path $JDK_ZIP -DestinationPath $JAVA_HOME -Force
+        New-Item -ItemType Directory -Path $TEMP_EXTRACT_PATH -Force | Out-Null
+        Expand-Archive -Path $JDK_ZIP -DestinationPath $TEMP_EXTRACT_PATH -Force
     } catch {
         Write-Log "ERROR: Failed to extract JDK ZIP file. Exception: $($_.Exception.Message)"
-        Write-Log "Ensure you have write permissions to $JAVA_HOME and sufficient disk space."
+        Write-Log "Ensure you have write permissions to $TEMP_EXTRACT_PATH and sufficient disk space."
         exit 1
     }
     Remove-Item $JDK_ZIP -Force
 
+    # Move contents from nested jdk8u412-b08 to JAVA_HOME
+    Write-Log "Moving extracted files to $JAVA_HOME..."
+    try {
+        New-Item -ItemType Directory -Path $JAVA_HOME -Force | Out-Null
+        $nestedPath = Join-Path -Path $TEMP_EXTRACT_PATH -ChildPath "jdk8u412-b08"
+        if (Test-Path $nestedPath) {
+            Get-ChildItem -Path $nestedPath | Move-Item -Destination $JAVA_HOME -Force
+            Write-Log "Moved contents from $nestedPath to $JAVA_HOME"
+        } else {
+            Write-Log "ERROR: Expected nested directory $nestedPath not found."
+            exit 1
+        }
+        Remove-Item -Path $TEMP_EXTRACT_PATH -Recurse -Force
+    } catch {
+        Write-Log "ERROR: Failed to move files to $JAVA_HOME. Exception: $($_.Exception.Message)"
+        exit 1
+    }
+
     # Verify java.exe exists
     $javaExe = "$JAVA_HOME\bin\java.exe"
     if (-not (Test-Path $javaExe)) {
-        Write-Log "ERROR: java.exe not found at $javaExe after extraction."
+        Write-Log "ERROR: java.exe not found at $javaExe after moving files."
         exit 1
     }
 
