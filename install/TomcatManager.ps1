@@ -502,6 +502,10 @@ function Install-Tomcat {
         exit 1
     }
 
+    # Wait for service registration to complete
+    Write-Log "Waiting 5 seconds for service registration..."
+    Start-Sleep -Seconds 5
+
     # Start service
     Write-Log "Starting Tomcat service..."
     try {
