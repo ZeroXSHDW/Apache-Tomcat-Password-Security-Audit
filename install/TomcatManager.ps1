@@ -255,7 +255,7 @@ function Install-Tomcat {
             $JAVA_OPTS = "-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
             $JAVA_BIN = "$JAVA_HOME\bin\java.exe"
             $CHECKSUM_URL = "https://archive.apache.org/dist/tomcat/tomcat-7/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION-windows-x64.zip.sha512"
-            $CHECKSUM = "75265bdf9bd5366fe33cbd1f5c7d01319c4803d2432f786f610237e0ae5cd00abda50a996a3d4df5adcb5ec814df0c7ebc80529e4505ce4ff749d50b36686efa"
+            $CHECKSUM = "e01bff687ca8480374324ac2f66ead5c60626b4db4cec93448820396fc7ec07dea1ad968d55b4bcd0a4362f3ad5d2080a1598d514da88ec9cbd2282b32a397a4"
         }
         "8.5" {
             $TOMCAT_VERSION = "8.5.100"
@@ -270,7 +270,7 @@ function Install-Tomcat {
             $JAVA_OPTS = "-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED"
             $JAVA_BIN = "$JAVA_HOME\bin\java.exe"
             $CHECKSUM_URL = "https://archive.apache.org/dist/tomcat/tomcat-8/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION-windows-x64.zip.sha512"
-            $CHECKSUM = "6493b64743374040cccc98ee8225c0f145587541d8f79de76803208e879e01a156da66e3e32bc5564f340a638c48d6e24b723cae28b2e83ee18db82c54527e1b"
+            $CHECKSUM = "191b039649fc8d3e409570cde78a9d06fd2ff9b6b49e0b712ed848984b3c4c45fd0887d2ac46475f32bd01355146b0fd978e7edcb5ffa9a6ecb9b38aabae3e66"
         }
         "9" {
             $TOMCAT_VERSION = "9.0.104"
