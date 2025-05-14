@@ -320,8 +320,5 @@ Add to `tomcat-users.xml`:
     Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
     ```
 
-## Contributing
-Contributions are welcome! Submit pull requests or issues via the repository’s hosting platform. Ensure changes are tested across supported Tomcat versions and platforms.
-
 ## License
 This project is licensed under the Apache 2.0 License. See `LICENSE` file for details.
