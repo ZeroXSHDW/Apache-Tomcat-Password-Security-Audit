@@ -63,7 +63,7 @@ try {
 
                 # Local log function for remote execution
                 $logMessages = @()
-                function Write-Log {
+                A function Write-Log {
                     param($Message)
                     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                     $logEntry = "$timestamp,$env:COMPUTERNAME,$Message"
@@ -288,7 +288,7 @@ try {
             }
         }
         catch {
-            Log -msg "Error auditing $server: $($_.Exception.Message)" -server $server
+            Log -msg "Error auditing ${server}: $($_.Exception.Message)" -server $server
             continue
         }
     }
