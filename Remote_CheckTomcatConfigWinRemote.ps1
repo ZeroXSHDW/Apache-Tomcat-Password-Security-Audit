@@ -63,7 +63,7 @@ try {
 
                 # Local log function for remote execution
                 $logMessages = @()
-                A function Write-Log {
+                function Write-Log {
                     param($Message)
                     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                     $logEntry = "$timestamp,$env:COMPUTERNAME,$Message"
