@@ -16,21 +16,19 @@ function Log {
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "$timestamp,$server,$msg"
+    if (-not $logFile -or -not (Test-Path -Path (Split-Path $logFile -Parent))) {
+        Write-Host "[$server] Error: Log file path is invalid or inaccessible: $logFile"
+        return
+    }
     Add-Content -Path $logFile -Value $logEntry -ErrorAction SilentlyContinue
     Write-Host "[$server] $msg"
 }
 
 # Ensure log file exists with header
 if (-not (Test-Path $logFile)) {
-    Add-Content -Path $logFile -Value "Timestamp,Server,Message"
+    New-Item -Path (Split-Path $logFile -Parent) -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+    Add-Content -Path $logFile -Value "Timestamp,Server,Message" -ErrorAction SilentlyContinue
 }
-
-# Clear previous session state
-Log -msg "Clearing previous PowerShell session state..." -server "Client"
-Clear-Variable -Name * -Scope Global -ErrorAction SilentlyContinue
-Clear-Variable -Name * -Scope Script -ErrorAction SilentlyContinue
-Remove-Variable -Name * -Scope Global -ErrorAction SilentlyContinue
-Remove-Variable -Name * -Scope Script -ErrorAction SilentlyContinue
 
 # Check if script has already run in this session
 if ($script:HasRun) {
@@ -39,11 +37,23 @@ if ($script:HasRun) {
 }
 
 # Mark script as executed
-$script:HasRun = $true
-Log -msg "Starting script execution at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')." -server "Client"
+try {
+    $script:HasRun = $true
+    Log -msg "Starting script execution at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')." -server "Client"
+}
+catch {
+    Write-Host "[Client] Error: Failed to set execution state: $($_.Exception.Message)"
+    exit
+}
 
 try {
-    foreach ($server in $ServerName) {
+    # Deduplicate server names
+    $uniqueServers = $ServerName | Select-Object -Unique
+    if ($uniqueServers.Count -lt $ServerName.Count) {
+        Log -msg "Warning: Duplicate server names detected. Auditing unique servers: $($uniqueServers -join ',')" -server "Client"
+    }
+
+    foreach ($server in $uniqueServers) {
         Log -msg "Checking Apache Tomcat configuration security on $server..." -server $server
 
         try {
@@ -278,7 +288,7 @@ try {
             }
         }
         catch {
-            Log -msg "Error auditing $server : $($_.Exception.Message)" -server $server
+            Log -msg "Error auditing $server: $($_.Exception.Message)" -server $server
             continue
         }
     }
