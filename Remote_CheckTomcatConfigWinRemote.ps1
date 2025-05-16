@@ -24,6 +24,13 @@ if (-not (Test-Path $logFile)) {
     Add-Content -Path $logFile -Value "Timestamp,Server,Message"
 }
 
+# Clear previous session state
+Log "Clearing previous PowerShell session state..."
+Clear-Variable -Name * -Scope Global -ErrorAction SilentlyContinue
+Clear-Variable -Name * -Scope Script -ErrorAction SilentlyContinue
+Remove-Variable -Name * -Scope Global -ErrorAction SilentlyContinue
+Remove-Variable -Name * -Scope Script -ErrorAction SilentlyContinue
+
 # Check if script has already run in this session
 if ($script:HasRun) {
     Log "Error: Script has already executed in this PowerShell session."
