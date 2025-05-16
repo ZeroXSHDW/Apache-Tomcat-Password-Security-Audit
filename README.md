@@ -181,13 +181,13 @@ Audit current configuration on the local machine:
 #### Windows: Remote Auditing
 Audit Tomcat configuration on a remote Windows server:
 ```powershell
-$cred = Get-Credential -Message "Enter domain admin credentials for WIN-E6DN4M5084M"
-.\Remote_CheckTomcatConfigWinRemote.ps1 -ServerName WIN-E6DN4M5084M -Credential $cred
+$cred = Get-Credential -Message "Enter domain admin credentials for WIN-SERVERNAME"
+.\Remote_CheckTomcatConfigWinRemote.ps1 -ServerName WIN-SERVERNAME -Credential $cred
 ```
 - **Output**: Logs to `C:\Temp\TomcatConfigCheck.csv` on both the client and the remote server.
 - **Example** (secure):
   ```
-  Checking Apache Tomcat configuration security on WIN-E6DN4M5084M...
+  Checking Apache Tomcat configuration security on WIN-SERVERNAME...
   Detected Tomcat version 9.0 at C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf
   - User 'testuser': Salted_PBKDF2 password (secure)
     - Parameter: Password Type = Salted_PBKDF2 [PASS]
@@ -199,8 +199,8 @@ $cred = Get-Credential -Message "Enter domain admin credentials for WIN-E6DN4M50
   - Requires PowerShell remoting (`Enable-PSRemoting`) and WinRM configured on the remote server.
   - The `-TomcatConfPath` parameter can be used to specify a non-standard Tomcat configuration path:
     ```powershell
-    $cred = Get-Credential -Message "Enter domain admin credentials for WIN-E6DN4M5084M"
-    .\Remote_CheckTomcatConfigWinRemote.ps1 -ServerName WIN-E6DN4M5084M -Credential $cred -TomcatConfPath "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf"
+    $cred = Get-Credential -Message "Enter domain admin credentials for WIN-SERVERNAME"
+    .\Remote_CheckTomcatConfigWinRemote.ps1 -ServerName WIN-SERVERNAME -Credential $cred -TomcatConfPath "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf"
     ```
 
 ### Testing Scripts
