@@ -30,6 +30,7 @@
   - `tomcat_manager.sh`: Installs/uninstalls Tomcat 7.0, 8.5, 9.0, 10.0, or 10.1 on Unix.
 - **Windows Scripts**:
   - `CheckTomcatConfigWin.ps1`: Audits Tomcat configurations on Windows.
+  - `Remote_CheckTomcatConfigWinRemote.ps1`: Audits Tomcat configurations on remote Windows servers.
   - `TomcatManager.ps1`: Installs/uninstalls Tomcat 7.0, 8.5, 9.0, 10.0, or 10.1 on Windows.
 - **Documentation**:
   - `README.md`: This file, detailing setup, usage, and configuration.
@@ -56,7 +57,7 @@
 ### Windows
 - **PowerShell**: 5.1 or later (included in Windows 10/11).
 - **Tomcat**: 7.0, 8.5, 9.0, 10.0, or 10.1 installed (e.g., `C:\tomcat`).
-- **Permissions**: Write access to Tomcat’s `conf` directory and Administrator privileges for installation.
+- **Permissions**: Write access to Tomcat’s `conf` directory and Administrator privileges for installation and remote auditing.
 - **Java**: Java 8 for Tomcat 7.0, Java 11 for Tomcat 8.5, 9.0, 10.0, 10.1.
 - **System**: Tested on Windows 10/11; compatible with Windows Server editions.
 
@@ -161,8 +162,8 @@ sudo ./CheckTomcatConfigUnix.py
   Overall Configuration: Secure
   ```
 
-#### Windows: Manual Auditing
-Audit current configuration:
+#### Windows: Manual Auditing (Local)
+Audit current configuration on the local machine:
 ```powershell
 .\CheckTomcatConfigWin.ps1
 ```
@@ -176,6 +177,31 @@ Audit current configuration:
     - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark
   Overall Configuration: Secure
   ```
+
+#### Windows: Remote Auditing
+Audit Tomcat configuration on a remote Windows server:
+```powershell
+$cred = Get-Credential -Message "Enter domain admin credentials for WIN-E6DN4M5084M"
+.\Remote_CheckTomcatConfigWinRemote.ps1 -ServerName WIN-E6DN4M5084M -Credential $cred
+```
+- **Output**: Logs to `C:\Temp\TomcatConfigCheck.csv` on both the client and the remote server.
+- **Example** (secure):
+  ```
+  Checking Apache Tomcat configuration security on WIN-E6DN4M5084M...
+  Detected Tomcat version 9.0 at C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf
+  - User 'testuser': Salted_PBKDF2 password (secure)
+    - Parameter: Password Type = Salted_PBKDF2 [PASS]
+    - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark
+  Overall Configuration: Secure
+  Audit completed
+  ```
+- **Notes**:
+  - Requires PowerShell remoting (`Enable-PSRemoting`) and WinRM configured on the remote server.
+  - The `-TomcatConfPath` parameter can be used to specify a non-standard Tomcat configuration path:
+    ```powershell
+    $cred = Get-Credential -Message "Enter domain admin credentials for WIN-E6DN4M5084M"
+    .\Remote_CheckTomcatConfigWinRemote.ps1 -ServerName WIN-E6DN4M5084M -Credential $cred -TomcatConfPath "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf"
+    ```
 
 ### Testing Scripts
 The testing scripts (`test_config_unix.py` and `test_config_win.ps1`) are designed to verify the functionality of the auditing scripts (`CheckTomcatConfigUnix.py` and `CheckTomcatConfigWin.ps1`). They simulate various Tomcat configurations and password types to ensure the auditing scripts correctly identify and report compliance with NIST 800-53 IA-5 and CIS Tomcat Benchmark standards. The `test/` folder contains additional resources and scripts to support these tests.
@@ -264,7 +290,8 @@ Add to `tomcat-users.xml`:
   - Tests: `~/TestTomcatConfig.log`.
   - Audits/Installation: `/tmp/TomcatManager.log`.
 - **Windows**:
-  - Tests/Audits: `$env:LOCALAPPDATA\Temp\TestTomcatConfig.log` (e.g., `C:\Users\<User>\AppData\Local\Temp`).
+  - Tests/Audits (Local): `$env:LOCALAPPDATA\Temp\TestTomcatConfig.log` (e.g., `C:\Users\<User>\AppData\Local\Temp`).
+  - Audits (Remote): `C:\Temp\TomcatConfigCheck.csv` on both client and server.
   - Installation: `$env:TEMP\TomcatManager.log` (e.g., `C:\Users\<User>\AppData\Local\Temp`).
 
 ## Troubleshooting
@@ -299,7 +326,7 @@ Add to `tomcat-users.xml`:
   - Ensure `server.xml` and `tomcat-users.xml` exist in the `conf` directory.
 - **Permission Issues**:
   - Run PowerShell as Administrator.
-  - Ensure write access to Tomcat’s `conf` directory and `$env:LOCALAPPDATA\Temp`.
+  - Ensure write access to Tomcat’s `conf` directory, `$env:LOCALAPPDATA\Temp`, and `C:\Temp`.
 - **Java Issues**:
   - Verify Java installation and `JAVA_HOME`:
     ```powershell
@@ -318,6 +345,19 @@ Add to `tomcat-users.xml`:
   - Set to `RemoteSigned` if needed:
     ```powershell
     Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+    ```
+- **Remote Auditing Issues**:
+  - Ensure WinRM is enabled on the remote server:
+    ```powershell
+    Enable-PSRemoting -Force
+    ```
+  - Verify firewall allows WinRM (port 5985):
+    ```powershell
+    New-NetFirewallRule -Name "WinRM-HTTP-In" -DisplayName "WinRM HTTP" -Enabled True -Direction Inbound -Protocol TCP -LocalPort 5985 -Action Allow
+    ```
+  - Test connectivity:
+    ```powershell
+    Test-WSMan -ComputerName <ServerName>
     ```
 
 ## License
