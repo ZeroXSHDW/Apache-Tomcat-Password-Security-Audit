@@ -31,7 +31,7 @@
   - `tomcat_manager.sh`: Installs/uninstalls Tomcat 7.0, 8.5, 9.0, 10.0, or 10.1 on Unix.
 - **Windows Scripts**:
   - `CheckTomcatConfigWin.ps1`: Audits Tomcat configurations on local Windows systems.
-  - `Remote_CheckTomcatConfigWinRemote.ps1`: Audits Tomcat configurations on remote Windows servers using PowerShell remoting.
+  - `Remote_CheckTomcatConfigWin.ps1`: Audits Tomcat configurations on remote Windows servers using PowerShell remoting.
   - `TomcatManager.ps1`: Installs/uninstalls Tomcat 7.0, 8.5, 9.0, 10.0, or 10.1 on Windows.
 - **Documentation**:
   - `README.md`: This file, detailing setup, usage, and configuration.
@@ -42,7 +42,7 @@
 #### Testing Scripts
 - **Test Scripts**:
   - `test_config_unix.py`: Automated testing to verify the functionality of `CheckTomcatConfigUnix.py`.
-  - `test_config_win.ps1`: Automated testing to verify the functionality of `CheckTomcatConfigWin.ps1` and `Remote_CheckTomcatConfigWinRemote.ps1`.
+  - `test_config_win.ps1`: Automated testing to verify the functionality of `CheckTomcatConfigWin.ps1` and `Remote_CheckTomcatConfigWin.ps1`.
   - `test/` folder: Contains test scripts and resources for validating the auditing scripts. These tests confirm that the auditing scripts correctly identify and report compliance issues.
 
 ## Prerequisites
@@ -60,7 +60,7 @@
 - **Tomcat**: 7.0, 8.5, 9.0, 10.0, or 10.1 installed (e.g., `C:\tomcat`).
 - **Permissions**: Write access to Tomcat’s `conf` directory and Administrator privileges for installation and remote auditing.
 - **Java**: Java 8 for Tomcat 7.0, Java 11 for Tomcat 8.5, 9.0, 10.0, 10.1.
-- **PowerShell Remoting**: Enabled for remote auditing with `Remote_CheckTomcatConfigWinRemote.ps1` (requires WinRM and appropriate firewall settings).
+- **PowerShell Remoting**: Enabled for remote auditing with `Remote_CheckTomcatConfigWin.ps1` (requires WinRM and appropriate firewall settings).
 - **System**: Tested on Windows 10/11; compatible with Windows Server editions.
 
 ## Setup
@@ -189,7 +189,7 @@ Audit local configuration:
 Audit configuration on a remote Windows server:
 ```powershell
 $cred = Get-Credential
-.\Remote_CheckTomcatConfigWinRemote.ps1 -ServerName Windows-Server -Credential $cred
+.\Remote_CheckTomcatConfigWin.ps1 -ServerName Windows-Server -Credential $cred
 ```
 - **Output**: Logs to `C:\Temp\TomcatConfigCheck.csv`.
 - **Example** (secure):
@@ -205,16 +205,16 @@ $cred = Get-Credential
 - **Multiple Servers**:
   ```powershell
   $cred = Get-Credential
-  .\Remote_CheckTomcatConfigWinRemote.ps1 -ServerName Windows-Server1,Windows-Server2 -Credential $cred
+  .\Remote_CheckTomcatConfigWin.ps1 -ServerName Windows-Server1,Windows-Server2 -Credential $cred
   ```
 - **Specify Tomcat Path** (optional):
   ```powershell
   $cred = Get-Credential
-  .\Remote_CheckTomcatConfigWinRemote.ps1 -ServerName Windows-Server -TomcatConfPath "C:\tomcat\conf" -Credential $cred
+  .\Remote_CheckTomcatConfigWin.ps1 -ServerName Windows-Server -TomcatConfPath "C:\tomcat\conf" -Credential $cred
   ```
 
 ### Testing Scripts
-The testing scripts (`test_config_unix.py` and `test_config_win.ps1`) verify the functionality of the auditing scripts (`CheckTomcatConfigUnix.py`, `CheckTomcatConfigWin.ps1`, and `Remote_CheckTomcatConfigWinRemote.ps1`). They simulate various Tomcat configurations and password types to ensure the auditing scripts correctly identify and report compliance with NIST 800-53 IA-5 and CIS Tomcat Benchmark standards. The `test/` folder contains additional resources and scripts to support these tests.
+The testing scripts (`test_config_unix.py` and `test_config_win.ps1`) verify the functionality of the auditing scripts (`CheckTomcatConfigUnix.py`, `CheckTomcatConfigWin.ps1`, and `Remote_CheckTomcatConfigWin.ps1`). They simulate various Tomcat configurations and password types to ensure the auditing scripts correctly identify and report compliance with NIST 800-53 IA-5 and CIS Tomcat Benchmark standards. The `test/` folder contains additional resources and scripts to support these tests.
 
 #### Unix: Automated Testing
 Run tests to verify `CheckTomcatConfigUnix.py`:
@@ -242,7 +242,7 @@ sudo ./test_config_unix.py
   ```
 
 #### Windows: Automated Testing
-Run tests to verify `CheckTomcatConfigWin.ps1` and `Remote_CheckTomcatConfigWinRemote.ps1`:
+Run tests to verify `CheckTomcatConfigWin.ps1` and `Remote_CheckTomcatConfigWin.ps1`:
 ```powershell
 .\test_config_win.ps1
 ```
