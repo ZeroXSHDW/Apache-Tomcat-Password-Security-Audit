@@ -1,4 +1,4 @@
-# Remote_CheckTomcatConfigWinRemote.ps1
+# Remote_CheckTomcatConfigWin.ps1
 # Audits Tomcat configuration for password security and compliance (7.0, 8.5, 9.0, 10.0, 10.1) on remote servers
 
 param (
