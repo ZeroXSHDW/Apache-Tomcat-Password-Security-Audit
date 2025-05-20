@@ -165,7 +165,7 @@ check_config_compliance() {
         fi
     fi
 
-    echo "$config_status"
+    printf "%s" "$config_status"
 }
 
 # Audit server.xml
@@ -328,6 +328,7 @@ audit_tomcat_config() {
 
     write_log "Server Configuration:"
     config_status=$(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length")
+    write_log "Debug: config_status=$config_status" 2
     write_log "  Status: $config_status"
     write_log "  CredentialHandler: $credential_handler"
     write_log "  Algorithm: $algorithm"
@@ -337,13 +338,14 @@ audit_tomcat_config() {
     local users_xml_path="$conf_path/tomcat-users.xml"
     write_log "Auditing tomcat-users.xml"
     IFS=' ' read -ra audit_results <<< $(audit_users_xml "$users_xml_path" "$credential_handler" "$algorithm" "$iterations" "$salt_length" "$tomcat_version")
+    write_log "Debug: audit_results=${audit_results[*]}" 2
 
     local overall_secure=1
-    if [[ "$config_status" =~ ^Non-compliant ]] || [ ${#audit_results[@]} -eq 0 ]; then
+    if [[ "$config_status" == "Non-compliant" ]] || [ ${#audit_results[@]} -eq 0 ]; then
         overall_secure=0
     else
         for result in "${audit_results[@]}"; do
-            if [[ "$result" =~ ^Non-compliant ]]; then
+            if [[ "$result" == "Non-compliant" ]]; then
                 overall_secure=0
                 break
             fi
@@ -352,7 +354,7 @@ audit_tomcat_config() {
 
     write_log "==========================="
     write_log "Overall Status: $( [ "$overall_secure" -eq 1 ] && echo "Secure" || echo "Insecure" )"
-    write_log "Audit completed. Log: $LOG_FILE"
+    write_log "Audit completed. Log: /tmp/TomcatManager.log"
 }
 
 # Execute audit
