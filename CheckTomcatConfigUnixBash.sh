@@ -167,7 +167,7 @@ check_config_compliance() {
         fi
     fi
 
-    echo "$config_status|$issue|$recommendation"
+    echo "$config_status||$issue||$recommendation"
 }
 
 # Audit server.xml
@@ -329,7 +329,7 @@ audit_tomcat_config() {
     read credential_handler algorithm iterations salt_length <<< $(audit_server_xml "$server_xml_path")
 
     write_log "Server Configuration:"
-    read config_status issue recommendation <<< $(echo $(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length") | tr '|' ' ')
+    IFS='||' read config_status issue recommendation <<< $(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length")
     write_log "  Status: $config_status"
     write_log "  CredentialHandler: $credential_handler"
     write_log "  Algorithm: $algorithm"
