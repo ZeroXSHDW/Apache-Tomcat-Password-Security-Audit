@@ -1,5 +1,5 @@
 #!/bin/bash
-# CheckTomcatConfigUnix.sh
+# CheckTomcatConfigUnixBash.sh
 # Audit Apache Tomcat configuration for security compliance with NIST 800-53 IA-5 and CIS Tomcat Benchmark
 
 # Log setup
@@ -100,34 +100,34 @@ detect_password_type() {
         is_secure=0
     # Salted format (hash:salt)
     elif [[ "$password" =~ ^([0-9a-fA-F]+):([0-9a-fA-F]+)$ ]]; then
-        local hash_part="${BASH_REMATCH[1]}"
-        local hash_length=${#hash_part}
-        if [ "$hash_length" -eq 32 ] && [[ "$hash_part" =~ ^[0-9a-fA-F]{32}$ ]]; then
-            type="Salted_MD5"
-            is_secure=0
-        elif [ "$hash_length" -ge 32 ] && [[ "$hash_part" =~ ^[0-9a-fA-F]+$ ]]; then
-            type="Salted_PBKDF2"
-            is_secure=1
-        else
-            type="Unknown"
-            is_secure=0
-        fi
+    local hash_part="${BASH_REMATCH[1]}"
+    local hash_length=${#hash_part}
+    if [ "$hash_length" -eq 32 ] && [[ "$hash_part" =~ ^[0-9a-fA-F]{32}$ ]]; then
+        type="Salted_MD5"
+        is_secure=0
+    elif [ "$hash_length" -ge 32 ] && [[ "$hash_part" =~ ^[0-9a-fA-F]+$ ]]; then
+        type="Salted_PBKDF2"
+        is_secure=1
+    else
+        type="Unknown"
+        is_secure=0
+    fi
     # Unsalted hashes
     else
-        local length=${#password}
-        if [ "$length" -eq 32 ] && [[ "$password" =~ ^[0-9a-fA-F]{32}$ ]]; then
-            type="Hashed_MD5"
-            is_secure=0
-        elif [ "$length" -eq 40 ] && [[ "$password" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            type="Hashed_SHA1"
-            is_secure=0
-        elif [ "$length" -eq 64 ] && [[ "$password" =~ ^[0-9a-fA-F]{64}$ ]]; then
-            type="Hashed_SHA256"
-            is_secure=1
-        elif [ "$length" -eq 128 ] && [[ "$password" =~ ^[0-9a-fA-F]{128}$ ]]; then
-            type="Hashed_SHA512"
-            is_secure=1
-        fi
+    local length=${#password}
+    if [ "$length" -eq 32 ] && [[ "$password" =~ ^[0-9a-fA-F]{32}$ ]]; then
+        type="Hashed_MD5"
+        is_secure=0
+    elif [ "$length" -eq 40 ] && [[ "$password" =~ ^[0-9a-fA-F]{40}$ ]]; then
+        type="Hashed_SHA1"
+        is_secure=0
+    elif [ "$length" -eq 64 ] && [[ "$password" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        type="Hashed_SHA256"
+        is_secure=1
+    elif [ "$length" -eq 128 ] && [[ "$password" =~ ^[0-9a-fA-F]{128}$ ]]; then
+        type="Hashed_SHA512"
+        is_secure=1
+    fi
     fi
 
     echo "$type $is_secure"
@@ -193,7 +193,7 @@ audit_server_xml() {
 
     # Check for UserDatabaseRealm or MemoryRealm
     local realm_line=$(grep -E "org.apache.catalina.realm.(UserDatabaseRealm|MemoryRealm)" "$server_xml_path")
- PowderShellif [ -z "$realm_line" ]; then
+    if [ -z "$realm_line" ]; then
         echo "$credential_handler $algorithm $iterations $salt_length"
         return
     fi
@@ -235,7 +235,7 @@ audit_users_xml() {
             local compliance_status="Non-compliant"
             local issues=()
 
-            # Compliance checks (aligned with PowerShell)
+            # Compliance checks
             if [ "$password_type" = "Plaintext" ]; then
                 compliance_status="Non-compliant - Plaintext password detected"
                 is_secure=0
@@ -260,7 +260,7 @@ audit_users_xml() {
                     compliance_status="Non-compliant - SHA256 requires salt and iterations"
                     is_secure=0
                     issues+=("Hashed_SHA256 passwords should use salt and iterations")
-                    issuesampled+=("Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000")
+                    issues+=("Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000")
                 else
                     compliance_status="Compliant"
                     is_secure=1
@@ -319,7 +319,7 @@ audit_users_xml() {
                 issues+=("Recommendation: Use a supported secure hashing algorithm")
             fi
 
-            # Parameter checks (for output consistency with Python)
+            # Parameter checks
             local parameters=()
             parameters+=("Password Type = $password_type [$( [ "$is_secure" -eq 1 ] && echo "PASS" || echo "FAIL" )]")
             parameters+=("CredentialHandler = $credential_handler [$( [ "$credential_handler" != "None" ] && echo "PASS" || echo "FAIL" )]")
