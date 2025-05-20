@@ -14,32 +14,32 @@ function Log {
         [Parameter(Mandatory=$true)][String]$msg,
         [Parameter(Mandatory=$true)][String]$server
     )
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$timestamp,$server,$msg"
-    if (-not $logFile -or -not (Test-Path -Path (Split-Path $logFile -Parent))) {
-        Write-Host "[$server] Error: Log file path is invalid or inaccessible: $logFile"
-        return
-    }
-    Add-Content -Path $logFile -Value $logEntry -ErrorAction SilentlyContinue
+    # Store message for single CSV line
+    $script:logMessages += "[$server] $msg"
+    # Output to console for debugging
     Write-Host "[$server] $msg"
 }
 
-# Ensure log file exists with header
-if (-not (Test-Path $logFile)) {
+# Ensure log file directory exists
+if (-not (Test-Path (Split-Path $logFile -Parent))) {
     New-Item -Path (Split-Path $logFile -Parent) -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+}
+
+# Initialize log file with header if it doesn't exist
+if (-not (Test-Path $logFile)) {
     Add-Content -Path $logFile -Value "Timestamp,Server,Message" -ErrorAction SilentlyContinue
 }
 
 # Check if script has already run in this session
 if ($script:HasRun) {
-    Log -msg "Error: Script has already executed in this PowerShell session." -server "Client"
+    Write-Host "[Client] Error: Script has already executed in this PowerShell session."
     exit
 }
 
 # Mark script as executed
 try {
     $script:HasRun = $true
-    Log -msg "Starting script execution at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')." -server "Client"
+    Write-Host "[Client] Starting script execution at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')."
 }
 catch {
     Write-Host "[Client] Error: Failed to set execution state: $($_.Exception.Message)"
@@ -50,26 +50,25 @@ try {
     # Deduplicate server names
     $uniqueServers = $ServerName | Select-Object -Unique
     if ($uniqueServers.Count -lt $ServerName.Count) {
-        Log -msg "Warning: Duplicate server names detected. Auditing unique servers: $($uniqueServers -join ',')" -server "Client"
+        Write-Host "[Client] Warning: Duplicate server names detected. Auditing unique servers: $($uniqueServers -join ',')"
     }
 
     foreach ($server in $uniqueServers) {
+        # Initialize log messages array for this server
+        $script:logMessages = @()
         Log -msg "Checking Apache Tomcat configuration security on $server..." -server $server
 
         try {
             # Remote execution
             $auditResults = Invoke-Command -ComputerName $server -Credential $Credential -ScriptBlock {
-                param($TomcatConfPath, $logFile)
+                param($TomcatConfPath)
 
                 # Local log function for remote execution
                 $logMessages = @()
                 function Write-Log {
                     param($Message)
-                    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                    $logEntry = "$timestamp,$env:COMPUTERNAME,$Message"
-                    Add-Content -Path $logFile -Value $logEntry -ErrorAction SilentlyContinue
-                    Write-Host $Message
                     $script:logMessages += $Message
+                    Write-Host $Message
                 }
 
                 # Detect Tomcat path and version
@@ -78,26 +77,54 @@ try {
                         $serverXml = Join-Path $TomcatConfPath "server.xml"
                         if (Test-Path $serverXml) {
                             $version = if ($TomcatConfPath -match "Tomcat\s*(\d+\.\d+)") { $matches[1] } else { "Unknown" }
+                            Write-Log "Tomcat configuration directory located at $TomcatConfPath"
                             return @{ Path = $TomcatConfPath; Version = $version }
                         }
                     }
+
                     $possiblePaths = @(
+                        "C:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
+                        "C:\Program Files\Apache Software Foundation\Tomcat 8.0\conf",
+                        "C:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
+                        "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
+                        "C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf",
+                        "C:\Program Files\Apache Software Foundation\Tomcat 10.1\conf",
                         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 7.0\conf",
+                        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.0\conf",
                         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.5\conf",
                         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 9.0\conf",
                         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.0\conf",
                         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.1\conf",
-                        "C:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
-                        "C:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
-                        "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
-                        "C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf",
-                        "C:\Program Files\Apache Software Foundation\Tomcat 10.1\conf"
+                        "C:\Tomcat\conf",
+                        "C:\Tomcat7\conf",
+                        "C:\Tomcat8\conf",
+                        "C:\Tomcat9\conf",
+                        "C:\Tomcat10\conf",
+                        "C:\Apache\Tomcat\conf",
+                        "C:\Apache\Tomcat7\conf",
+                        "C:\Apache\Tomcat8\conf",
+                        "C:\Apache\Tomcat9\conf",
+                        "C:\Apache\Tomcat10\conf",
+                        "D:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
+                        "D:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
+                        "D:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
+                        "D:\Program Files\Apache Software Foundation\Tomcat 10.0\conf",
+                        "D:\Program Files\Apache Software Foundation\Tomcat 10.1\conf",
+                        "D:\Tomcat\conf",
+                        "E:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
+                        "E:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
+                        "E:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
+                        "E:\Program Files\Apache Software Foundation\Tomcat 10.0\conf",
+                        "E:\Program Files\Apache Software Foundation\Tomcat 10.1\conf",
+                        "E:\Tomcat\conf"
                     )
+
                     foreach ($path in $possiblePaths) {
                         if (Test-Path $path) {
                             $serverXml = Join-Path $path "server.xml"
                             if (Test-Path $serverXml) {
                                 $version = if ($path -match "Tomcat\s*(\d+\.\d+)") { $matches[1] } else { "Unknown" }
+                                Write-Log "Tomcat configuration directory located at $path"
                                 return @{ Path = $path; Version = $version }
                             }
                         }
@@ -107,7 +134,7 @@ try {
 
                 $tomcatInfo = Get-TomcatConfigPath
                 if (-not $tomcatInfo) {
-                    Write-Log "Error: No Tomcat configuration directory found"
+                    Write-Log "ERROR - No Tomcat configuration directory found"
                     return $logMessages
                 }
                 $tomcatConfPath = $tomcatInfo.Path
@@ -119,7 +146,7 @@ try {
                 $usersXmlPath = Join-Path $tomcatConfPath "tomcat-users.xml"
 
                 if (-not (Test-Path $serverXmlPath) -or -not (Test-Path $usersXmlPath)) {
-                    Write-Log "Error: server.xml or tomcat-users.xml not found"
+                    Write-Log "ERROR - server.xml or tomcat-users.xml not found"
                     return $logMessages
                 }
 
@@ -139,9 +166,8 @@ try {
                 # Analyze users and passwords
                 $users = $usersXml.'tomcat-users'.user
                 if (-not $users) {
-                    Write-Log "- No users defined in tomcat-users.xml"
-                    Write-Log "- Status: Compliant (no passwords to evaluate)"
-                    Write-Log "Overall Configuration: Secure (no vulnerabilities detected)"
+                    Write-Log "No users defined in tomcat-users.xml - Compliant"
+                    Write-Log "Overall Configuration: Secure"
                     Write-Log "Audit completed"
                     return $logMessages
                 }
@@ -152,8 +178,7 @@ try {
 
                     # Skip users without passwords
                     if (-not $password) {
-                        Write-Log "- User '$username': No password defined"
-                        Write-Log "  - Status: Compliant (no password to evaluate)"
+                        Write-Log "User '$username': Compliant (no password)"
                         continue
                     }
 
@@ -168,127 +193,93 @@ try {
                         default { "Plaintext" }
                     }
 
-                    Write-Log "- User '$username': $passwordType password ($(if ($passwordType -match 'Plaintext|MD5|SHA1') { 'insecure' } else { 'secure' }))"
+                    # Initialize compliance status
+                    $complianceStatus = ""
 
-                    # Initialize parameter checks
-                    $params = @()
-
-                    # Parameter: Password Type
-                    $params += "- Parameter: Password Type = $passwordType [$(if ($passwordType -match 'Plaintext|MD5|SHA1') { 'FAIL' } else { 'PASS' })]"
-
-                    # Parameter: CredentialHandler Presence
-                    $handlerClass = if ($credentialHandler) { $credentialHandler.className } else { "None" }
-                    $params += "- Parameter: CredentialHandler = $handlerClass [$(if ($credentialHandler) { 'PASS' } else { 'FAIL' })]"
-
-                    # Parameter: Algorithm
-                    $algorithm = if ($credentialHandler -and $credentialHandler.algorithm) { $credentialHandler.algorithm } else { "None" }
-                    $params += "- Parameter: Algorithm = $algorithm [$(if ($algorithm -in @('SHA-256', 'SHA-512', 'PBKDF2WithHmacSHA512')) { 'PASS' } else { 'FAIL' })]"
-
-                    # Parameter: Iterations (if applicable)
-                    $iterations = if ($credentialHandler -and $credentialHandler.iterations) { [int]$credentialHandler.iterations } else { 0 }
-                    $params += "- Parameter: Iterations = $iterations [$(if ($iterations -ge 10000) { 'PASS' } else { 'FAIL' })]"
-
-                    # Parameter: Salt Length (if applicable)
-                    $saltLength = if ($credentialHandler -and $credentialHandler.saltLength) { [int]$credentialHandler.saltLength } else { 0 }
-                    $params += "- Parameter: Salt Length = $saltLength [$(if ($saltLength -ge 16) { 'PASS' } else { 'FAIL' })]"
-
-                    # Log parameters
-                    foreach ($param in $params) {
-                        Write-Log "  $param"
-                    }
-
-                    # Compliance check
+                    # Compliance checks
                     if ($passwordType -eq "Plaintext") {
-                        Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-                        Write-Log "    - Plaintext passwords detected in tomcat-users.xml"
-                        Write-Log "    - Recommendation: Use salted and iterated passwords (e.g., SHA-256 or PBKDF2)"
+                        $complianceStatus = "Non-compliant - Plaintext password detected"
                         $isSecure = $false
                     }
                     elseif ($passwordType -in @("Hashed_MD5", "Salted_MD5")) {
-                        Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-                        Write-Log "    - Weak password hashing ($passwordType) detected"
-                        Write-Log "    - Recommendation: Use SHA-256, SHA-512, or PBKDF2"
+                        $complianceStatus = "Non-compliant - Weak MD5 hashing"
                         $isSecure = $false
                     }
                     elseif ($passwordType -eq "Hashed_SHA1") {
-                        Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-                        Write-Log "    - Weak password hashing (SHA-1) detected"
-                        Write-Log "    - Recommendation: Use SHA-256, SHA-512, or PBKDF2"
+                        $complianceStatus = "Non-compliant - Weak SHA1 hashing"
                         $isSecure = $false
                     }
                     elseif ($passwordType -eq "Hashed_SHA256") {
                         if ($tomcatVersion -eq "7.0") {
-                            Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark for Tomcat 7.0"
+                            $complianceStatus = "Compliant for Tomcat 7.0"
                         } elseif (-not $credentialHandler -or $credentialHandler.algorithm -ne "SHA-256" -or
                             [int]$credentialHandler.iterations -lt 10000 -or [int]$credentialHandler.saltLength -lt 16) {
-                            Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-                            Write-Log "    - Hashed_SHA256 passwords should use salt and iterations"
-                            Write-Log "    - Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000"
+                            $complianceStatus = "Non-compliant - SHA256 requires salt and iterations"
                             $isSecure = $false
                         } else {
-                            Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
+                            $complianceStatus = "Compliant"
                         }
                     }
                     elseif ($passwordType -eq "Hashed_SHA512") {
                         if ($tomcatVersion -eq "7.0") {
-                            Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-                            Write-Log "    - SHA-512 not supported in Tomcat 7.0"
-                            Write-Log "    - Recommendation: Use SHA-256"
+                            $complianceStatus = "Non-compliant - SHA512 not supported in Tomcat 7.0"
                             $isSecure = $false
                         } elseif (-not $credentialHandler -or $credentialHandler.algorithm -ne "SHA-512" -or
                             [int]$credentialHandler.iterations -lt 10000 -or [int]$credentialHandler.saltLength -lt 16) {
-                            Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-                            Write-Log "    - Hashed_SHA512 passwords should use salt and iterations"
-                            Write-Log "    - Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000"
+                            $complianceStatus = "Non-compliant - SHA512 requires salt and iterations"
                             $isSecure = $false
                         } else {
-                            Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
+                            $complianceStatus = "Compliant"
                         }
                     }
                     elseif ($passwordType -eq "Salted_PBKDF2") {
                         if ($tomcatVersion -eq "7.0") {
-                            Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-                            Write-Log "    - PBKDF2 not supported in Tomcat 7.0"
-                            Write-Log "    - Recommendation: Use SHA-256"
+                            $complianceStatus = "Non-compliant - PBKDF2 not supported in Tomcat 7.0"
                             $isSecure = $false
                         } elseif ($tomcatVersion -eq "8.5") {
                             if (-not $credentialHandler -or $credentialHandler.algorithm -notin @("SHA-256", "SHA-512") -or
                                 [int]$credentialHandler.iterations -lt 10000 -or [int]$credentialHandler.saltLength -lt 16) {
-                                Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-                                Write-Log "    - Salted_PBKDF2 requires compatible MessageDigestCredentialHandler"
-                                Write-Log "    - Recommendation: Configure MessageDigestCredentialHandler with SHA-256/SHA-512, saltLength >= 16, iterations >= 10000"
+                                $complianceStatus = "Non-compliant - PBKDF2 requires compatible handler"
                                 $isSecure = $false
                             } else {
-                                Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
+                                $complianceStatus = "Compliant"
                             }
                         } else { # Tomcat 9.0, 10.0, or 10.1
                             if ($credentialHandler -and $credentialHandler.className -eq "org.apache.catalina.realm.SecretKeyCredentialHandler" -and
                                 $credentialHandler.algorithm -eq "PBKDF2WithHmacSHA512" -and
                                 [int]$credentialHandler.iterations -ge 10000 -and [int]$credentialHandler.saltLength -ge 16) {
-                                Write-Log "  - Status: Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
+                                $complianceStatus = "Compliant"
                             } else {
-                                Write-Log "  - Status: Non-compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark"
-                                Write-Log "    - Salted_PBKDF2 requires SecretKeyCredentialHandler with PBKDF2"
-                                Write-Log "    - Recommendation: Configure SecretKeyCredentialHandler with PBKDF2, saltLength >= 16, iterations >= 10000"
+                                $complianceStatus = "Non-compliant - PBKDF2 requires SecretKeyCredentialHandler"
                                 $isSecure = $false
                             }
                         }
                     }
+
+                    # Log single compliance status line
+                    Write-Log "User '$username': $complianceStatus"
                 }
 
                 # Report overall security
                 Write-Log "Overall Configuration: $(if ($isSecure) { 'Secure' } else { 'Insecure' })"
                 Write-Log "Audit completed"
                 return $logMessages
-            } -ArgumentList $TomcatConfPath, $logFile
+            } -ArgumentList $TomcatConfPath
 
-            # Append audit results to client log file
-            foreach ($result in $auditResults) {
-                Log -msg $result -server $server
+            # Write single CSV line
+            if ($auditResults) {
+                $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                $combinedMessage = $auditResults -join "; "
+                $logEntry = "$timestamp,$server,$combinedMessage"
+                Add-Content -Path $logFile -Value $logEntry -ErrorAction SilentlyContinue
             }
         }
         catch {
-            Log -msg "Error auditing ${server}: $($_.Exception.Message)" -server $server
+            $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+            $errorMessage = "ERROR - Failed to audit ${server}: $($_.Exception.Message)"
+            $logEntry = "$timestamp,$server,$errorMessage"
+            Add-Content -Path $logFile -Value $logEntry -ErrorAction SilentlyContinue
+            Write-Host $errorMessage
             continue
         }
     }
