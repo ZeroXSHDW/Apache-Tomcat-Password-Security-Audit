@@ -310,6 +310,7 @@ audit_tomcat_config() {
     local hostname=$(hostname)
     write_log "$exec_time"
     write_log "$hostname"
+    write_log "==========================="
 
     if ! : > "$LOG_FILE" 2>/dev/null; then
         write_log "Warning: Cannot clear $LOG_FILE. Continuing with existing log." >&2
