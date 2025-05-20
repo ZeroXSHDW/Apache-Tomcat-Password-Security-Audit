@@ -10,7 +10,7 @@
 - **Automated Testing**: Scripts test multiple password types and credential handler configurations, modifying `server.xml` and `tomcat-users.xml` to simulate scenarios and validate compliance.
 - **Manual Auditing**: Analyze existing configurations, reporting password types, credential handlers, and compliance status with actionable recommendations.
 - **Remote Auditing**: Support for auditing Tomcat configurations on remote Windows servers using PowerShell remoting.
-- **Cross-Platform Support**: Python-based scripts for Unix (Linux/macOS) and PowerShell scripts for Windows.
+- **Cross-Platform Support**: Bash and Python-based scripts for Unix (Linux/macOS) and PowerShell scripts for Windows.
 - **Backup and Restore**: Automatically back up and restore configuration files during testing to prevent data loss.
 - **Detailed Logging**: Logs audit and test results to platform-specific locations for traceability.
 - **Compliance Reporting**: Identifies secure/insecure configurations and provides guidance for achieving compliance.
@@ -35,7 +35,7 @@
 
 ### Prerequisites
 - **Unix (Linux/macOS)**:
-  - Python 3.6+.
+  - Bash or Python 3.6+.
   - Tomcat installed (e.g., `/opt/tomcat`).
   - Sudo permissions for auditing.
 - **Windows**:
@@ -58,66 +58,124 @@ cd C:\Users\<User>\tomcat-audit
 
 ## Usage
 
-### 1. Unix: Audit Local Configuration
-Run the Unix auditing script:
+### 1. Unix: Audit Local Configuration (Bash)
+Run the Unix Bash auditing script:
 ```bash
-sudo ./CheckTomcatConfigUnix.py
+sudo ./CheckTomcatConfigUnixBash.sh
 ```
 - **Output**: Logs to `/tmp/TomcatManager.log`.
-- **Example**:
-  ```
-  Checking Apache Tomcat configuration security...
-  Tomcat configuration directory located at /opt/tomcat/conf
-  Detected Tomcat version 9.0 at /opt/tomcat/conf
-  User 'testuser': Compliant
-  Overall Configuration: Secure
-  Audit completed
-  ```
+- **Example Output**:
+```
+07:05 PM IST, Tuesday, May 20, 2025
+server01
+===========================
+Config Path: /opt/tomcat/conf
+Tomcat Version: 9.0
+Auditing server.xml
+Server Configuration:
+  Status: Compliant for Tomcat 9.0
+  Credential Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
+  Algorithm: PBKDF2WithHmacSHA512
+  Iterations: 10000
+  Salt Length: 16
+Auditing tomcat-users.xml
+User Audit Results:
+Username | Password Type | Compliance
+---------|---------------|-----------
+    testuser | Salted_PBKDF2 | Compliant
+===========================
+Overall Status: Secure
+Audit completed. Log: /tmp/TomcatManager.log
+```
 
-### 2. Windows: Audit Local Configuration
+### 2. Unix: Audit Local Configuration (Python)
+Run the Unix Python auditing script:
+```bash
+sudo ./CheckTomcatConfigUnixPython.py
+```
+- **Output**: Logs to `/tmp/TomcatManager.log`.
+- **Example Output**:
+```
+07:05 PM IST, Tuesday, May 20, 2025
+server01
+===========================
+Config Path: /opt/tomcat/conf
+Tomcat Version: 9.0
+Auditing server.xml
+Server Configuration:
+  Status: Compliant for Tomcat 9.0
+  Credential Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
+  Algorithm: PBKDF2WithHmacSHA512
+  Iterations: 10000
+  Salt Length: 16
+Auditing tomcat-users.xml
+User Audit Results:
+Username | Password Type | Compliance
+---------|---------------|-----------
+    testuser | Salted_PBKDF2 | Compliant
+===========================
+Overall Status: Secure
+Audit completed. Log: /tmp/TomcatManager.log
+```
+
+### 3. Windows: Audit Local Configuration
 Run the Windows auditing script:
 ```powershell
 .\CheckTomcatConfigWin.ps1
 ```
 - **Output**: Logs to `$env:LOCALAPPDATA\Temp\TestTomcatConfig.csv` (e.g., `C:\Users\<User>\AppData\Local\Temp`).
-- **Example**:
-  ```
-  Checking Apache Tomcat configuration security...
-  Tomcat configuration directory located at C:\tomcat\conf
-  Detected Tomcat version 10.0 at C:\tomcat\conf
-  User 'testuser': Compliant
-  Overall Configuration: Secure
-  Audit completed
-  ```
+- **Example Output**:
+```
+Checking Apache Tomcat configuration security...
+Tomcat configuration directory located at C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf
+Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf
+User 'testuser': Compliant
+Overall Configuration: Secure
+Audit completed
+```
+- **Log File Content (TestTomcatConfig.csv)**:
+```
+Timestamp,Message
+2025-05-20 17:35:00,Checking Apache Tomcat configuration security...;Tomcat configuration directory located at C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf;Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf;User 'testuser': Compliant;Overall Configuration: Secure;Audit completed
+```
 
-### 3. Windows: Audit Remote Configuration
+### 4. Windows: Audit Remote Configuration
 Run the remote auditing script:
 ```powershell
 $cred = Get-Credential
 .\Remote_CheckTomcatConfigWin.ps1 -ServerName Windows-Server -Credential $cred
 ```
 - **Output**: Logs to `C:\Temp\TomcatConfigCheck.csv`.
-- **Example**:
-  ```
-  [Windows-Server] Checking Apache Tomcat configuration security on Windows-Server...
-  [Windows-Server] Tomcat configuration directory located at C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf
-  [Windows-Server] Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf
-  [Windows-Server] User 'testuser': Compliant
-  [Windows-Server] Overall Configuration: Secure
-  [Windows-Server] Audit completed
-  ```
+- **Example Output**:
+```
+[Client] Starting script execution at 2025-05-20 17:35:00.
+[Windows-Server] Checking Apache Tomcat configuration security on Windows-Server...
+[Windows-Server] Tomcat configuration directory located at C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf
+[Windows-Server] Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf
+[Windows-Server] User 'testuser': Compliant
+[Windows-Server] Overall Configuration: Secure
+[Windows-Server] Audit completed
+```
+- **Log File Content (TomcatConfigCheck.csv)**:
+```
+Timestamp,Server,Message
+2025-05-20 17:35:00,Windows-Server,[Windows-Server] Checking Apache Tomcat configuration security on Windows-Server...;[Windows-Server] Tomcat configuration directory located at C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf;[Windows-Server] Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf;[Windows-Server] User 'testuser': Compliant;[Windows-Server] Overall Configuration: Secure;[Windows-Server] Audit completed
+```
 - **Multiple Servers**:
-  ```powershell
-  $cred = Get-Credential
-  .\Remote_CheckTomcatConfigWin.ps1 -ServerName Server1,Server2 -Credential $cred
-  ```
+```powershell
+$cred = Get-Credential
+.\Remote_CheckTomcatConfigWin.ps1 -ServerName Server1,Server2 -Credential $cred
+```
 - **Custom Path** (optional):
-  ```powershell
-  $cred = Get-Credential
-  .\Remote_CheckTomcatConfigWin.ps1 -ServerName Windows-Server -TomcatConfPath "C:\tomcat\conf" -Credential $cred
-  ```
+```powershell
+$cred = Get-Credential
+.\彼此:.\Remote_CheckTomcatConfigWin.ps1 -ServerName Windows-Server -TomcatConfPath "C:\tomcat\conf" -Credential $cred
+```
 
 ## Testing Framework
+
+**WARNING**: The testing framework modifies system configurations, including `server.xml` and `tomcat-users.xml`, and installs/uninstalls Tomcat instances. It is **strictly for use in test labs** to verify that the auditing scripts function correctly. **Do not use on production systems**, as it may disrupt services or cause data loss. Use only in controlled lab environments.
+
 The testing framework validates the auditing scripts by simulating various Tomcat configurations and password types to ensure they correctly identify compliance issues. It includes installation scripts to set up test environments.
 
 ### Installation for Testing
@@ -150,9 +208,9 @@ Uninstall Tomcat:
 Install Java (if needed):
 - Download Java 11 from `https://adoptium.net/`.
 - Set `JAVA_HOME`:
-  ```powershell
-  [Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\Program Files\Java\jdk-11", "Machine")
-  ```
+```powershell
+[Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\Program Files\Java\jdk-11", "Machine")
+```
 
 ### Run Tests
 #### Unix
