@@ -13,6 +13,10 @@ import socket
 LOG_FILE = "/tmp/TomcatManager.log"
 
 def write_log(message, indent=0):
+    """
+    Write a log message with indentation to both file and console.
+    indent: Number of indentation levels (each level is two spaces).
+    """
     indent_spaces = "  " * indent
     log_message = f"{indent_spaces}{message}"
     try:
@@ -49,7 +53,7 @@ def get_tomcat_config_path():
 # Detect Tomcat version
 def detect_tomcat_version(tomcat_home):
     version_file = os.path.join(tomcat_home, "RELEASE-NOTES")
-    version = "7.0"
+    version = "7.0"  # Default fallback
     if os.path.isfile(version_file):
         try:
             with open(version_file, "r") as f:
@@ -164,15 +168,25 @@ def audit_users_xml(users_xml_path, credential_handler, handler_algorithm, itera
         write_log(f"Error: {users_xml_path} not found")
         return results
     try:
+        # Parse XML with namespace handling
         tree = ET.parse(users_xml_path)
         root = tree.getroot()
+        # Try finding users with and without namespace
+        users = root.findall(".//user")
+        if not users:
+            # Handle potential namespace
+            for elem in root.iter():
+                if elem.tag.endswith("user"):
+                    users.append(elem)
         write_log("User Audit Results:")
         write_log("Username | Password Type | Compliance")
         write_log("---------|---------------|-----------")
-        for user in root.findall(".//user"):
+        write_log(f"Debug: Found {len(users)} user elements")  # Debug log
+        for user in users:
             user_count += 1
             username = user.get("username", "Unknown")
             password = user.get("password", "")
+            write_log(f"Debug: Processing user: {username}")  # Debug log
             password_type, is_secure = detect_password_type(password)
             compliance_status = "Non-compliant"
             issues = []
