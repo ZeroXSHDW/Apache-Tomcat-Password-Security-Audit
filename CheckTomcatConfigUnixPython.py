@@ -13,10 +13,6 @@ import socket
 LOG_FILE = "/tmp/TomcatManager.log"
 
 def write_log(message, indent=0):
-    """
-    Write a log message with indentation to both file and console.
-    indent: Number of indentation levels (each level is two spaces).
-    """
     indent_spaces = "  " * indent
     log_message = f"{indent_spaces}{message}"
     try:
@@ -53,7 +49,7 @@ def get_tomcat_config_path():
 # Detect Tomcat version
 def detect_tomcat_version(tomcat_home):
     version_file = os.path.join(tomcat_home, "RELEASE-NOTES")
-    version = "7.0"  # Default fallback
+    version = "7.0"
     if os.path.isfile(version_file):
         try:
             with open(version_file, "r") as f:
