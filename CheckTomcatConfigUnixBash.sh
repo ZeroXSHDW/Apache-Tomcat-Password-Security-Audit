@@ -8,9 +8,8 @@ LOG_FILE="/tmp/TomcatManager.log"
 write_log() {
     local message="$1"
     local indent=${2:-0}
-    local marker="${3:-}"
     local indent_spaces=$(printf "%${indent}s" | tr ' ' ' ')
-    local log_message="${indent_spaces}${marker}${message}"
+    local log_message="${indent_spaces}${message}"
     
     if ! echo "${log_message}" >> "${LOG_FILE}" 2>/dev/null; then
         echo "Warning: Cannot write to ${LOG_FILE}. Logging to console only." >&2
@@ -63,24 +62,29 @@ detect_tomcat_version() {
         fi
     fi
 
-    # Fallback to directory name
-    if [[ "$tomcat_home" =~ tomcat7 ]]; then version="7.0"
-    elif [[ "$tomcat_home" =~ tomcat8 ]]; then version="8.5"
-    elif [[ "$tomcat_home" =~ tomcat9 ]]; then version="9.0"
-    elif [[ "$tomcat_home" =~ tomcat10 ]]; then version="10.0"
+    # Check directory name
+    tomcat_home_lower=$(echo "$tomcat_home" | tr '[:upper:]' '[:lower:]')
+    if [[ "$tomcat_home_lower" =~ tomcat7 ]]; then version="7.0"
+    elif [[ "$tomcat_home_lower" =~ tomcat8 ]]; then version="8.5"
+    elif [[ "$tomcat_home_lower" =~ tomcat9 ]]; then version="9.0"
+    elif [[ "$tomcat_home_lower" =~ tomcat10 ]]; then version="10.0"
     fi
 
     # Check server.xml for version clues
     if [ -f "$server_xml" ]; then
         if grep -q "org.apache.catalina.startup.VersionLoggerListener" "$server_xml"; then
-            if [[ "$tomcat_home" =~ tomcat10 || $(grep -o "10\." "$server_xml") ]]; then version="10.0"
-            elif grep -q "9\." "$server_xml"; then version="9.0"
-            elif grep -q "8\." "$server_xml"; then version="8.5"
-            elif grep -q "7\." "$server_xml"; then version="7.0"
+            content=$(cat "$server_xml")
+            if [[ "$tomcat_home_lower" =~ tomcat10 || "$content" =~ 10\. ]]; then version="10.0"
+            elif [[ "$content" =~ 9\. ]]; then version="9.0"
+            elif [[ "$content" =~ 8\. ]]; then version="8.5"
+            elif [[ "$content" =~ 7\. ]]; then version="7.0"
             fi
         fi
     fi
 
+    if [ "$version" = "7.0" ]; then
+        write_log "Warning: Could not determine Tomcat version at $tomcat_home, defaulting to 7.0"
+    fi
     echo "$version"
 }
 
@@ -117,7 +121,7 @@ detect_password_type() {
         elif [ "$length" -eq 40 ] && [[ "$password" =~ ^[0-9a-fA-F]{40}$ ]]; then
             type="Hashed_SHA1"
             is_secure=0
-        elif [ "$length" -eq 64 ] && [[ "$password" =~ ^[0-9a-f 최고A-F]{64}$ ]]; then
+        elif [ "$length" -eq 64 ] && [[ "$password" =~ ^[0-9a-fA-F]{64}$ ]]; then
             type="Hashed_SHA256"
             is_secure=1
         elif [ "$length" -eq 128 ] && [[ "$password" =~ ^[0-9a-fA-F]{128}$ ]]; then
@@ -138,7 +142,7 @@ audit_server_xml() {
     local salt_length=0
 
     if [ ! -f "$server_xml_path" ]; then
-        write_log "Error: $server_xml_path not found"
+        write_log "Error parsing $server_xml_path: No such file or directory"
         echo "$credential_handler $algorithm $iterations $salt_length"
         return
     fi
@@ -151,9 +155,9 @@ audit_server_xml() {
     fi
 
     # Extract CredentialHandler
-    local ch_line=$(grep -A 5 "CredentialHandler" "$server_xml_path" | tr -d '\n' | sed 's/.*<CredentialHandler\s*\([^>]*\)>.*/\1/')
+    local ch_line=$(awk '/<CredentialHandler/,/\/>/' "$server_xml_path" | tr -d '\n' | sed 's/.*<CredentialHandler\s*\([^>]*\)\/>.*/\1/')
     if [ -n "$ch_line" ]; then
-        credential_handler=$(echo "$ch_line" | grep -o 'className="[^"]*"' | sed 's/className="\([^"]*\)"/\1/' || echo "None")
+        credential_handler=$(echo "$ch_line" | grep -o 'className="[^"]*"' | sed 's/className="\([^"]*\)"/\1/' || echo "Unknown")
         algorithm=$(echo "$ch_line" | grep -o 'algorithm="[^"]*"' | sed 's/algorithm="\([^"]*\)"/\1/' || echo "None")
         iterations=$(echo "$ch_line" | grep -o 'iterations="[0-9]*"' | sed 's/iterations="\([0-9]*\)"/\1/' || echo "0")
         salt_length=$(echo "$ch_line" | grep -o 'saltLength="[0-9]*"' | sed 's/saltLength="\([0-9]*\)"/\1/' || echo "0")
@@ -172,15 +176,15 @@ audit_users_xml() {
     local results=()
 
     if [ ! -f "$users_xml_path" ]; then
-        write_log "Error: $users_xml_path not found"
+        write_log "Error parsing $users_xml_path: No such file or directory"
         return
     fi
 
     # Parse users
     while IFS= read -r user_line; do
         if [[ "$user_line" =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
-            local username="${BASH_REMATCH[1]}"
-            local password="${BASH_REMATCH[2]}"
+            local username="${BASH_REMATCH[1]:-Unknown}"
+            local password="${BASH_REMATCH[2]:-}"
             read password_type is_secure <<< $(detect_password_type "$password")
 
             local status="Non-compliant"
@@ -202,8 +206,9 @@ audit_users_xml() {
                 issues+=("Weak password hashing ($password_type) detected")
                 issues+=("Recommendation: Use SHA-256, SHA-512, or PBKDF2")
             elif [[ "$password_type" =~ ^(Hashed_SHA256|Hashed_SHA512)$ ]]; then
+                hash_type="${password_type#Hashed_}"
                 if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] &&
-                   [ "$handler_algorithm" = "${password_type#Hashed_}" ] &&
+                   [ "$handler_algorithm" = "$hash_type" ] &&
                    [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
                     status="Compliant"
                 else
@@ -225,13 +230,13 @@ audit_users_xml() {
             fi
 
             # Output results for this user
-            write_log "- User '$username': $password_type password ($( [ "$is_secure" -eq 1 ] && echo "secure" || echo "insecure" ))" 1
+            write_log "- User '$username': $password_type password ($( [ "$is_secure" -eq 1 ] && echo "secure" || echo "insecure" ))" 2
             for param in "${parameters[@]}"; do
-                write_log "$param" 2 "- "
+                write_log "- $param" 4
             done
-            write_log "- Status: $status with NIST 800-53 IA-5 and CIS Tomcat Benchmark" 2
+            write_log "- Status: $status with NIST 800-53 IA-5 and CIS Tomcat Benchmark" 4
             for issue in "${issues[@]}"; do
-                write_log "$issue" 3 "- "
+                write_log "- $issue" 6
             done
 
             results+=("$status")
