@@ -62,7 +62,7 @@ detect_tomcat_version() {
         fi
     fi
 
-    tomcatelaarhome_lower=$(echo "$tomcat_home" | tr '[:upper:]' '[:lower:]')
+    tomcat_home_lower=$(echo "$tomcat_home" | tr '[:upper:]' '[:lower:]')
     if [[ "$tomcat_home_lower" =~ tomcat7 ]]; then version="7.0"
     elif [[ "$tomcat_home_lower" =~ tomcat8 ]]; then version="8.5"
     elif [[ "$tomcat_home_lower" =~ tomcat9 ]]; then version="9.0"
@@ -287,9 +287,9 @@ audit_users_xml() {
                 issues+=("Unknown password type: $password_type.")
             fi
 
-            write_log "  $username | $password_type | $compliance_status" 2 >&2
+            write_log "    $username | $password_type | $compliance_status" 4 >&2
             for issue in "${issues[@]}"; do
-                write_log "    - $issue" 4 >&2
+                write_log "        - $issue" 8 >&2
             done
 
             results+=("$compliance_status")
@@ -297,7 +297,7 @@ audit_users_xml() {
     done < <(grep "<user" "$users_xml_path" || echo "")
 
     if [ "$user_count" -eq 0 ]; then
-        write_log "  No users found in $users_xml_path" 2 >&2
+        write_log "    No users found in $users_xml_path" 4 >&2
     fi
 
     printf "%s" "${results[*]}"
@@ -305,9 +305,14 @@ audit_users_xml() {
 
 # Main audit function
 audit_tomcat_config() {
+    # Get execution time and hostname
+    local exec_time=$(TZ=Asia/Kolkata date "+%I:%M %p IST on %A, %B %d, %Y")
+    local hostname=$(hostname)
+    local pwd=$(pwd)
+    write_log "┌──($USER㉿$hostname)-[$pwd]"
+    write_log "└─$ $exec_time"
     write_log "Apache Tomcat Security Audit"
     write_log "==========================="
-    write_log ""
 
     if ! : > "$LOG_FILE" 2>/dev/null; then
         write_log "Warning: Cannot clear $LOG_FILE. Continuing with existing log." >&2
@@ -319,11 +324,9 @@ audit_tomcat_config() {
         exit 1
     fi
     write_log "Config Path: $conf_path"
-    write_log ""
 
     local tomcat_version=$(detect_tomcat_version "$(dirname "$conf_path")")
     write_log "Tomcat Version: $tomcat_version"
-    write_log ""
 
     local server_xml_path="$conf_path/server.xml"
     write_log "Auditing server.xml"
@@ -336,7 +339,6 @@ audit_tomcat_config() {
     write_log "  Algorithm: $algorithm"
     write_log "  Iterations: $iterations"
     write_log "  Salt Length: $salt_length"
-    write_log ""
 
     local users_xml_path="$conf_path/tomcat-users.xml"
     write_log "Auditing tomcat-users.xml"
