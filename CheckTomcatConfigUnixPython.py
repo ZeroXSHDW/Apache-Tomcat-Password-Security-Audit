@@ -168,25 +168,20 @@ def audit_users_xml(users_xml_path, credential_handler, handler_algorithm, itera
         write_log(f"Error: {users_xml_path} not found")
         return results
     try:
-        # Parse XML with namespace handling
         tree = ET.parse(users_xml_path)
         root = tree.getroot()
-        # Try finding users with and without namespace
         users = root.findall(".//user")
         if not users:
-            # Handle potential namespace
             for elem in root.iter():
                 if elem.tag.endswith("user"):
                     users.append(elem)
         write_log("User Audit Results:")
         write_log("Username | Password Type | Compliance")
         write_log("---------|---------------|-----------")
-        write_log(f"Debug: Found {len(users)} user elements")  # Debug log
         for user in users:
             user_count += 1
             username = user.get("username", "Unknown")
             password = user.get("password", "")
-            write_log(f"Debug: Processing user: {username}")  # Debug log
             password_type, is_secure = detect_password_type(password)
             compliance_status = "Non-compliant"
             issues = []
