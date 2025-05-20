@@ -4,10 +4,10 @@
 
 import os
 import sys
-import xml.etree.ElementTree as ET
 import re
 import datetime
 import socket
+import xml.etree.ElementTree as ET
 
 # Log setup
 LOG_FILE = "/tmp/TomcatManager.log"
@@ -168,20 +168,17 @@ def audit_users_xml(users_xml_path, credential_handler, handler_algorithm, itera
         write_log(f"Error: {users_xml_path} not found")
         return results
     try:
-        tree = ET.parse(users_xml_path)
-        root = tree.getroot()
-        users = root.findall(".//user")
-        if not users:
-            for elem in root.iter():
-                if elem.tag.endswith("user"):
-                    users.append(elem)
+        with open(users_xml_path, "r") as f:
+            content = f.read()
         write_log("User Audit Results:")
         write_log("Username | Password Type | Compliance")
         write_log("---------|---------------|-----------")
-        for user in users:
+        # Regex to match <user> lines with username and password attributes
+        user_pattern = re.compile(r'<user[^>]*username="([^"]+)"[^>]*password="([^"]+)"[^>]*>')
+        for match in user_pattern.finditer(content):
             user_count += 1
-            username = user.get("username", "Unknown")
-            password = user.get("password", "")
+            username = match.group(1) if match.group(1) else "Unknown"
+            password = match.group(2) if match.group(2) else ""
             password_type, is_secure = detect_password_type(password)
             compliance_status = "Non-compliant"
             issues = []
@@ -233,7 +230,7 @@ def audit_users_xml(users_xml_path, credential_handler, handler_algorithm, itera
         if user_count == 0:
             write_log("    No users found in tomcat-users.xml", indent=2)
     except Exception as e:
-        write_log(f"Error parsing {users_xml_path}: {str(e)}")
+        write_log(f"Error reading {users_xml_path}: {str(e)}")
     return results
 
 # Main audit function
