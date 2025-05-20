@@ -133,6 +133,50 @@ detect_password_type() {
     echo "$type $is_secure"
 }
 
+# Check configuration compliance for Tomcat version
+check_config_compliance() {
+    local tomcat_version="$1"
+    local credential_handler="$2"
+    local algorithm="$3"
+    local iterations="$4"
+    local salt_length="$5"
+    local config_status="Non-compliant"
+    local config_issues=()
+
+    if [ "$tomcat_version" = "7.0" ]; then
+        if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
+           [ "$algorithm" = "SHA-256" ]; then
+            config_status="Compliant for Tomcat 7.0"
+        else
+            config_status="Non-compliant - Incorrect configuration for Tomcat 7.0"
+            config_issues+=("Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256")
+            config_issues+=("Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'")
+        fi
+    elif [ "$tomcat_version" = "8.5" ]; then
+        if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
+           [ "$algorithm" = "SHA-512" ] && \
+           [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
+            config_status="Compliant for Tomcat 8.5"
+        else
+            config_status="Non-compliant - Incorrect configuration for Tomcat 8.5"
+            config_issues+=("Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16")
+            config_issues+=("Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'")
+        fi
+    else # Tomcat 9.0, 10.0, 10.1
+        if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
+           [ "$algorithm" = "PBKDF2WithHmacSHA512" ] && \
+           [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
+            config_status="Compliant for Tomcat $tomcat_version"
+        else
+            config_status="Non-compliant - Incorrect configuration for Tomcat $tomcat_version"
+            config_issues+=("Tomcat $tomcat_version requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16")
+            config_issues+=("Recommendation: Configure SecretKeyCredentialHandler with algorithm='PBKDF2WithHmacSHA512', iterations='10000', saltLength='16'")
+        fi
+    fi
+
+    echo "$config_status ${config_issues[*]}"
+}
+
 # Audit server.xml
 audit_server_xml() {
     local server_xml_path="$1"
@@ -149,7 +193,7 @@ audit_server_xml() {
 
     # Check for UserDatabaseRealm or MemoryRealm
     local realm_line=$(grep -E "org.apache.catalina.realm.(UserDatabaseRealm|MemoryRealm)" "$server_xml_path")
-    if [ -z "$realm_line" ]; then
+ PowderShellif [ -z "$realm_line" ]; then
         echo "$credential_handler $algorithm $iterations $salt_length"
         return
     fi
@@ -191,7 +235,7 @@ audit_users_xml() {
             local compliance_status="Non-compliant"
             local issues=()
 
-            # Compliance checks (translated from PowerShell)
+            # Compliance checks (aligned with PowerShell)
             if [ "$password_type" = "Plaintext" ]; then
                 compliance_status="Non-compliant - Plaintext password detected"
                 is_secure=0
@@ -216,7 +260,7 @@ audit_users_xml() {
                     compliance_status="Non-compliant - SHA256 requires salt and iterations"
                     is_secure=0
                     issues+=("Hashed_SHA256 passwords should use salt and iterations")
-                    issues+=("Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000")
+                    issuesampled+=("Recommendation: Configure MessageDigestCredentialHandler with saltLength >= 16 and iterations >= 10000")
                 else
                     compliance_status="Compliant"
                     is_secure=1
@@ -326,6 +370,20 @@ audit_tomcat_config() {
     write_log "Auditing server.xml at $server_xml_path"
     read credential_handler algorithm iterations salt_length <<< $(audit_server_xml "$server_xml_path")
 
+    # Check configuration compliance
+    write_log "Checking configuration compliance for Tomcat $tomcat_version"
+    read config_status config_issues <<< $(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length")
+    write_log "- Configuration Status: $config_status" 2
+    write_log "- CredentialHandler: $credential_handler" 4
+    write_log "- Algorithm: $algorithm" 4
+    write_log "- Iterations: $iterations" 4
+    write_log "- Salt Length: $salt_length" 4
+    if [[ "$config_status" =~ ^Non-compliant ]]; then
+        for issue in $config_issues; do
+            write_log "- $issue" 6
+        done
+    fi
+
     # Audit tomcat-users.xml
     local users_xml_path="$conf_path/tomcat-users.xml"
     write_log "Auditing tomcat-users.xml at $users_xml_path"
@@ -333,12 +391,16 @@ audit_tomcat_config() {
 
     # Overall status
     local overall_secure=1
-    for result in "${audit_results[@]}"; do
-        if [[ "$result" =~ ^Non-compliant ]]; then
-            overall_secure=0
-            break
-        fi
-    done
+    if [[ "$config_status" =~ ^Non-compliant ]] || [ ${#audit_results[@]} -eq 0 ]; then
+        overall_secure=0
+    else
+        for result in "${audit_results[@]}"; do
+            if [[ "$result" =~ ^Non-compliant ]]; then
+                overall_secure=0
+                break
+            fi
+        done
+    fi
 
     write_log "Overall Configuration: $( [ "$overall_secure" -eq 1 ] && echo "Secure" || echo "Insecure" )"
     write_log "Audit completed"
