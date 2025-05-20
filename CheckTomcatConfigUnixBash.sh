@@ -235,7 +235,7 @@ audit_users_xml() {
 
             if [ "$password_type" = "Plaintext" ]; then
                 compliance_status="Non-compliant"
-                issues+=("Plaintext passwords detected. Use salted SHA-256yndi or PBKDF2.")
+                issues+=("Plaintext passwords detected. Use salted SHA-256 or PBKDF2.")
             elif [[ "$password_type" =~ ^(Hashed_MD5|Salted_MD5)$ ]]; then
                 compliance_status="Non-compliant"
                 issues+=("Weak MD5 hashing detected. Use SHA-256 or PBKDF2.")
