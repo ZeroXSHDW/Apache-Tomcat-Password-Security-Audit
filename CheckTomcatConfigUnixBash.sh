@@ -306,13 +306,10 @@ audit_users_xml() {
 # Main audit function
 audit_tomcat_config() {
     # Get execution time and hostname
-    local exec_time=$(TZ=Asia/Kolkata date "+%I:%M %p IST on %A, %B %d, %Y")
+    local exec_time=$(TZ=Asia/Kolkata date "+%I:%M %p IST, %A, %B %d, %Y")
     local hostname=$(hostname)
-    local pwd=$(pwd)
-    write_log "┌──($USER㉿$hostname)-[$pwd]"
-    write_log "└─$ $exec_time"
-    write_log "Apache Tomcat Security Audit"
-    write_log "==========================="
+    write_log "$exec_time"
+    write_log "$hostname"
 
     if ! : > "$LOG_FILE" 2>/dev/null; then
         write_log "Warning: Cannot clear $LOG_FILE. Continuing with existing log." >&2
