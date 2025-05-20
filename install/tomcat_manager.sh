@@ -145,7 +145,7 @@ install_tomcat() {
             JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
             JAVA_BIN="${JAVA_HOME}/bin/java"
             CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
-            CHECKSUM="a1b2c3d4e5f6b7c9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5"
+            CHECKSUM="b387fae59f1eda13a5c2336243514d9568057815689057ff920be696548ea6afbcfc0933934d3d6f8c4e2b5108322dc7509bfe934c49d05905c6ce87f1dff53c"
             ;;
         10.0)
             TOMCAT_VERSION="10.0.27"
