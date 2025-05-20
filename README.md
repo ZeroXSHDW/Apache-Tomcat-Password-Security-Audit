@@ -4,12 +4,16 @@
 
 ## Overview
 
-The **Apache Tomcat Password Security Auditor** is a set of tools to audit Tomcat user authentication configurations for compliance with **NIST 800-53 IA-5** and **CIS Tomcat Benchmark** standards. It helps system administrators and security professionals ensure secure password configurations across Tomcat versions 7.0, 8.5, 9.0, 10.0, and 10.1.
+**Apache Tomcat - Password Security Auditor Tool** is a set of tools designed to audit Apache Tomcat user authentication configurations for compliance with **NIST 800-53 IA-5** and **CIS Tomcat Benchmark** standards. This repository includes scripts for both Unix (Linux/macOS) and Windows environments, enabling system administrators and security professionals to evaluate password security across various Tomcat versions.
 
-### Key Scripts
-- **CheckTomcatConfigUnix.py**: Audits Tomcat configurations on Unix (Linux/macOS) systems.
-- **CheckTomcatConfigWin.ps1**: Audits Tomcat configurations on local Windows systems.
-- **Remote_CheckTomcatConfigWin.ps1**: Audits Tomcat configurations on remote Windows servers via PowerShell remoting.
+### Key Features
+- **Automated Testing**: Scripts test multiple password types and credential handler configurations, modifying `server.xml` and `tomcat-users.xml` to simulate scenarios and validate compliance.
+- **Manual Auditing**: Analyze existing configurations, reporting password types, credential handlers, and compliance status with actionable recommendations.
+- **Remote Auditing**: Support for auditing Tomcat configurations on remote Windows servers using PowerShell remoting.
+- **Cross-Platform Support**: Python-based scripts for Unix (Linux/macOS) and PowerShell scripts for Windows.
+- **Backup and Restore**: Automatically back up and restore configuration files during testing to prevent data loss.
+- **Detailed Logging**: Logs audit and test results to platform-specific locations for traceability.
+- **Compliance Reporting**: Identifies secure/insecure configurations and provides guidance for achieving compliance.
 
 ### Features
 - Checks password types and credential handler configurations.
@@ -17,6 +21,15 @@ The **Apache Tomcat Password Security Auditor** is a set of tools to audit Tomca
 - Supports local and remote auditing on Windows, and local auditing on Unix.
 - Logs results for traceability (CSV for Windows, text for Unix).
 - Compatible with Tomcat 7.0, 8.5, 9.0, 10.0, and 10.1.
+
+### Supported Tomcat Versions
+| Version | Unix Support | Windows Support | Notes |
+|---------|--------------|-----------------|-------|
+| 7.0     | ✅           | ✅              | Supports `MessageDigestCredentialHandler` (MD5, SHA-1, SHA-256). |
+| 8.5     | ✅           | ✅              | Adds SHA-512 and `NestedCredentialHandler` support. |
+| 9.0     | ✅           | ✅              | Includes `SecretKeyCredentialHandler` for PBKDF2. |
+| 10.0    | ✅           | ✅              | Supports `SecretKeyCredentialHandler` and `NestedCredentialHandler`. |
+| 10.1    | ✅           | ✅              | Identical features to 10.0. |
 
 ## Quick Start
 
