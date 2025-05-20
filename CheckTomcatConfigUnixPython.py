@@ -117,28 +117,28 @@ def check_config_compliance(tomcat_version, credential_handler, algorithm, itera
         if credential_handler == "org.apache.catalina.realm.MessageDigestCredentialHandler" and algorithm == "SHA-256":
             config_status = "Compliant for Tomcat 7.0"
         else:
-            issues.append(f"Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256")
-            issues.append(f"Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'")
+            issues.append("Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256")
+            issues.append("Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'")
     elif tomcat_version == "8.5":
         if (credential_handler == "org.apache.catalina.realm.MessageDigestCredentialHandler" and 
             algorithm == "SHA-512" and iterations >= 10000 and salt_length >= 16):
             config_status = "Compliant for Tomcat 8.5"
         else:
-            issues.append(f"Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16")
-            issues.append(f"Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'")
+            issues.append("Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16")
+            issues.append("Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'")
     else:  # Tomcat 9.0, 10.0, 10.1
         if (credential_handler == "org.apache.catalina.realm.SecretKeyCredentialHandler" and 
             algorithm == "PBKDF2WithHmacSHA512" and iterations >= 10000 and salt_length >= 16):
-            config_status = "Compliant for Tomcat {tomcat_version}"
+            config_status = f"Compliant for Tomcat {tomcat_version}"
         else:
             issues.append(f"Tomcat {tomcat_version} requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16")
-            issues.append(f"Recommendation: Configure SecretKeyCredentialHandler with algorithm='PBKDF2WithHmacSHA512', iterations='10000', saltLength='16'")
+            issues.append("Recommendation: Configure SecretKeyCredentialHandler with algorithm='PBKDF2WithHmacSHA512', iterations='10000', saltLength='16'")
     return config_status, issues
 
 # Audit server.xml
 def audit_server_xml(server_xml_path):
     if not os.path.isfile(server_xml_path):
-        write_log(f"Error: {server_xml_path} not found", indent=0)
+        write_log(f"Error: {server_xml_path} not found")
         return "None", "None", 0, 0
     try:
         tree = ET.parse(server_xml_path)
@@ -165,14 +165,14 @@ def audit_users_xml(users_xml_path, credential_handler, handler_algorithm, itera
     results = []
     user_count = 0
     if not os.path.isfile(users_xml_path):
-        write_log(f"Error: {users_xml_path} not found", indent=0)
+        write_log(f"Error: {users_xml_path} not found")
         return results
     try:
         tree = ET.parse(users_xml_path)
         root = tree.getroot()
-        write_log("User Audit Results:", indent=0)
-        write_log("Username | Password Type | Compliance", indent=0)
-        write_log("---------|---------------|-----------", indent=0)
+        write_log("User Audit Results:")
+        write_log("Username | Password Type | Compliance")
+        write_log("---------|---------------|-----------")
         for user in root.findall(".//user"):
             user_count += 1
             username = user.get("username", "Unknown")
@@ -223,7 +223,7 @@ def audit_users_xml(users_xml_path, credential_handler, handler_algorithm, itera
                 issues.append(f"Unknown password type: {password_type}.")
             write_log(f"    {username} | {password_type} | {compliance_status}", indent=2)
             for issue in issues:
-                write_log(f"{issue}", indent=4)
+                write_log(issue, indent=4)
             results.append({"status": compliance_status})
         if user_count == 0:
             write_log("    No users found in tomcat-users.xml", indent=2)
