@@ -146,6 +146,8 @@ check_config_compliance() {
         else
             issue="Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256"
             recommendation="Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'"
+            write_log "- $issue" 2
+            write_log "- $recommendation" 2
         fi
     elif [ "$tomcat_version" = "8.5" ]; then
         if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
@@ -155,6 +157,8 @@ check_config_compliance() {
         else
             issue="Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16"
             recommendation="Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'"
+            write_log "- $issue" 2
+            write_log "- $recommendation" 2
         fi
     else # Tomcat 9.0, 10.0, 10.1
         if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
@@ -164,10 +168,12 @@ check_config_compliance() {
         else
             issue="Tomcat $tomcat_version requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16"
             recommendation="Recommendation: Configure SecretKeyCredentialHandler with algorithm='PBKDF2WithHmacSHA512', iterations='10000', saltLength='16'"
+            write_log "- $issue" 2
+            write_log "- $recommendation" 2
         fi
     fi
 
-    echo "$config_status|$issue|$recommendation"
+    echo "$config_status $issue $recommendation"
 }
 
 # Audit server.xml
@@ -329,18 +335,15 @@ audit_tomcat_config() {
     read credential_handler algorithm iterations salt_length <<< $(audit_server_xml "$server_xml_path")
 
     write_log "Server Configuration:"
-    compliance_output=$(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length")
-    config_status=$(echo "$compliance_output" | awk -F'|' '{print $1}')
-    issue=$(echo "$compliance_output" | awk -F'|' '{print $2}')
-    recommendation=$(echo "$compliance_output" | awk -F'|' '{print $3}')
+    read config_status issue recommendation <<< $(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length")
     write_log "  Status: $config_status"
     write_log "  CredentialHandler: $credential_handler"
     write_log "  Algorithm: $algorithm"
     write_log "  Iterations: $iterations"
     write_log "  Salt Length: $salt_length"
     if [[ "$config_status" =~ ^Non-compliant ]]; then
-        write_log "  - $issue" 2
-        write_log "  - $recommendation" 2
+        write_log "- $issue" 2
+        write_log "- $recommendation" 2
     fi
 
     local users_xml_path="$conf_path/tomcat-users.xml"
