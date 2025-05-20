@@ -47,12 +47,12 @@
 
 ### Clone Repository
 ```bash
-git clone <repository-url> ~/tomcat-audit
+git clone https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit ~/tomcat-audit
 cd ~/tomcat-audit
 ```
 For Windows:
 ```powershell
-git clone <repository-url> C:\Users\<User>\tomcat-audit
+git clone https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit C:\Users\<User>\tomcat-audit
 cd C:\Users\<User>\tomcat-audit
 ```
 
