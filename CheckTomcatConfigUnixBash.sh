@@ -62,7 +62,7 @@ detect_tomcat_version() {
         fi
     fi
 
-    tomcat_home_lower=$(echo "$tomcat_home" | tr '[:upper:]' '[:lower:]')
+    tomcatelaarhome_lower=$(echo "$tomcat_home" | tr '[:upper:]' '[:lower:]')
     if [[ "$tomcat_home_lower" =~ tomcat7 ]]; then version="7.0"
     elif [[ "$tomcat_home_lower" =~ tomcat8 ]]; then version="8.5"
     elif [[ "$tomcat_home_lower" =~ tomcat9 ]]; then version="9.0"
@@ -142,8 +142,8 @@ check_config_compliance() {
            [ "$algorithm" = "SHA-256" ]; then
             config_status="Compliant for Tomcat 7.0"
         else
-            write_log "- Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256" 2 >&2
-            write_log "- Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'" 2 >&2
+            write_log "  - Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256" 2 >&2
+            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'" 2 >&2
         fi
     elif [ "$tomcat_version" = "8.5" ]; then
         if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
@@ -151,8 +151,8 @@ check_config_compliance() {
            [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
             config_status="Compliant for Tomcat 8.5"
         else
-            write_log "- Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16" 2 >&2
-            write_log "- Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2 >&2
+            write_log "  - Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16" 2 >&2
+            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2 >&2
         fi
     else # Tomcat 9.0, 10.0, 10.1
         if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
@@ -160,8 +160,8 @@ check_config_compliance() {
            [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
             config_status="Compliant for Tomcat $tomcat_version"
         else
-            write_log "- Tomcat $tomcat_version requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16" 2 >&2
-            write_log "- Recommendation: Configure SecretKeyCredentialHandler with algorithm='PBKDF2WithHmacSHA512', iterations='10000', saltLength='16'" 2 >&2
+            write_log "  - Tomcat $tomcat_version requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16" 2 >&2
+            write_log "  - Recommendation: Configure SecretKeyCredentialHandler with algorithm='PBKDF2WithHmacSHA512', iterations='10000', saltLength='16'" 2 >&2
         fi
     fi
 
@@ -287,9 +287,9 @@ audit_users_xml() {
                 issues+=("Unknown password type: $password_type.")
             fi
 
-            write_log "$username | $password_type | $compliance_status" >&2
+            write_log "  $username | $password_type | $compliance_status" 2 >&2
             for issue in "${issues[@]}"; do
-                write_log "  - $issue" 2 >&2
+                write_log "    - $issue" 4 >&2
             done
 
             results+=("$compliance_status")
@@ -297,7 +297,7 @@ audit_users_xml() {
     done < <(grep "<user" "$users_xml_path" || echo "")
 
     if [ "$user_count" -eq 0 ]; then
-        write_log "No users found in $users_xml_path" >&2
+        write_log "  No users found in $users_xml_path" 2 >&2
     fi
 
     printf "%s" "${results[*]}"
@@ -307,6 +307,7 @@ audit_users_xml() {
 audit_tomcat_config() {
     write_log "Apache Tomcat Security Audit"
     write_log "==========================="
+    write_log ""
 
     if ! : > "$LOG_FILE" 2>/dev/null; then
         write_log "Warning: Cannot clear $LOG_FILE. Continuing with existing log." >&2
@@ -318,9 +319,11 @@ audit_tomcat_config() {
         exit 1
     fi
     write_log "Config Path: $conf_path"
+    write_log ""
 
     local tomcat_version=$(detect_tomcat_version "$(dirname "$conf_path")")
     write_log "Tomcat Version: $tomcat_version"
+    write_log ""
 
     local server_xml_path="$conf_path/server.xml"
     write_log "Auditing server.xml"
@@ -328,17 +331,16 @@ audit_tomcat_config() {
 
     write_log "Server Configuration:"
     config_status=$(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length")
-    write_log "Debug: config_status=$config_status" 2
     write_log "  Status: $config_status"
-    write_log "  CredentialHandler: $credential_handler"
+    write_log "  Credential Handler: $credential_handler"
     write_log "  Algorithm: $algorithm"
     write_log "  Iterations: $iterations"
     write_log "  Salt Length: $salt_length"
+    write_log ""
 
     local users_xml_path="$conf_path/tomcat-users.xml"
     write_log "Auditing tomcat-users.xml"
     IFS=' ' read -ra audit_results <<< $(audit_users_xml "$users_xml_path" "$credential_handler" "$algorithm" "$iterations" "$salt_length" "$tomcat_version")
-    write_log "Debug: audit_results=${audit_results[*]}" 2
 
     local overall_secure=1
     if [[ "$config_status" == "Non-compliant" ]] || [ ${#audit_results[@]} -eq 0 ]; then
