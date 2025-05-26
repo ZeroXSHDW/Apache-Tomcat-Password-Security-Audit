@@ -263,8 +263,8 @@ audit_users_xml() {
     local line_count=$(echo "$user_lines" | grep -c '^')
     write_log "Debug: Found $line_count user tag(s)" 4
 
-    # Process each user tag in the same shell to preserve log_messages
-    for user_line in $user_lines; do
+    # Process each user tag using while loop to preserve lines
+    while IFS= read -r user_line; do
         # Skip empty lines
         [ -z "$user_line" ] && continue
         write_log "Debug: Processing user line: $user_line" 4
@@ -346,7 +346,7 @@ audit_users_xml() {
         else
             write_log "Debug: No username/password match in line: $user_line" 4
         fi
-    done
+    done <<< "$user_lines"
 
     write_log "Debug: Processed $user_count user(s)" 4
 
