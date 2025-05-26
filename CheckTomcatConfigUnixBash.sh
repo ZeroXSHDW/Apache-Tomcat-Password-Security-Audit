@@ -149,7 +149,7 @@ check_config_compliance() {
             config_status="Compliant for Tomcat 7.0"
         else
             write_log "  - Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256" 2
-            write_log "  - Recommendation: Configure SecretKeyCredentialHandler with algorithm='SHA-256'" 2
+            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'" 2
         fi
     elif [ "$tomcat_version" = "8.5" ]; then
         if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
@@ -158,7 +158,7 @@ check_config_compliance() {
             config_status="Compliant for Tomcat 8.5"
         else
             write_log "  - Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16" 2
-            write_log "  - Recommendation: Configure SecretKeyCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2
+            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2
         fi
     else # Tomcat 9.0, 10.0, 10.1
         if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
@@ -251,8 +251,6 @@ audit_tomcat_config() {
     # Audit tomcat-users.xml inline
     local users_xml_path="$conf_path/tomcat-users.xml"
     write_log "Auditing tomcat-users.xml"
-    write_log "Debug: Starting audit of $users_xml_path" 4
-    write_log "Debug: users_xml_path=$users_xml_path" 4
 
     audit_results=()
     local user_count=0
@@ -273,32 +271,20 @@ audit_tomcat_config() {
             write_log "Error: $users_xml_path is empty" 4
             write_log "    No users found in $users_xml_path" 4
         else
-            write_log "Debug: File read successfully, content length=${#content}" 4
-            local content_preview=${content:0:200}
-            content_preview=${content_preview//[$'\n\r']/ }
-            write_log "Debug: File content preview: $content_preview" 4
-
             # Parse using grep and sed
-            write_log "Debug: Attempting grep and sed parsing" 4
             local user_lines
             user_lines=$(echo "$content" | grep '<user' || true)
-            write_log "Debug: grep found ${#user_lines[@]} lines" 4
-            write_log "Debug: Raw grep output: $user_lines" 4
-
             if [ -n "$user_lines" ]; then
                 while IFS= read -r user_line; do
                     if [ -z "$user_line" ]; then
-                        write_log "Debug: Skipping empty user line" 4
                         continue
                     fi
-                    write_log "Debug: Processing user line: $user_line" 4
                     local username
                     local password
                     username=$(echo "$user_line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
                     password=$(echo "$user_line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
                     if [ -n "$username" ] && [ -n "$password" ]; then
                         ((user_count++))
-                        write_log "Debug: Matched username=$username, password=$password" 4
                         read password_type is_secure <<< $(detect_password_type "$password")
 
                         local compliance_status="Non-compliant"
@@ -368,19 +354,13 @@ audit_tomcat_config() {
                         done
 
                         audit_results+=("$compliance_status")
-                    else
-                        write_log "Debug: No username/password match in line: $user_line" 4
                     fi
                 done <<< "$user_lines"
             else
-                write_log "Debug: No user tags found via grep" 4
                 write_log "    No users found in $users_xml_path" 4
             fi
         fi
     fi
-
-    write_log "Debug: Processed $user_count user(s)" 4
-    write_log "Debug: Audit results: ${audit_results[*]}" 4
 
     local overall_secure=1
     if [ "$config_status" = "Non-compliant" ]; then
