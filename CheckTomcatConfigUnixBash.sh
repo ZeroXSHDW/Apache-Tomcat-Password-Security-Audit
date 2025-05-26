@@ -3,7 +3,8 @@
 # Audit Apache Tomcat configuration for security compliance with NIST 800-53 IA-5 and CIS Tomcat Benchmark
 
 # Log setup
-LOG_FILE="/tmp/TomcatManager.log"
+LOG_FILE="/tmp/TomcatManager.csv"
+log_messages=()
 
 write_log() {
     local message="$1"
@@ -11,11 +12,16 @@ write_log() {
     local indent_spaces=$(printf "%${indent}s" | tr ' ' ' ')
     local log_message="${indent_spaces}${message}"
     
-    if ! echo "${log_message}" >> "${LOG_FILE}" 2>/dev/null; then
-        echo "Warning: Cannot write to ${LOG_FILE}. Logging to console only." >&2
-    fi
+    log_messages+=("$log_message")
     echo -e "${log_message}"
 }
+
+# Ensure log file has header
+if [ ! -f "$LOG_FILE" ]; then
+    if ! echo "Timestamp,Message" > "$LOG_FILE" 2>/dev/null; then
+        echo "Warning: Cannot create $LOG_FILE. Logging to console only." >&2
+    fi
+fi
 
 # Function to detect Tomcat path
 get_tomcat_config_path() {
@@ -81,7 +87,7 @@ detect_tomcat_version() {
     fi
 
     if [ "$version" = "7.0" ]; then
-        write_log "Warning: Could not determine Tomcat version at $tomcat_home, defaulting to 7.0" >&2
+        write_log "Warning: Could not determine Tomcat version at $tomcat_home, defaulting to 7.0"
     fi
     echo "$version"
 }
@@ -142,8 +148,8 @@ check_config_compliance() {
            [ "$algorithm" = "SHA-256" ]; then
             config_status="Compliant for Tomcat 7.0"
         else
-            write_log "  - Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256" 2 >&2
-            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'" 2 >&2
+            write_log "  - Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256" 2
+            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'" 2
         fi
     elif [ "$tomcat_version" = "8.5" ]; then
         if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
@@ -151,8 +157,8 @@ check_config_compliance() {
            [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
             config_status="Compliant for Tomcat 8.5"
         else
-            write_log "  - Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16" 2 >&2
-            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2 >&2
+            write_log "  - Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16" 2
+            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2
         fi
     else # Tomcat 9.0, 10.0, 10.1
         if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
@@ -160,8 +166,8 @@ check_config_compliance() {
            [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
             config_status="Compliant for Tomcat $tomcat_version"
         else
-            write_log "  - Tomcat $tomcat_version requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16" 2 >&2
-            write_log "  - Recommendation: Configure SecretKeyCredentialHandler with algorithm='PBKDF2WithHmacSHA512', iterations='10000', saltLength='16'" 2 >&2
+            write_log "  - Tomcat $tomcat_version requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16" 2
+            write_log "  - Recommendation: Configure SecretKeyCredentialHandler with algorithm='PBKDF2WithHmacSHA512', iterations='10000', saltLength='16'" 2
         fi
     fi
 
@@ -177,7 +183,7 @@ audit_server_xml() {
     local salt_length=0
 
     if [ ! -f "$server_xml_path" ]; then
-        write_log "Error: $server_xml_path not found" >&2
+        write_log "Error: $server_xml_path not found"
         echo "$credential_handler $algorithm $iterations $salt_length"
         return
     fi
@@ -211,13 +217,13 @@ audit_users_xml() {
     local user_count=0
 
     if [ ! -f "$users_xml_path" ]; then
-        write_log "Error: $users_xml_path not found" >&2
+        write_log "Error: $users_xml_path not found"
         return
     fi
 
-    write_log "User Audit Results:" >&2
-    write_log "Username | Password Type | Compliance" >&2
-    write_log "---------|---------------|-----------" >&2
+    write_log "User Audit Results:"
+    write_log "Username | Password Type | Compliance"
+    write_log "---------|---------------|-----------"
 
     while IFS= read -r user_line; do
         if [[ "$user_line" =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
@@ -287,9 +293,9 @@ audit_users_xml() {
                 issues+=("Unknown password type: $password_type.")
             fi
 
-            write_log "    $username | $password_type | $compliance_status" 4 >&2
+            write_log "    $username | $password_type | $compliance_status" 4
             for issue in "${issues[@]}"; do
-                write_log "        - $issue" 8 >&2
+                write_log "        - $issue" 8
             done
 
             results+=("$compliance_status")
@@ -297,7 +303,7 @@ audit_users_xml() {
     done < <(grep "<user" "$users_xml_path" || echo "")
 
     if [ "$user_count" -eq 0 ]; then
-        write_log "    No users found in $users_xml_path" 4 >&2
+        write_log "    No users found in $users_xml_path" 4
     fi
 
     printf "%s" "${results[*]}"
@@ -305,22 +311,17 @@ audit_users_xml() {
 
 # Main audit function
 audit_tomcat_config() {
-    # Clear log file first
-    if ! : > "$LOG_FILE" 2>/dev/null; then
-        echo "Warning: Cannot clear $LOG_FILE. Continuing with existing log." >&2
-    fi
-
     # Get execution time and hostname
-    local exec_time=$(TZ=Asia/Kolkata date "+%I:%M %p IST, %A, %B %d, %Y")
+    local exec_time=$(TZ=Asia/Kolkata date "+%Y-%m-%d %H:%M:%S")
     local hostname=$(hostname)
-    write_log "$exec_time"
-    write_log "$hostname"
+    write_log "Execution Time: $exec_time"
+    write_log "Hostname: $hostname"
     write_log "==========================="
 
     local conf_path=$(get_tomcat_config_path)
     if [ -z "$conf_path" ]; then
-        write_log "Error: No Tomcat configuration directory found" >&2
-        exit 1
+        write_log "ERROR - No Tomcat configuration directory found"
+        return
     fi
     write_log "Config Path: $conf_path"
 
@@ -357,7 +358,15 @@ audit_tomcat_config() {
 
     write_log "==========================="
     write_log "Overall Status: $( [ "$overall_secure" -eq 1 ] && echo "Secure" || echo "Insecure" )"
-    write_log "Audit completed. Log: $LOG_FILE"
+    write_log "Audit completed"
+
+    # Write single CSV line
+    local timestamp="$exec_time"
+    local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+    local log_entry="$timestamp,\"$combined_message\""
+    if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+        echo "Warning: Cannot write to $LOG_FILE." >&2
+    fi
 }
 
 # Execute audit
