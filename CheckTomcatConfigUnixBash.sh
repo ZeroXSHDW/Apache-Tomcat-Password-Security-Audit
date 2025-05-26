@@ -263,12 +263,12 @@ audit_users_xml() {
     local line_count=$(echo "$user_lines" | grep -c '^')
     write_log "Debug: Found $line_count user tag(s)" 4
 
-    # Process each user tag using process substitution
-    while IFS= read -r user_line; do
+    # Process each user tag in the same shell to preserve log_messages
+    for user_line in $user_lines; do
         # Skip empty lines
         [ -z "$user_line" ] && continue
         write_log "Debug: Processing user line: $user_line" 4
-        # Match username and password with simplified regex
+        # Match username and password
         if [[ "$user_line" =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
             ((user_count++))
             local username="${BASH_REMATCH[1]:-Unknown}"
@@ -346,7 +346,7 @@ audit_users_xml() {
         else
             write_log "Debug: No username/password match in line: $user_line" 4
         fi
-    done < <(echo "$user_lines")
+    done
 
     write_log "Debug: Processed $user_count user(s)" 4
 
@@ -354,7 +354,10 @@ audit_users_xml() {
         write_log "    No users found in $users_xml_path" 4
     fi
 
-    # Output results for capture
+    # Debug: Log results array
+    write_log "Debug: Results array: ${results[*]}" 4
+
+    # Output results for capture, space-separated
     printf "%s" "${results[*]}"
 }
 
@@ -404,8 +407,12 @@ audit_tomcat_config() {
     local users_xml_path="$conf_path/tomcat-users.xml"
     write_log "Auditing tomcat-users.xml"
     audit_results=()
-    read -r -a audit_results <<< "$(audit_users_xml "$users_xml_path" "$credential_handler" "$algorithm" "$iterations" "$salt_length" "$tomcat_version")"
+    # Capture output as a space-separated string and convert to array
+    local results_output
+    results_output=$(audit_users_xml "$users_xml_path" "$credential_handler" "$algorithm" "$iterations" "$salt_length" "$tomcat_version")
+    read -r -a audit_results <<< "$results_output"
     write_log "Debug: Captured ${#audit_results[@]} audit result(s)" 4
+    write_log "Debug: Audit results: ${audit_results[*]}" 4
 
     local overall_secure=1
     if [ "$config_status" = "Non-compliant" ]; then
