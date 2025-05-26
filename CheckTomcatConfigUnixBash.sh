@@ -311,6 +311,18 @@ audit_users_xml() {
 
 # Main audit function
 audit_tomcat_config() {
+    # Check for sudo/root privileges
+    if [ "$EUID" -ne 0 ]; then
+        local timestamp=$(TZ=Asia/Kolkata date "+%Y-%m-%d %H:%M:%S")
+        write_log "ERROR - This script must be run as root or with sudo"
+        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+        local log_entry="$timestamp,\"$combined_message\""
+        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+            echo "Warning: Cannot write to $LOG_FILE." >&2
+        fi
+        exit 1
+    fi
+
     # Get execution time and hostname
     local exec_time=$(TZ=Asia/Kolkata date "+%Y-%m-%d %H:%M:%S")
     local hostname=$(hostname)
