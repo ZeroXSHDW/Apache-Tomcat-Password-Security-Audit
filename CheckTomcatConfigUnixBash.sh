@@ -8,12 +8,8 @@ log_messages=()
 
 write_log() {
     local message="$1"
-    local indent=${2:-0}
-    local indent_spaces=$(printf "%${indent}s" | tr ' ' ' ')
-    local log_message="${indent_spaces}${message}"
-    
-    log_messages+=("$log_message")
-    echo -e "${log_message}"
+    log_messages+=("$message")
+    echo -e "$message"
 }
 
 # Ensure log file has header
@@ -148,8 +144,7 @@ check_config_compliance() {
            [ "$algorithm" = "SHA-256" ]; then
             config_status="Compliant for Tomcat 7.0"
         else
-            write_log "  - Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256" 2
-            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'" 2
+            config_status="Non-compliant, requires MessageDigestCredentialHandler with SHA-256"
         fi
     elif [ "$tomcat_version" = "8.5" ]; then
         if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
@@ -157,8 +152,7 @@ check_config_compliance() {
            [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
             config_status="Compliant for Tomcat 8.5"
         else
-            write_log "  - Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16" 2
-            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2
+            config_status="Non-compliant, requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16"
         fi
     else # Tomcat 9.0, 10.0, 10.1
         if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
@@ -166,8 +160,7 @@ check_config_compliance() {
            [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
             config_status="Compliant for Tomcat $tomcat_version"
         else
-            write_log "  - Tomcat $tomcat_version requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16" 2
-            write_log "  - Recommendation: Configure SecretKeyCredentialHandler with algorithm='PBKDF2WithHmacSHA512', iterations='10000', saltLength='16'" 2
+            config_status="Non-compliant, requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16"
         fi
     fi
 
@@ -183,7 +176,6 @@ audit_server_xml() {
     local salt_length=0
 
     if [ ! -f "$server_xml_path" ]; then
-        write_log "Error: $server_xml_path not found"
         echo "$credential_handler $algorithm $iterations $salt_length"
         return
     fi
@@ -210,8 +202,8 @@ audit_tomcat_config() {
     # Check for sudo/root privileges
     if [ "$EUID" -ne 0 ]; then
         local timestamp=$(TZ=Asia/Kolkata date "+%Y-%m-%d %H:%M:%S")
-        write_log "ERROR - This script must be run as root or with sudo"
-        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+        write_log "ERROR: This script must be run as root or with sudo"
+        local combined_message=$(IFS=";"; echo "${log_messages[*]}")
         local log_entry="$timestamp,\"$combined_message\""
         if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
             echo "Warning: Cannot write to $LOG_FILE." >&2
@@ -222,56 +214,34 @@ audit_tomcat_config() {
     # Get execution time and hostname
     local exec_time=$(TZ=Asia/Kolkata date "+%Y-%m-%d %H:%M:%S")
     local hostname=$(hostname)
-    write_log "Execution Time: $exec_time"
-    write_log "Hostname: $hostname"
-    write_log "==========================="
-
     local conf_path=$(get_tomcat_config_path)
-    if [ -z "$conf_path" ]; then
-        write_log "ERROR - No Tomcat configuration directory found"
-        return
-    fi
-    write_log "Config Path: $conf_path"
-
     local tomcat_version=$(detect_tomcat_version "$(dirname "$conf_path")")
-    write_log "Tomcat Version: $tomcat_version"
-
-    local server_xml_path="$conf_path/server.xml"
-    write_log "Auditing server.xml"
-    read credential_handler algorithm iterations salt_length <<< $(audit_server_xml "$server_xml_path")
-
-    write_log "Server Configuration:"
-    config_status=$(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length")
-    write_log "  Status: $config_status"
-    write_log "  Credential Handler: $credential_handler"
-    write_log "  Algorithm: $algorithm"
-    write_log "  Iterations: $iterations"
-    write_log "  Salt Length: $salt_length"
-
-    # Audit tomcat-users.xml inline
-    local users_xml_path="$conf_path/tomcat-users.xml"
-    write_log "Auditing tomcat-users.xml"
-
-    audit_results=()
+    local server_status="Unknown"
+    local user_status="No users found"
+    local overall_status="Secure"
     local user_count=0
+    local non_compliant_users=0
 
-    if [ ! -f "$users_xml_path" ]; then
-        write_log "Error: $users_xml_path not found" 4
+    # Audit server.xml
+    local server_xml_path="$conf_path/server.xml"
+    if [ -f "$server_xml_path" ]; then
+        read credential_handler algorithm iterations salt_length <<< $(audit_server_xml "$server_xml_path")
+        server_status=$(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length")
+        if [ "$server_status" != "Compliant for Tomcat $tomcat_version" ] && [ "$server_status" != "Compliant for Tomcat 7.0" ] && [ "$server_status" != "Compliant for Tomcat 8.5" ]; then
+            overall_status="Insecure"
+        fi
     else
-        write_log "User Audit Results:" 4
-        write_log "Username | Password Type | Compliance" 4
-        write_log "---------|---------------|-----------" 4
+        server_status="Server config file not found"
+        overall_status="Insecure"
+    fi
 
-        # Read the entire file
+    # Audit tomcat-users.xml
+    local users_xml_path="$conf_path/tomcat-users.xml"
+    audit_results=()
+    if [ -f "$users_xml_path" ]; then
         local content
         content=$(cat "$users_xml_path" 2>/dev/null)
-        if [ $? -ne 0 ]; then
-            write_log "Error: Cannot read $users_xml_path" 4
-        elif [ -z "$content" ]; then
-            write_log "Error: $users_xml_path is empty" 4
-            write_log "    No users found in $users_xml_path" 4
-        else
-            # Parse using grep and sed
+        if [ $? -eq 0 ] && [ -n "$content" ]; then
             local user_lines
             user_lines=$(echo "$content" | grep '<user' || true)
             if [ -n "$user_lines" ]; then
@@ -288,48 +258,38 @@ audit_tomcat_config() {
                         read password_type is_secure <<< $(detect_password_type "$password")
 
                         local compliance_status="Non-compliant"
-                        local issues=()
-
                         if [ "$password_type" = "Plaintext" ]; then
                             compliance_status="Non-compliant"
-                            issues+=("Plaintext passwords detected. Use salted SHA-256 or PBKDF2.")
                         elif [[ "$password_type" =~ ^(Hashed_MD5|Salted_MD5)$ ]]; then
                             compliance_status="Non-compliant"
-                            issues+=("Weak MD5 hashing detected. Use SHA-256 or PBKDF2.")
                         elif [ "$password_type" = "Hashed_SHA1" ]; then
                             compliance_status="Non-compliant"
-                            issues+=("Weak SHA1 hashing detected. Use SHA-256 or PBKDF2.")
                         elif [ "$password_type" = "Hashed_SHA256" ]; then
                             if [ "$tomcat_version" = "7.0" ]; then
                                 compliance_status="Compliant"
                             elif [ "$credential_handler" = "None" ] || [ "$handler_algorithm" != "SHA-256" ] || \
                                  [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
                                 compliance_status="Non-compliant"
-                                issues+=("SHA256 requires salt and iterations.")
                             else
                                 compliance_status="Compliant"
                             fi
                         elif [ "$password_type" = "Hashed_SHA512" ]; then
                             if [ "$tomcat_version" = "7.0" ]; then
                                 compliance_status="Non-compliant"
-                                issues+=("SHA512 not supported in Tomcat 7.0. Use SHA-256.")
                             elif [ "$credential_handler" = "None" ] || [ "$handler_algorithm" != "SHA-512" ] || \
                                  [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
                                 compliance_status="Non-compliant"
-                                issues+=("SHA512 requires salt and iterations.")
                             else
                                 compliance_status="Compliant"
                             fi
                         elif [ "$password_type" = "Salted_PBKDF2" ]; then
                             if [ "$tomcat_version" = "7.0" ]; then
                                 compliance_status="Non-compliant"
-                                issues+=("PBKDF2 not supported in Tomcat 7.0. Use SHA-256.")
                             elif [ "$tomcat_version" = "8.5" ]; then
                                 if [ "$credential_handler" = "None" ] || \
                                    [[ ! "$handler_algorithm" =~ ^(SHA-256|SHA-512)$ ]] || \
                                    [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
                                     compliance_status="Non-compliant"
-                                    issues+=("PBKDF2 requires compatible handler.")
                                 else
                                     compliance_status="Compliant"
                                 fi
@@ -340,46 +300,37 @@ audit_tomcat_config() {
                                     compliance_status="Compliant"
                                 else
                                     compliance_status="Non-compliant"
-                                    issues+=("PBKDF2 requires SecretKeyCredentialHandler.")
                                 fi
                             fi
                         else
                             compliance_status="Non-compliant"
-                            issues+=("Unknown password type: $password_type.")
                         fi
 
-                        write_log "    $username | $password_type | $compliance_status" 4
-                        for issue in "${issues[@]}"; do
-                            write_log "        - $issue" 8
-                        done
-
                         audit_results+=("$compliance_status")
+                        if [ "$compliance_status" = "Non-compliant" ]; then
+                            ((non_compliant_users++))
+                        fi
                     fi
                 done <<< "$user_lines"
-            else
-                write_log "    No users found in $users_xml_path" 4
             fi
         fi
     fi
 
-    local overall_secure=1
-    if [ "$config_status" = "Non-compliant" ]; then
-        overall_secure=0
-    fi
-    for result in "${audit_results[@]}"; do
-        if [ "$result" = "Non-compliant" ]; then
-            overall_secure=0
-            break
+    # Summarize user audit
+    if [ "$user_count" -gt 0 ]; then
+        user_status="$user_count users found, $non_compliant_users non-compliant"
+        if [ "$non_compliant_users" -gt 0 ]; then
+            overall_status="Insecure"
         fi
-    done
+    fi
 
-    write_log "==========================="
-    write_log "Overall Status: $( [ "$overall_secure" -eq 1 ] && echo "Secure" || echo "Insecure" )"
-    write_log "Audit completed"
+    # Produce single-line output
+    local summary="Timestamp: $exec_time, Hostname: $hostname, Config Path: $conf_path, Tomcat Version: $tomcat_version, Server Status: $server_status, User Status: $user_status, Overall Status: $overall_status"
+    write_log "$summary"
 
     # Write single CSV line
     local timestamp="$exec_time"
-    local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+    local combined_message=$(IFS=";"; echo "${log_messages[*]}")
     local log_entry="$timestamp,\"$combined_message\""
     if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
         echo "Warning: Cannot write to $LOG_FILE." >&2
