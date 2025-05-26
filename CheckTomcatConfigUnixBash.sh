@@ -225,6 +225,15 @@ audit_users_xml() {
     write_log "Username | Password Type | Compliance"
     write_log "---------|---------------|-----------"
 
+    # Read the entire file and extract user tags
+    local content
+    content=$(cat "$users_xml_path" 2>/dev/null)
+    if [ $? -ne 0 ]; then
+        write_log "Error: Cannot read $users_xml_path"
+        return
+    fi
+
+    # Use grep -o to extract each <user ...> tag
     while IFS= read -r user_line; do
         if [[ "$user_line" =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
             ((user_count++))
@@ -300,7 +309,7 @@ audit_users_xml() {
 
             results+=("$compliance_status")
         fi
-    done < <(grep "<user" "$users_xml_path" || echo "")
+    done < <(echo "$content" | grep -o '<user[^>]*username="[^"]*"[^>]*password="[^"]*"[^>]*>' || echo "")
 
     if [ "$user_count" -eq 0 ]; then
         write_log "    No users found in $users_xml_path" 4
