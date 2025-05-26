@@ -142,7 +142,7 @@ check_config_compliance() {
     if [ "$tomcat_version" = "7.0" ]; then
         if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
            [ "$algorithm" = "SHA-256" ]; then
-            config_status="Compliant for Tomcat 7.0"
+            config_status="Compliant"
         else
             config_status="Non-compliant, requires MessageDigestCredentialHandler with SHA-256"
         fi
@@ -150,7 +150,7 @@ check_config_compliance() {
         if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
            [ "$algorithm" = "SHA-512" ] && \
            [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
-            config_status="Compliant for Tomcat 8.5"
+            config_status="Compliant"
         else
             config_status="Non-compliant, requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16"
         fi
@@ -158,7 +158,7 @@ check_config_compliance() {
         if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
            [ "$algorithm" = "PBKDF2WithHmacSHA512" ] && \
            [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
-            config_status="Compliant for Tomcat $tomcat_version"
+            config_status="Compliant"
         else
             config_status="Non-compliant, requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16"
         fi
@@ -190,8 +190,8 @@ audit_server_xml() {
     if [ -n "$ch_line" ]; then
         credential_handler=$(echo "$ch_line" | grep -o 'className="[^"]*"' | sed 's/className="\([^"]*\)"/\1/' || echo "Unknown")
         algorithm=$(echo "$ch_line" | grep -o 'algorithm="[^"]*"' | sed 's/algorithm="\([^"]*\)"/\1/' || echo "None")
-        iterations=$(echo "$ch_line" | grep -o 'iterations="[0-9]*"' | sed 's/iterations="\([0-9]*\)"/\1/' || echo "0")
-        salt_length=$(echo "$ch_line" | grep -o 'saltLength="[0-9]*"' | sed 's/saltLength="\([0-9]*\)"/\1/' || echo "0")
+        iterations=$(echo "$ch_line" | grep -o 'iterations=[0-9]*' | sed 's/iterations=\([0-9]*\)/\1/' || echo "0")
+        salt_length=$(echo "$ch_line" | grep -o 'saltLength=[0-9]*' | sed 's/saltLength=\([0-9]*\)/\1/' || echo "0")
     fi
 
     echo "$credential_handler $algorithm $iterations $salt_length"
@@ -215,19 +215,33 @@ audit_tomcat_config() {
     local exec_time=$(TZ=Asia/Kolkata date "+%Y-%m-%d %H:%M:%S")
     local hostname=$(hostname)
     local conf_path=$(get_tomcat_config_path)
-    local tomcat_version=$(detect_tomcat_version "$(dirname "$conf_path")")
+    local tomcat_version=""
     local server_status="Unknown"
-    local user_status="No users found"
+    local user_compliance="No users found"
     local overall_status="Secure"
     local user_count=0
     local non_compliant_users=0
+
+    # Check if Tomcat is installed
+    if [ -z "$conf_path" ]; then
+        local summary="Timestamp: $exec_time, Hostname: $hostname, Error: Tomcat is not installed on Server, Overall Status: Insecure"
+        write_log "$summary"
+        local combined_message=$(IFS=";"; echo "${log_messages[*]}")
+        local log_entry="$timestamp,\"$combined_message\""
+        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+            echo "Warning: Cannot write to $LOG_FILE." >&2
+        fi
+        return
+    fi
+
+    tomcat_version=$(detect_tomcat_version "$(dirname "$conf_path")")
 
     # Audit server.xml
     local server_xml_path="$conf_path/server.xml"
     if [ -f "$server_xml_path" ]; then
         read credential_handler algorithm iterations salt_length <<< $(audit_server_xml "$server_xml_path")
         server_status=$(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length")
-        if [ "$server_status" != "Compliant for Tomcat $tomcat_version" ] && [ "$server_status" != "Compliant for Tomcat 7.0" ] && [ "$server_status" != "Compliant for Tomcat 8.5" ]; then
+        if [[ "$server_status" != "Compliant" ]]; then
             overall_status="Insecure"
         fi
     else
@@ -238,6 +252,7 @@ audit_tomcat_config() {
     # Audit tomcat-users.xml
     local users_xml_path="$conf_path/tomcat-users.xml"
     audit_results=()
+    user_compliance_array=()
     if [ -f "$users_xml_path" ]; then
         local content
         content=$(cat "$users_xml_path" 2>/dev/null)
@@ -307,6 +322,7 @@ audit_tomcat_config() {
                         fi
 
                         audit_results+=("$compliance_status")
+                        user_compliance_array+=("$username:$compliance_status")
                         if [ "$compliance_status" = "Non-compliant" ]; then
                             ((non_compliant_users++))
                         fi
@@ -318,14 +334,16 @@ audit_tomcat_config() {
 
     # Summarize user audit
     if [ "$user_count" -gt 0 ]; then
-        user_status="$user_count users found, $non_compliant_users non-compliant"
+        user_compliance="Users: $(IFS=','; echo "${user_compliance_array[*]}")"
         if [ "$non_compliant_users" -gt 0 ]; then
             overall_status="Insecure"
         fi
+    else
+        user_compliance="Users: No users found"
     fi
 
     # Produce single-line output
-    local summary="Timestamp: $exec_time, Hostname: $hostname, Config Path: $conf_path, Tomcat Version: $tomcat_version, Server Status: $server_status, User Status: $user_status, Overall Status: $overall_status"
+    local summary="Timestamp: $exec_time, Hostname: $hostname, Config Path: $conf_path, Tomcat Version: $tomcat_version, Server Status: $server_status, $user_compliance, Overall Status: $overall_status"
     write_log "$summary"
 
     # Write single CSV line
