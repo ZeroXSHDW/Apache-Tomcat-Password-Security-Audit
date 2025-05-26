@@ -95,7 +95,7 @@ detect_tomcat_version() {
 # Detect password type
 detect_password_type() {
     local password="$1"
-    local type="Unknown"
+    local type="Hashed"
     local is_secure=0
 
     if ! [[ "$password" =~ ^[0-9a-fA-F:]+$ ]]; then
@@ -111,7 +111,7 @@ detect_password_type() {
             type="Salted_PBKDF2"
             is_secure=1
         else
-            type="Unknown"
+            type="Hashed"
             is_secure=0
         fi
     else
@@ -240,15 +240,34 @@ audit_users_xml() {
         return
     fi
 
-    # Extract user tags using a simpler regex
-    while IFS= read -r user_line; do
+    # Debug: Log file content (sanitized to first 100 chars)
+    local content_preview=${content:0:100}
+    write_log "Debug: File content preview: $content_preview" 4
+
+    # Extract user tags with username and password attributes
+    local user_lines
+    user_lines=$(echo "$content" | grep -o '<user[^>]*username="[^"]*"[^>]*password="[^"]*"[^>]*>' || echo "")
+    if [ -z "$user_lines" ]; then
+        write_log "Debug: No user tags matched in $users_xml_path" 4
+        write_log "    No users found in $users_xml_path" 4
+        return
+    fi
+
+    # Debug: Log number of matched user lines
+    local line_count=$(echo "$user_lines" | grep -c '^')
+    write_log "Debug: Found $line_count user tag(s)" 4
+
+    # Process each user tag
+    echo "$user_lines" | while IFS= read -r user_line; do
         # Skip empty lines
         [ -z "$user_line" ] && continue
-        # Match username and password attributes
-        if [[ "$user_line" =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
+        write_log "Debug: Processing user line: $user_line" 4
+        # Match username and password
+        if [[ "$user_line" =~ username=\"([^\"]+)\"[^>]*password=\"([^\"]+)\" ]]; then
             ((user_count++))
             local username="${BASH_REMATCH[1]:-Unknown}"
             local password="${BASH_REMATCH[2]:-}"
+            write_log "Debug: Matched username=$username, password=$password" 4
             read password_type is_secure <<< $(detect_password_type "$password")
 
             local compliance_status="Non-compliant"
@@ -319,9 +338,9 @@ audit_users_xml() {
 
             results+=("$compliance_status")
         else
-            write_log "Debug: Skipping invalid user line: $user_line" 4
+            write_log "Debug: No username/password match in line: $user_line" 4
         fi
-    done < <(echo "$content" | grep -o '<user[^>]*>' || echo "")
+    done
 
     if [ "$user_count" -eq 0 ]; then
         write_log "    No users found in $users_xml_path" 4
