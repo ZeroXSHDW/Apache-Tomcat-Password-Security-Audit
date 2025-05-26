@@ -62,7 +62,8 @@ detect_tomcat_version() {
             if [[ "$full_version" == 7.0.* ]]; then version="7.0"
             elif [[ "$full_version" == 8.5.* ]]; then version="8.5"
             elif [[ "$full_version" == 9.0.* ]]; then version="9.0"
-            elif [[ "$full_version" == 10.0.* ]]; then version="10.0"
+            elif [[ "$full_version" == 10.0.* ]]; then
+            version="10.0"
             elif [[ "$full_version" == 10.1.* ]]; then version="10.1"
             fi
         fi
@@ -95,7 +96,7 @@ detect_tomcat_version() {
 # Detect password type
 detect_password_type() {
     local password="$1"
-    local type="Hashed"
+    local type="Unknown"
     local is_secure=0
 
     if ! [[ "$password" =~ ^[0-9a-fA-F:]+$ ]]; then
@@ -111,7 +112,7 @@ detect_password_type() {
             type="Salted_PBKDF2"
             is_secure=1
         else
-            type="Hashed"
+            type="Unknown"
             is_secure=0
         fi
     else
@@ -216,37 +217,43 @@ audit_users_xml() {
     local results=()
     local user_count=0
 
+    write_log "Debug: Starting audit of $users_xml_path" 4
+
     if [ ! -f "$users_xml_path" ]; then
-        write_log "Error: $users_xml_path not found"
+        write_log "Error: $users_xml_path not found" 4
         return
     fi
 
-    write_log "User Audit Results:"
-    write_log "Username | Password Type | Compliance"
-    write_log "---------|---------------|-----------"
+    write_log "User Audit Results:" 4
+    write_log "Username | Password Type | Compliance" 4
+    write_log "---------|---------------|-----------" 4
 
     # Read the entire file
     local content
     content=$(cat "$users_xml_path" 2>/dev/null)
     if [ $? -ne 0 ]; then
-        write_log "Error: Cannot read $users_xml_path"
+        write_log "Error: Cannot read $users_xml_path" 4
         return
     fi
 
+    write_log "Debug: File read successfully" 4
+
     # Check if content is empty
     if [ -z "$content" ]; then
-        write_log "Error: $users_xml_path is empty"
+        write_log "Error: $users_xml_path is empty" 4
         write_log "    No users found in $users_xml_path" 4
         return
     fi
 
-    # Debug: Log file content (sanitized to first 100 chars)
+    # Debug: Log file content preview (first 100 chars)
     local content_preview=${content:0:100}
     write_log "Debug: File content preview: $content_preview" 4
 
     # Extract user tags with username and password attributes
     local user_lines
     user_lines=$(echo "$content" | grep -o '<user[^>]*username="[^"]*"[^>]*password="[^"]*"[^>]*>' || echo "")
+    write_log "Debug: grep command executed" 4
+
     if [ -z "$user_lines" ]; then
         write_log "Debug: No user tags matched in $users_xml_path" 4
         write_log "    No users found in $users_xml_path" 4
@@ -257,8 +264,8 @@ audit_users_xml() {
     local line_count=$(echo "$user_lines" | grep -c '^')
     write_log "Debug: Found $line_count user tag(s)" 4
 
-    # Process each user tag
-    echo "$user_lines" | while IFS= read -r user_line; do
+    # Process each user tag using process substitution to avoid subshell
+    while IFS= read -r user_line; do
         # Skip empty lines
         [ -z "$user_line" ] && continue
         write_log "Debug: Processing user line: $user_line" 4
@@ -340,12 +347,15 @@ audit_users_xml() {
         else
             write_log "Debug: No username/password match in line: $user_line" 4
         fi
-    done
+    done < <(echo "$user_lines")
+
+    write_log "Debug: Processed $user_count user(s)" 4
 
     if [ "$user_count" -eq 0 ]; then
         write_log "    No users found in $users_xml_path" 4
     fi
 
+    # Output results for capture
     printf "%s" "${results[*]}"
 }
 
@@ -394,7 +404,9 @@ audit_tomcat_config() {
 
     local users_xml_path="$conf_path/tomcat-users.xml"
     write_log "Auditing tomcat-users.xml"
-    IFS=' ' read -ra audit_results <<< $(audit_users_xml "$users_xml_path" "$credential_handler" "$algorithm" "$iterations" "$salt_length" "$tomcat_version")
+    audit_results=()
+    read -r -a audit_results <<< "$(audit_users_xml "$users_xml_path" "$credential_handler" "$algorithm" "$iterations" "$salt_length" "$tomcat_version")"
+    write_log "Debug: Captured ${#audit_results[@]} audit result(s)" 4
 
     local overall_secure=1
     if [ "$config_status" = "Non-compliant" ]; then
