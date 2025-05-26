@@ -239,6 +239,19 @@ def audit_users_xml(users_xml_path, credential_handler, handler_algorithm, itera
 
 # Main audit function
 def audit_tomcat_config():
+    # Check for sudo/root privileges
+    if os.geteuid() != 0:
+        timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).strftime("%Y-%m-%d %H:%M:%S")
+        write_log("ERROR - This script must be run as root or with sudo")
+        combined_message = "; ".join(log_messages)
+        log_entry = f"{timestamp},\"{combined_message}\""
+        try:
+            with open(LOG_FILE, "a") as f:
+                f.write(log_entry + "\n")
+        except PermissionError:
+            print(f"Warning: Cannot write to {LOG_FILE}.", file=sys.stderr)
+        sys.exit(1)
+
     # Write execution time and hostname
     exec_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).strftime("%Y-%m-%d %H:%M:%S")
     hostname = socket.gethostname()
