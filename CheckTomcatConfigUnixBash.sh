@@ -6,6 +6,9 @@
 LOG_FILE="/tmp/TomcatManager.csv"
 log_messages=()
 
+# Disable output buffering for real-time console output
+stdbuf -oL -eL bash
+
 write_log() {
     local message="$1"
     local indent=${2:-0}
@@ -252,8 +255,8 @@ audit_users_xml() {
     write_log "Debug: Executing grep command" 4
     local user_lines=()
     while IFS= read -r line; do
-        user_lines+=("$line")
-    done < <(echo "$content" | grep -o '<user[^>]*username="[^"]*"[^>]*password="[^"]*"[^>]*>')
+        [ -n "$line" ] && user_lines+=("$line")
+    done < <(echo "$content" | grep -o '<user[^>]*username="[^"]*"[^>]*password="[^"]*"[^>]*>' || true)
 
     if [ ${#user_lines[@]} -eq 0 ]; then
         write_log "Debug: No user tags matched in $users_xml_path" 4
@@ -261,8 +264,11 @@ audit_users_xml() {
         return
     fi
 
-    # Debug: Log number of matched user lines
+    # Debug: Log user lines
     write_log "Debug: Found ${#user_lines[@]} user tag(s)" 4
+    for i in "${!user_lines[@]}"; do
+        write_log "Debug: user_lines[$i]: ${user_lines[$i]}" 4
+    done
 
     # Process each user tag
     for user_line in "${user_lines[@]}"; do
