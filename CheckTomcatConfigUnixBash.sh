@@ -250,33 +250,39 @@ audit_users_xml() {
     content_preview=${content_preview//[$'\n\r']/ }  # Replace newlines with spaces
     write_log "Debug: File content preview: $content_preview" 4
 
-    # Debug: Log raw grep output
-    write_log "Debug: Executing grep command" 4
-    local grep_output
-    grep_output=$(echo "$content" | grep -o '<user[^>]*username="[^"]*"[^>]*password="[^"]*"[^>]*>' 2>/dev/null || true)
+    # Try awk-based parsing
+    write_log "Debug: Attempting awk-based parsing" 4
+    local awk_output
+    awk_output=$(echo "$content" | awk '
+        /<user/ {
+            username=""; password=""
+            if (match($0, /username="([^"]*)"/)) {
+                username=substr($0, RSTART+10, RLENGTH-11)
+            }
+            if (match($0, /password="([^"]*)"/)) {
+                password=substr($0, RSTART+10, RLENGTH-11)
+            }
+            if (username != "" && password != "") {
+                print username "\t" password
+            }
+        }' 2>/dev/null)
+    
     if [ $? -ne 0 ]; then
-        write_log "Debug: grep command failed" 4
+        write_log "Debug: awk command failed" 4
     else
-        write_log "Debug: grep output length=${#grep_output}" 4
-        write_log "Debug: Raw grep output: $grep_output" 4
+        write_log "Debug: awk output length=${#awk_output}" 4
+        write_log "Debug: Raw awk output: $awk_output" 4
     fi
 
-    # Process user tags directly from grep output
-    local user_count=0
-    local results=()
-    while IFS= read -r user_line; do
-        # Skip empty lines
-        if [ -z "$user_line" ]; then
-            write_log "Debug: Skipping empty user line" 4
-            continue
-        fi
-        write_log "Debug: Processing user line: $user_line" 4
-        # Match username and password
-        if [[ "$user_line" =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
+    # Process awk output
+    if [ -n "$awk_output" ]; then
+        while IFS=$'\t' read -r username password; do
+            if [ -z "$username" ] || [ -z "$password" ]; then
+                write_log "Debug: Skipping empty username or password" 4
+                continue
+            fi
+            write_log "Debug: Processing user: username=$username, password=$password" 4
             ((user_count++))
-            local username="${BASH_REMATCH[1]:-Unknown}"
-            local password="${BASH_REMATCH[2]:-}"
-            write_log "Debug: Matched username=$username, password=$password" 4
             read password_type is_secure <<< $(detect_password_type "$password")
 
             local compliance_status="Non-compliant"
@@ -346,18 +352,110 @@ audit_users_xml() {
             done
 
             results+=("$compliance_status")
+        done <<< "$awk_output"
+    else
+        write_log "Debug: No users found via awk, attempting fallback parsing" 4
+        # Fallback: Simple grep and manual parsing
+        local fallback_lines
+        fallback_lines=$(echo "$content" | grep '<user' || true)
+        if [ -n "$fallback_lines" ]; then
+            while IFS= read -r user_line; do
+                if [ -z "$user_line" ]; then
+                    write_log "Debug: Skipping empty fallback line" 4
+                    continue
+                fi
+                write_log "Debug: Processing fallback line: $user_line" 4
+                local username=""
+                local password=""
+                if [[ "$user_line" =~ username=\"([^\"]+)\" ]]; then
+                    username="${BASH_REMATCH[1]}"
+                fi
+                if [[ "$user_line" =~ password=\"([^\"]+)\" ]]; then
+                    password="${BASH_REMATCH[1]}"
+                fi
+                if [ -n "$username" ] && [ -n "$password" ]; then
+                    ((user_count++))
+                    write_log "Debug: Fallback matched username=$username, password=$password" 4
+                    read password_type is_secure <<< $(detect_password_type "$password")
+
+                    local compliance_status="Non-compliant"
+                    local issues=()
+
+                    if [ "$password_type" = "Plaintext" ]; then
+                        compliance_status="Non-compliant"
+                        issues+=("Plaintext passwords detected. Use salted SHA-256 or PBKDF2.")
+                    elif [[ "$password_type" =~ ^(Hashed_MD5|Salted_MD5)$ ]]; then
+                        compliance_status="Non-compliant"
+                        issues+=("Weak MD5 hashing detected. Use SHA-256 or PBKDF2.")
+                    elif [ "$password_type" = "Hashed_SHA1" ]; then
+                        compliance_status="Non-compliant"
+                        issues+=("Weak SHA1 hashing detected. Use SHA-256 or PBKDF2.")
+                    elif [ "$password_type" = "Hashed_SHA256" ]; then
+                        if [ "$tomcat_version" = "7.0" ]; then
+                            compliance_status="Compliant"
+                        elif [ "$credential_handler" = "None" ] || [ "$handler_algorithm" != "SHA-256" ] || \
+                             [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
+                            compliance_status="Non-compliant"
+                            issues+=("SHA256 requires salt and iterations.")
+                        else
+                            compliance_status="Compliant"
+                        fi
+                    elif [ "$password_type" = "Hashed_SHA512" ]; then
+                        if [ "$tomcat_version" = "7.0" ]; then
+                            compliance_status="Non-compliant"
+                            issues+=("SHA512 not supported in Tomcat 7.0. Use SHA-256.")
+                        elif [ "$credential_handler" = "None" ] || [ "$handler_algorithm" != "SHA-512" ] || \
+                             [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
+                            compliance_status="Non-compliant"
+                            issues+=("SHA512 requires salt and iterations.")
+                        else
+                            compliance_status="Compliant"
+                        fi
+                    elif [ "$password_type" = "Salted_PBKDF2" ]; then
+                        if [ "$tomcat_version" = "7.0" ]; then
+                            compliance_status="Non-compliant"
+                            issues+=("PBKDF2 not supported in Tomcat 7.0. Use SHA-256.")
+                        elif [ "$tomcat_version" = "8.5" ]; then
+                            if [ "$credential_handler" = "None" ] || \
+                               [[ ! "$handler_algorithm" =~ ^(SHA-256|SHA-512)$ ]] || \
+                               [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
+                                compliance_status="Non-compliant"
+                                issues+=("PBKDF2 requires compatible handler.")
+                            else
+                                compliance_status="Compliant"
+                            fi
+                        else
+                            if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
+                               [ "$handler_algorithm" = "PBKDF2WithHmacSHA512" ] && \
+                               [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
+                                compliance_status="Compliant"
+                            else
+                                compliance_status="Non-compliant"
+                                issues+=("PBKDF2 requires SecretKeyCredentialHandler.")
+                            fi
+                        fi
+                    else
+                        compliance_status="Non-compliant"
+                        issues+=("Unknown password type: $password_type.")
+                    fi
+
+                    write_log "    $username | $password_type | $compliance_status" 4
+                    for issue in "${issues[@]}"; do
+                        write_log "        - $issue" 8
+                    done
+
+                    results+=("$compliance_status")
+                else
+                    write_log "Debug: No username/password match in fallback line: $user_line" 4
+                fi
+            done <<< "$fallback_lines"
         else
-            write_log "Debug: No username/password match in line: $user_line" 4
+            write_log "Debug: No users found via fallback parsing" 4
+            write_log "    No users found in $users_xml_path" 4
         fi
-    done <<< "$grep_output"
-
-    write_log "Debug: Processed $user_count user(s)" 4
-
-    if [ "$user_count" -eq 0 ]; then
-        write_log "    No users found in $users_xml_path" 4
     fi
 
-    # Debug: Log results array
+    write_log "Debug: Processed $user_count user(s)" 4
     write_log "Debug: Results array: ${results[*]}" 4
 
     # Output results for capture, space-separated
