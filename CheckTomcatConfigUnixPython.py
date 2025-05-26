@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# CheckTomcatConfigUnix.py
+# CheckTomcatConfigUnixPython.py
 # Audit Apache Tomcat configuration for security compliance with NIST 800-53 IA-5 and CIS Tomcat Benchmark
 
 import os
@@ -10,21 +10,26 @@ import socket
 import xml.etree.ElementTree as ET
 
 # Log setup
-LOG_FILE = "/tmp/TomcatManager.log"
+LOG_FILE = "/tmp/TomcatManager.csv"
+log_messages = []
 
 def write_log(message, indent=0):
     """
-    Write a log message with indentation to both file and console.
+    Store a log message in memory and print to console with indentation.
     indent: Number of indentation levels (each level is two spaces).
     """
     indent_spaces = "  " * indent
     log_message = f"{indent_spaces}{message}"
-    try:
-        with open(LOG_FILE, "a") as f:
-            f.write(log_message + "\n")
-    except PermissionError:
-        print(f"Warning: Cannot write to {LOG_FILE}. Logging to console only.", file=sys.stderr)
+    log_messages.append(log_message)
     print(log_message)
+
+# Ensure log file has header
+if not os.path.exists(LOG_FILE):
+    try:
+        with open(LOG_FILE, "w") as f:
+            f.write("Timestamp,Message\n")
+    except PermissionError:
+        print(f"Warning: Cannot create {LOG_FILE}. Logging to console only.", file=sys.stderr)
 
 # Function to detect Tomcat path
 def get_tomcat_config_path():
@@ -173,7 +178,6 @@ def audit_users_xml(users_xml_path, credential_handler, handler_algorithm, itera
         write_log("User Audit Results:")
         write_log("Username | Password Type | Compliance")
         write_log("---------|---------------|-----------")
-        # Regex to match <user> lines with username and password attributes
         user_pattern = re.compile(r'<user[^>]*username="([^"]+)"[^>]*password="([^"]+)"[^>]*>')
         for match in user_pattern.finditer(content):
             user_count += 1
@@ -235,23 +239,17 @@ def audit_users_xml(users_xml_path, credential_handler, handler_algorithm, itera
 
 # Main audit function
 def audit_tomcat_config():
-    # Clear log file first
-    try:
-        open(LOG_FILE, "w").close()
-    except PermissionError:
-        print(f"Warning: Cannot clear {LOG_FILE}. Continuing with existing log.", file=sys.stderr)
-
     # Write execution time and hostname
-    exec_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).strftime("%I:%M %p IST, %A, %B %d, %Y")
+    exec_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).strftime("%Y-%m-%d %H:%M:%S")
     hostname = socket.gethostname()
-    write_log(exec_time)
-    write_log(hostname)
+    write_log(f"Execution Time: {exec_time}")
+    write_log(f"Hostname: {hostname}")
     write_log("===========================")
 
     conf_path = get_tomcat_config_path()
     if not conf_path:
-        write_log("Error: No Tomcat configuration directory found")
-        sys.exit(1)
+        write_log("ERROR - No Tomcat configuration directory found")
+        return
     write_log(f"Config Path: {conf_path}")
 
     tomcat_version = detect_tomcat_version(os.path.dirname(conf_path))
@@ -286,7 +284,17 @@ def audit_tomcat_config():
 
     write_log("===========================")
     write_log(f"Overall Status: {'Secure' if overall_secure else 'Insecure'}")
-    write_log(f"Audit completed. Log: {LOG_FILE}")
+    write_log("Audit completed")
+
+    # Write single CSV line
+    timestamp = exec_time
+    combined_message = "; ".join(log_messages)
+    log_entry = f"{timestamp},\"{combined_message}\""
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(log_entry + "\n")
+    except PermissionError:
+        print(f"Warning: Cannot write to {LOG_FILE}.", file=sys.stderr)
 
 if __name__ == "__main__":
     audit_tomcat_config()
