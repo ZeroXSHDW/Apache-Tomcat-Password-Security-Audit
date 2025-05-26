@@ -62,8 +62,7 @@ detect_tomcat_version() {
             if [[ "$full_version" == 7.0.* ]]; then version="7.0"
             elif [[ "$full_version" == 8.5.* ]]; then version="8.5"
             elif [[ "$full_version" == 9.0.* ]]; then version="9.0"
-            elif [[ "$full_version" == 10.0.* ]]; then
-            version="10.0"
+            elif [[ "$full_version" == 10.0.* ]]; then version="10.0"
             elif [[ "$full_version" == 10.1.* ]]; then version="10.1"
             fi
         fi
@@ -264,13 +263,13 @@ audit_users_xml() {
     local line_count=$(echo "$user_lines" | grep -c '^')
     write_log "Debug: Found $line_count user tag(s)" 4
 
-    # Process each user tag using process substitution to avoid subshell
+    # Process each user tag using process substitution
     while IFS= read -r user_line; do
         # Skip empty lines
         [ -z "$user_line" ] && continue
         write_log "Debug: Processing user line: $user_line" 4
-        # Match username and password
-        if [[ "$user_line" =~ username=\"([^\"]+)\"[^>]*password=\"([^\"]+)\" ]]; then
+        # Match username and password with simplified regex
+        if [[ "$user_line" =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
             ((user_count++))
             local username="${BASH_REMATCH[1]:-Unknown}"
             local password="${BASH_REMATCH[2]:-}"
