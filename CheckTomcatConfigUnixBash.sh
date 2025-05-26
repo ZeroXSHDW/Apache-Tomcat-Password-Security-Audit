@@ -249,24 +249,23 @@ audit_users_xml() {
     write_log "Debug: File content preview: $content_preview" 4
 
     # Extract user tags with username and password attributes
-    local user_lines
-    user_lines=$(echo "$content" | grep -o '<user[^>]*username="[^"]*"[^>]*password="[^"]*"[^>]*>' || echo "")
-    write_log "Debug: grep command executed" 4
+    write_log "Debug: Executing grep command" 4
+    local user_lines=()
+    while IFS= read -r line; do
+        user_lines+=("$line")
+    done < <(echo "$content" | grep -o '<user[^>]*username="[^"]*"[^>]*password="[^"]*"[^>]*>')
 
-    if [ -z "$user_lines" ]; then
+    if [ ${#user_lines[@]} -eq 0 ]; then
         write_log "Debug: No user tags matched in $users_xml_path" 4
         write_log "    No users found in $users_xml_path" 4
         return
     fi
 
     # Debug: Log number of matched user lines
-    local line_count=$(echo "$user_lines" | grep -c '^')
-    write_log "Debug: Found $line_count user tag(s)" 4
+    write_log "Debug: Found ${#user_lines[@]} user tag(s)" 4
 
-    # Process each user tag using while loop to preserve lines
-    while IFS= read -r user_line; do
-        # Skip empty lines
-        [ -z "$user_line" ] && continue
+    # Process each user tag
+    for user_line in "${user_lines[@]}"; do
         write_log "Debug: Processing user line: $user_line" 4
         # Match username and password
         if [[ "$user_line" =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
@@ -346,7 +345,7 @@ audit_users_xml() {
         else
             write_log "Debug: No username/password match in line: $user_line" 4
         fi
-    done <<< "$user_lines"
+    done
 
     write_log "Debug: Processed $user_count user(s)" 4
 
@@ -410,7 +409,7 @@ audit_tomcat_config() {
     # Capture output as a space-separated string and convert to array
     local results_output
     results_output=$(audit_users_xml "$users_xml_path" "$credential_handler" "$algorithm" "$iterations" "$salt_length" "$tomcat_version")
-    read -r -a audit_results <<< "$results_output"
+    IFS=' ' read -r -a audit_results <<< "$results_output"
     write_log "Debug: Captured ${#audit_results[@]} audit result(s)" 4
     write_log "Debug: Audit results: ${audit_results[*]}" 4
 
