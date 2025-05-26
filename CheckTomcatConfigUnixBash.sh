@@ -6,9 +6,6 @@
 LOG_FILE="/tmp/TomcatManager.csv"
 log_messages=()
 
-# Disable output buffering for real-time console output
-stdbuf -oL -eL bash
-
 write_log() {
     local message="$1"
     local indent=${2:-0}
@@ -220,6 +217,7 @@ audit_users_xml() {
     local user_count=0
 
     write_log "Debug: Starting audit of $users_xml_path" 4
+    write_log "Debug: users_xml_path=$users_xml_path" 4
 
     if [ ! -f "$users_xml_path" ]; then
         write_log "Error: $users_xml_path not found" 4
@@ -238,7 +236,7 @@ audit_users_xml() {
         return
     fi
 
-    write_log "Debug: File read successfully" 4
+    write_log "Debug: File read successfully, content length=${#content}" 4
 
     # Check if content is empty
     if [ -z "$content" ]; then
@@ -247,31 +245,31 @@ audit_users_xml() {
         return
     fi
 
-    # Debug: Log file content preview (first 100 chars)
-    local content_preview=${content:0:100}
+    # Debug: Log file content preview (first 200 chars, sanitized)
+    local content_preview=${content:0:200}
+    content_preview=${content_preview//[$'\n\r']/ }  # Replace newlines with spaces
     write_log "Debug: File content preview: $content_preview" 4
 
-    # Extract user tags with username and password attributes
+    # Debug: Log raw grep output
     write_log "Debug: Executing grep command" 4
-    local user_lines=()
-    while IFS= read -r line; do
-        [ -n "$line" ] && user_lines+=("$line")
-    done < <(echo "$content" | grep -o '<user[^>]*username="[^"]*"[^>]*password="[^"]*"[^>]*>' || true)
-
-    if [ ${#user_lines[@]} -eq 0 ]; then
-        write_log "Debug: No user tags matched in $users_xml_path" 4
-        write_log "    No users found in $users_xml_path" 4
-        return
+    local grep_output
+    grep_output=$(echo "$content" | grep -o '<user[^>]*username="[^"]*"[^>]*password="[^"]*"[^>]*>' 2>/dev/null || true)
+    if [ $? -ne 0 ]; then
+        write_log "Debug: grep command failed" 4
+    else
+        write_log "Debug: grep output length=${#grep_output}" 4
+        write_log "Debug: Raw grep output: $grep_output" 4
     fi
 
-    # Debug: Log user lines
-    write_log "Debug: Found ${#user_lines[@]} user tag(s)" 4
-    for i in "${!user_lines[@]}"; do
-        write_log "Debug: user_lines[$i]: ${user_lines[$i]}" 4
-    done
-
-    # Process each user tag
-    for user_line in "${user_lines[@]}"; do
+    # Process user tags directly from grep output
+    local user_count=0
+    local results=()
+    while IFS= read -r user_line; do
+        # Skip empty lines
+        if [ -z "$user_line" ]; then
+            write_log "Debug: Skipping empty user line" 4
+            continue
+        fi
         write_log "Debug: Processing user line: $user_line" 4
         # Match username and password
         if [[ "$user_line" =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
@@ -351,7 +349,7 @@ audit_users_xml() {
         else
             write_log "Debug: No username/password match in line: $user_line" 4
         fi
-    done
+    done <<< "$grep_output"
 
     write_log "Debug: Processed $user_count user(s)" 4
 
