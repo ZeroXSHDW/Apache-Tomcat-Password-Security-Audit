@@ -149,7 +149,7 @@ check_config_compliance() {
             config_status="Compliant for Tomcat 7.0"
         else
             write_log "  - Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256" 2
-            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'" 2
+            write_log "  - Recommendation: Configure SecretKeyCredentialHandler with algorithm='SHA-256'" 2
         fi
     elif [ "$tomcat_version" = "8.5" ]; then
         if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
@@ -158,7 +158,7 @@ check_config_compliance() {
             config_status="Compliant for Tomcat 8.5"
         else
             write_log "  - Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16" 2
-            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2
+            write_log "  - Recommendation: Configure SecretKeyCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2
         fi
     else # Tomcat 9.0, 10.0, 10.1
         if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
@@ -205,263 +205,6 @@ audit_server_xml() {
     echo "$credential_handler $algorithm $iterations $salt_length"
 }
 
-# Audit tomcat-users.xml
-audit_users_xml() {
-    local users_xml_path="$1"
-    local credential_handler="$2"
-    local handler_algorithm="$3"
-    local iterations="$4"
-    local salt_length="$5"
-    local tomcat_version="$6"
-    local results=()
-    local user_count=0
-
-    write_log "Debug: Starting audit of $users_xml_path" 4
-    write_log "Debug: users_xml_path=$users_xml_path" 4
-
-    if [ ! -f "$users_xml_path" ]; then
-        write_log "Error: $users_xml_path not found" 4
-        return
-    fi
-
-    write_log "User Audit Results:" 4
-    write_log "Username | Password Type | Compliance" 4
-    write_log "---------|---------------|-----------" 4
-
-    # Read the entire file
-    local content
-    content=$(cat "$users_xml_path" 2>/dev/null)
-    if [ $? -ne 0 ]; then
-        write_log "Error: Cannot read $users_xml_path" 4
-        return
-    fi
-
-    write_log "Debug: File read successfully, content length=${#content}" 4
-
-    # Check if content is empty
-    if [ -z "$content" ]; then
-        write_log "Error: $users_xml_path is empty" 4
-        write_log "    No users found in $users_xml_path" 4
-        return
-    fi
-
-    # Debug: Log file content preview (first 200 chars, sanitized)
-    local content_preview=${content:0:200}
-    content_preview=${content_preview//[$'\n\r']/ }  # Replace newlines with spaces
-    write_log "Debug: File content preview: $content_preview" 4
-
-    # Try awk-based parsing
-    write_log "Debug: Attempting awk-based parsing" 4
-    local awk_output
-    awk_output=$(echo "$content" | awk '
-        /<user/ {
-            username=""; password=""
-            if (match($0, /username="([^"]*)"/)) {
-                username=substr($0, RSTART+10, RLENGTH-11)
-            }
-            if (match($0, /password="([^"]*)"/)) {
-                password=substr($0, RSTART+10, RLENGTH-11)
-            }
-            if (username != "" && password != "") {
-                print username "\t" password
-            }
-        }' 2>/dev/null)
-    
-    if [ $? -ne 0 ]; then
-        write_log "Debug: awk command failed" 4
-    else
-        write_log "Debug: awk output length=${#awk_output}" 4
-        write_log "Debug: Raw awk output: $awk_output" 4
-    fi
-
-    # Process awk output
-    if [ -n "$awk_output" ]; then
-        while IFS=$'\t' read -r username password; do
-            if [ -z "$username" ] || [ -z "$password" ]; then
-                write_log "Debug: Skipping empty username or password" 4
-                continue
-            fi
-            write_log "Debug: Processing user: username=$username, password=$password" 4
-            ((user_count++))
-            read password_type is_secure <<< $(detect_password_type "$password")
-
-            local compliance_status="Non-compliant"
-            local issues=()
-
-            if [ "$password_type" = "Plaintext" ]; then
-                compliance_status="Non-compliant"
-                issues+=("Plaintext passwords detected. Use salted SHA-256 or PBKDF2.")
-            elif [[ "$password_type" =~ ^(Hashed_MD5|Salted_MD5)$ ]]; then
-                compliance_status="Non-compliant"
-                issues+=("Weak MD5 hashing detected. Use SHA-256 or PBKDF2.")
-            elif [ "$password_type" = "Hashed_SHA1" ]; then
-                compliance_status="Non-compliant"
-                issues+=("Weak SHA1 hashing detected. Use SHA-256 or PBKDF2.")
-            elif [ "$password_type" = "Hashed_SHA256" ]; then
-                if [ "$tomcat_version" = "7.0" ]; then
-                    compliance_status="Compliant"
-                elif [ "$credential_handler" = "None" ] || [ "$handler_algorithm" != "SHA-256" ] || \
-                     [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
-                    compliance_status="Non-compliant"
-                    issues+=("SHA256 requires salt and iterations.")
-                else
-                    compliance_status="Compliant"
-                fi
-            elif [ "$password_type" = "Hashed_SHA512" ]; then
-                if [ "$tomcat_version" = "7.0" ]; then
-                    compliance_status="Non-compliant"
-                    issues+=("SHA512 not supported in Tomcat 7.0. Use SHA-256.")
-                elif [ "$credential_handler" = "None" ] || [ "$handler_algorithm" != "SHA-512" ] || \
-                     [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
-                    compliance_status="Non-compliant"
-                    issues+=("SHA512 requires salt and iterations.")
-                else
-                    compliance_status="Compliant"
-                fi
-            elif [ "$password_type" = "Salted_PBKDF2" ]; then
-                if [ "$tomcat_version" = "7.0" ]; then
-                    compliance_status="Non-compliant"
-                    issues+=("PBKDF2 not supported in Tomcat 7.0. Use SHA-256.")
-                elif [ "$tomcat_version" = "8.5" ]; then
-                    if [ "$credential_handler" = "None" ] || \
-                       [[ ! "$handler_algorithm" =~ ^(SHA-256|SHA-512)$ ]] || \
-                       [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
-                        compliance_status="Non-compliant"
-                        issues+=("PBKDF2 requires compatible handler.")
-                    else
-                        compliance_status="Compliant"
-                    fi
-                else
-                    if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
-                       [ "$handler_algorithm" = "PBKDF2WithHmacSHA512" ] && \
-                       [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
-                        compliance_status="Compliant"
-                    else
-                        compliance_status="Non-compliant"
-                        issues+=("PBKDF2 requires SecretKeyCredentialHandler.")
-                    fi
-                fi
-            else
-                compliance_status="Non-compliant"
-                issues+=("Unknown password type: $password_type.")
-            fi
-
-            write_log "    $username | $password_type | $compliance_status" 4
-            for issue in "${issues[@]}"; do
-                write_log "        - $issue" 8
-            done
-
-            results+=("$compliance_status")
-        done <<< "$awk_output"
-    else
-        write_log "Debug: No users found via awk, attempting fallback parsing" 4
-        # Fallback: Simple grep and manual parsing
-        local fallback_lines
-        fallback_lines=$(echo "$content" | grep '<user' || true)
-        if [ -n "$fallback_lines" ]; then
-            while IFS= read -r user_line; do
-                if [ -z "$user_line" ]; then
-                    write_log "Debug: Skipping empty fallback line" 4
-                    continue
-                fi
-                write_log "Debug: Processing fallback line: $user_line" 4
-                local username=""
-                local password=""
-                if [[ "$user_line" =~ username=\"([^\"]+)\" ]]; then
-                    username="${BASH_REMATCH[1]}"
-                fi
-                if [[ "$user_line" =~ password=\"([^\"]+)\" ]]; then
-                    password="${BASH_REMATCH[1]}"
-                fi
-                if [ -n "$username" ] && [ -n "$password" ]; then
-                    ((user_count++))
-                    write_log "Debug: Fallback matched username=$username, password=$password" 4
-                    read password_type is_secure <<< $(detect_password_type "$password")
-
-                    local compliance_status="Non-compliant"
-                    local issues=()
-
-                    if [ "$password_type" = "Plaintext" ]; then
-                        compliance_status="Non-compliant"
-                        issues+=("Plaintext passwords detected. Use salted SHA-256 or PBKDF2.")
-                    elif [[ "$password_type" =~ ^(Hashed_MD5|Salted_MD5)$ ]]; then
-                        compliance_status="Non-compliant"
-                        issues+=("Weak MD5 hashing detected. Use SHA-256 or PBKDF2.")
-                    elif [ "$password_type" = "Hashed_SHA1" ]; then
-                        compliance_status="Non-compliant"
-                        issues+=("Weak SHA1 hashing detected. Use SHA-256 or PBKDF2.")
-                    elif [ "$password_type" = "Hashed_SHA256" ]; then
-                        if [ "$tomcat_version" = "7.0" ]; then
-                            compliance_status="Compliant"
-                        elif [ "$credential_handler" = "None" ] || [ "$handler_algorithm" != "SHA-256" ] || \
-                             [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
-                            compliance_status="Non-compliant"
-                            issues+=("SHA256 requires salt and iterations.")
-                        else
-                            compliance_status="Compliant"
-                        fi
-                    elif [ "$password_type" = "Hashed_SHA512" ]; then
-                        if [ "$tomcat_version" = "7.0" ]; then
-                            compliance_status="Non-compliant"
-                            issues+=("SHA512 not supported in Tomcat 7.0. Use SHA-256.")
-                        elif [ "$credential_handler" = "None" ] || [ "$handler_algorithm" != "SHA-512" ] || \
-                             [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
-                            compliance_status="Non-compliant"
-                            issues+=("SHA512 requires salt and iterations.")
-                        else
-                            compliance_status="Compliant"
-                        fi
-                    elif [ "$password_type" = "Salted_PBKDF2" ]; then
-                        if [ "$tomcat_version" = "7.0" ]; then
-                            compliance_status="Non-compliant"
-                            issues+=("PBKDF2 not supported in Tomcat 7.0. Use SHA-256.")
-                        elif [ "$tomcat_version" = "8.5" ]; then
-                            if [ "$credential_handler" = "None" ] || \
-                               [[ ! "$handler_algorithm" =~ ^(SHA-256|SHA-512)$ ]] || \
-                               [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
-                                compliance_status="Non-compliant"
-                                issues+=("PBKDF2 requires compatible handler.")
-                            else
-                                compliance_status="Compliant"
-                            fi
-                        else
-                            if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
-                               [ "$handler_algorithm" = "PBKDF2WithHmacSHA512" ] && \
-                               [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
-                                compliance_status="Compliant"
-                            else
-                                compliance_status="Non-compliant"
-                                issues+=("PBKDF2 requires SecretKeyCredentialHandler.")
-                            fi
-                        fi
-                    else
-                        compliance_status="Non-compliant"
-                        issues+=("Unknown password type: $password_type.")
-                    fi
-
-                    write_log "    $username | $password_type | $compliance_status" 4
-                    for issue in "${issues[@]}"; do
-                        write_log "        - $issue" 8
-                    done
-
-                    results+=("$compliance_status")
-                else
-                    write_log "Debug: No username/password match in fallback line: $user_line" 4
-                fi
-            done <<< "$fallback_lines"
-        else
-            write_log "Debug: No users found via fallback parsing" 4
-            write_log "    No users found in $users_xml_path" 4
-        fi
-    fi
-
-    write_log "Debug: Processed $user_count user(s)" 4
-    write_log "Debug: Results array: ${results[*]}" 4
-
-    # Output results for capture, space-separated
-    printf "%s" "${results[*]}"
-}
-
 # Main audit function
 audit_tomcat_config() {
     # Check for sudo/root privileges
@@ -505,14 +248,138 @@ audit_tomcat_config() {
     write_log "  Iterations: $iterations"
     write_log "  Salt Length: $salt_length"
 
+    # Audit tomcat-users.xml inline
     local users_xml_path="$conf_path/tomcat-users.xml"
     write_log "Auditing tomcat-users.xml"
+    write_log "Debug: Starting audit of $users_xml_path" 4
+    write_log "Debug: users_xml_path=$users_xml_path" 4
+
     audit_results=()
-    # Capture output as a space-separated string and convert to array
-    local results_output
-    results_output=$(audit_users_xml "$users_xml_path" "$credential_handler" "$algorithm" "$iterations" "$salt_length" "$tomcat_version")
-    IFS=' ' read -r -a audit_results <<< "$results_output"
-    write_log "Debug: Captured ${#audit_results[@]} audit result(s)" 4
+    local user_count=0
+
+    if [ ! -f "$users_xml_path" ]; then
+        write_log "Error: $users_xml_path not found" 4
+    else
+        write_log "User Audit Results:" 4
+        write_log "Username | Password Type | Compliance" 4
+        write_log "---------|---------------|-----------" 4
+
+        # Read the entire file
+        local content
+        content=$(cat "$users_xml_path" 2>/dev/null)
+        if [ $? -ne 0 ]; then
+            write_log "Error: Cannot read $users_xml_path" 4
+        elif [ -z "$content" ]; then
+            write_log "Error: $users_xml_path is empty" 4
+            write_log "    No users found in $users_xml_path" 4
+        else
+            write_log "Debug: File read successfully, content length=${#content}" 4
+            local content_preview=${content:0:200}
+            content_preview=${content_preview//[$'\n\r']/ }
+            write_log "Debug: File content preview: $content_preview" 4
+
+            # Parse using grep and sed
+            write_log "Debug: Attempting grep and sed parsing" 4
+            local user_lines
+            user_lines=$(echo "$content" | grep '<user' || true)
+            write_log "Debug: grep found ${#user_lines[@]} lines" 4
+            write_log "Debug: Raw grep output: $user_lines" 4
+
+            if [ -n "$user_lines" ]; then
+                while IFS= read -r user_line; do
+                    if [ -z "$user_line" ]; then
+                        write_log "Debug: Skipping empty user line" 4
+                        continue
+                    fi
+                    write_log "Debug: Processing user line: $user_line" 4
+                    local username
+                    local password
+                    username=$(echo "$user_line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
+                    password=$(echo "$user_line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
+                    if [ -n "$username" ] && [ -n "$password" ]; then
+                        ((user_count++))
+                        write_log "Debug: Matched username=$username, password=$password" 4
+                        read password_type is_secure <<< $(detect_password_type "$password")
+
+                        local compliance_status="Non-compliant"
+                        local issues=()
+
+                        if [ "$password_type" = "Plaintext" ]; then
+                            compliance_status="Non-compliant"
+                            issues+=("Plaintext passwords detected. Use salted SHA-256 or PBKDF2.")
+                        elif [[ "$password_type" =~ ^(Hashed_MD5|Salted_MD5)$ ]]; then
+                            compliance_status="Non-compliant"
+                            issues+=("Weak MD5 hashing detected. Use SHA-256 or PBKDF2.")
+                        elif [ "$password_type" = "Hashed_SHA1" ]; then
+                            compliance_status="Non-compliant"
+                            issues+=("Weak SHA1 hashing detected. Use SHA-256 or PBKDF2.")
+                        elif [ "$password_type" = "Hashed_SHA256" ]; then
+                            if [ "$tomcat_version" = "7.0" ]; then
+                                compliance_status="Compliant"
+                            elif [ "$credential_handler" = "None" ] || [ "$handler_algorithm" != "SHA-256" ] || \
+                                 [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
+                                compliance_status="Non-compliant"
+                                issues+=("SHA256 requires salt and iterations.")
+                            else
+                                compliance_status="Compliant"
+                            fi
+                        elif [ "$password_type" = "Hashed_SHA512" ]; then
+                            if [ "$tomcat_version" = "7.0" ]; then
+                                compliance_status="Non-compliant"
+                                issues+=("SHA512 not supported in Tomcat 7.0. Use SHA-256.")
+                            elif [ "$credential_handler" = "None" ] || [ "$handler_algorithm" != "SHA-512" ] || \
+                                 [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
+                                compliance_status="Non-compliant"
+                                issues+=("SHA512 requires salt and iterations.")
+                            else
+                                compliance_status="Compliant"
+                            fi
+                        elif [ "$password_type" = "Salted_PBKDF2" ]; then
+                            if [ "$tomcat_version" = "7.0" ]; then
+                                compliance_status="Non-compliant"
+                                issues+=("PBKDF2 not supported in Tomcat 7.0. Use SHA-256.")
+                            elif [ "$tomcat_version" = "8.5" ]; then
+                                if [ "$credential_handler" = "None" ] || \
+                                   [[ ! "$handler_algorithm" =~ ^(SHA-256|SHA-512)$ ]] || \
+                                   [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
+                                    compliance_status="Non-compliant"
+                                    issues+=("PBKDF2 requires compatible handler.")
+                                else
+                                    compliance_status="Compliant"
+                                fi
+                            else
+                                if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
+                                   [ "$handler_algorithm" = "PBKDF2WithHmacSHA512" ] && \
+                                   [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
+                                    compliance_status="Compliant"
+                                else
+                                    compliance_status="Non-compliant"
+                                    issues+=("PBKDF2 requires SecretKeyCredentialHandler.")
+                                fi
+                            fi
+                        else
+                            compliance_status="Non-compliant"
+                            issues+=("Unknown password type: $password_type.")
+                        fi
+
+                        write_log "    $username | $password_type | $compliance_status" 4
+                        for issue in "${issues[@]}"; do
+                            write_log "        - $issue" 8
+                        done
+
+                        audit_results+=("$compliance_status")
+                    else
+                        write_log "Debug: No username/password match in line: $user_line" 4
+                    fi
+                done <<< "$user_lines"
+            else
+                write_log "Debug: No user tags found via grep" 4
+                write_log "    No users found in $users_xml_path" 4
+            fi
+        fi
+    fi
+
+    write_log "Debug: Processed $user_count user(s)" 4
     write_log "Debug: Audit results: ${audit_results[*]}" 4
 
     local overall_secure=1
