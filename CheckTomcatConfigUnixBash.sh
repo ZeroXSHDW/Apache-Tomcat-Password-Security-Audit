@@ -225,7 +225,7 @@ audit_users_xml() {
     write_log "Username | Password Type | Compliance"
     write_log "---------|---------------|-----------"
 
-    # Read the entire file and extract user tags
+    # Read the entire file
     local content
     content=$(cat "$users_xml_path" 2>/dev/null)
     if [ $? -ne 0 ]; then
@@ -233,8 +233,18 @@ audit_users_xml() {
         return
     fi
 
-    # Use grep -o to extract each <user ...> tag
+    # Check if content is empty
+    if [ -z "$content" ]; then
+        write_log "Error: $users_xml_path is empty"
+        write_log "    No users found in $users_xml_path" 4
+        return
+    fi
+
+    # Extract user tags using a simpler regex
     while IFS= read -r user_line; do
+        # Skip empty lines
+        [ -z "$user_line" ] && continue
+        # Match username and password attributes
         if [[ "$user_line" =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
             ((user_count++))
             local username="${BASH_REMATCH[1]:-Unknown}"
@@ -308,8 +318,10 @@ audit_users_xml() {
             done
 
             results+=("$compliance_status")
+        else
+            write_log "Debug: Skipping invalid user line: $user_line" 4
         fi
-    done < <(echo "$content" | grep -o '<user[^>]*username="[^"]*"[^>]*password="[^"]*"[^>]*>' || echo "")
+    done < <(echo "$content" | grep -o '<user[^>]*>' || echo "")
 
     if [ "$user_count" -eq 0 ]; then
         write_log "    No users found in $users_xml_path" 4
@@ -366,16 +378,15 @@ audit_tomcat_config() {
     IFS=' ' read -ra audit_results <<< $(audit_users_xml "$users_xml_path" "$credential_handler" "$algorithm" "$iterations" "$salt_length" "$tomcat_version")
 
     local overall_secure=1
-    if [[ "$config_status" == "Non-compliant" ]] || [ ${#audit_results[@]} -eq 0 ]; then
+    if [ "$config_status" = "Non-compliant" ]; then
         overall_secure=0
-    else
-        for result in "${audit_results[@]}"; do
-            if [[ "$result" == "Non-compliant" ]]; then
-                overall_secure=0
-                break
-            fi
-        done
     fi
+    for result in "${audit_results[@]}"; do
+        if [ "$result" = "Non-compliant" ]; then
+            overall_secure=0
+            break
+        fi
+    done
 
     write_log "==========================="
     write_log "Overall Status: $( [ "$overall_secure" -eq 1 ] && echo "Secure" || echo "Insecure" )"
