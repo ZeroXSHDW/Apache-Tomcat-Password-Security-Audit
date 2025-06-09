@@ -24,7 +24,7 @@ if [ ! -f "$LOG_FILE" ]; then
     fi
 fi
 
-# Function to check for running Tomcat processes
+# Function to check for running Tomcat processes and extract config path
 check_tomcat_process() {
     write_log "Checking for running Tomcat processes..."
     local tomcat_pid
@@ -32,33 +32,77 @@ check_tomcat_process() {
     if [ -n "$tomcat_pid" ]; then
         write_log "Found running Tomcat process (PID: $tomcat_pid)" 2
         write_log "  - Check process details with: ps -ef | grep $tomcat_pid" 2
+        # Attempt to extract CATALINA_HOME or CATALINA_BASE from process args
+        local proc_args
+        proc_args=$(ps -p "$tomcat_pid" -o args 2>/dev/null)
+        local catalina_home
+        catalina_home=$(echo "$proc_args" | grep -o -E '\-Dcatalina\.home=[^ ]+' | sed 's/-Dcatalina\.home=//')
+        local catalina_base
+        catalina_base=$(echo "$proc_args" | grep -o -E '\-Dcatalina\.base=[^ ]+' | sed 's/-Dcatalina\.base=//')
+        if [ -n "$catalina_base" ] && [ -d "$catalina_base/conf" ] && [ -f "$catalina_base/conf/server.xml" ]; then
+            write_log "  - Found CATALINA_BASE from process: $catalina_base/conf" 2
+            echo "$catalina_base/conf"
+        elif [ -n "$catalina_home" ] && [ -d "$catalina_home/conf" ] && [ -f "$catalina_home/conf/server.xml" ]; then
+            write_log "  - Found CATALINA_HOME from process: $catalina_home/conf" 2
+            echo "$catalina_home/conf"
+        else
+            write_log "  - Could not determine config path from process arguments" 2
+        fi
         write_log "  - Tomcat may be running from an alternate installation" 2
     else
         write_log "No running Tomcat processes found" 2
-        write_log "  - If Tomcat is installed, ensure it is running: sudo systemctl start tomcat9" 2
+        write_log "  - If Tomcat is installed, ensure it is running: sudo systemctl start tomcat" 2
     fi
 }
 
-# Function to detect Tomcat path
+# Function to detect Tomcat configuration path
 get_tomcat_config_path() {
+    local custom_conf_path="$1"
     local conf_path=""
 
+    # Check custom path provided as argument
+    if [ -n "$custom_conf_path" ]; then
+        write_log "Checking custom configuration path: $custom_conf_path"
+        if [ -d "$custom_conf_path" ] && [ -f "$custom_conf_path/server.xml" ] && [ -f "$custom_conf_path/tomcat-users.xml" ]; then
+            conf_path="$custom_conf_path"
+            write_log "Found valid Tomcat configuration at custom path: $conf_path"
+        else
+            write_log "ERROR: Invalid custom configuration path: $custom_conf_path" 2
+            write_log "  - Missing server.xml or tomcat-users.xml" 2
+            write_log "  - Verify path: ls -l $custom_conf_path" 2
+            return 1
+        fi
+    fi
+
     # Check CATALINA_BASE
-    if [ -n "${CATALINA_BASE}" ] && [ -d "${CATALINA_BASE}/conf" ] && [ -f "${CATALINA_BASE}/conf/server.xml" ]; then
+    if [ -z "$conf_path" ] && [ -n "${CATALINA_BASE}" ] && [ -d "${CATALINA_BASE}/conf" ] && [ -f "${CATALINA_BASE}/conf/server.xml" ] && [ -f "${CATALINA_BASE}/conf/tomcat-users.xml" ]; then
         write_log "Found Tomcat configuration at CATALINA_BASE: ${CATALINA_BASE}/conf"
         conf_path="${CATALINA_BASE}/conf"
+    fi
+
     # Check CATALINA_HOME
-    elif [ -n "${CATALINA_HOME}" ] && [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ]; then
+    if [ -z "$conf_path" ] && [ -n "${CATALINA_HOME}" ] && [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ] && [ -f "${CATALINA_HOME}/conf/tomcat-users.xml" ]; then
         write_log "Found Tomcat configuration at CATALINA_HOME: ${CATALINA_HOME}/conf"
         conf_path="${CATALINA_HOME}/conf"
+    fi
+
+    # Check running process
+    if [ -z "$conf_path" ]; then
+        local process_conf_path
+        process_conf_path=$(check_tomcat_process)
+        if [ -n "$process_conf_path" ] && [ -d "$process_conf_path" ] && [ -f "$process_conf_path/server.xml" ] && [ -f "$process_conf_path/tomcat-users.xml" ]; then
+            conf_path="$process_conf_path"
+        fi
+    fi
+
     # Infer CATALINA_HOME from catalina.sh
-    elif [ -z "$CATALINA_HOME" ]; then
+    if [ -z "$conf_path" ] && [ -z "$CATALINA_HOME" ]; then
         local catalina_script
         catalina_script=$(command -v catalina.sh 2>/dev/null)
         if [ -n "$catalina_script" ] && [ -f "$catalina_script" ]; then
             CATALINA_HOME=$(dirname "$(dirname "$catalina_script")")
             write_log "Inferred CATALINA_HOME from catalina.sh: $CATALINA_HOME"
-            if [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ]; then
+            if [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ] && [ -f "${CATALINA_HOME}/conf/tomcat-users.xml" ]; then
                 conf_path="${CATALINA_HOME}/conf"
             fi
         fi
@@ -66,6 +110,7 @@ get_tomcat_config_path() {
 
     # Search common paths
     if [ -z "$conf_path" ]; then
+        write_log "Searching common Tomcat configuration paths..."
         for path in \
             "/opt/tomcat/conf" \
             "/usr/local/tomcat/conf" \
@@ -83,7 +128,7 @@ get_tomcat_config_path() {
             "/etc/tomcat8/conf" \
             "/etc/tomcat9/conf" \
             "/etc/tomcat10/conf"; do
-            if [ -d "${path}" ] && [ -f "${path}/server.xml" ]; then
+            if [ -d "${path}" ] && [ -f "${path}/server.xml" ] && [ -f "${path}/tomcat-users.xml" ]; then
                 write_log "Found Tomcat configuration at: ${path}"
                 conf_path="${path}"
                 break
@@ -94,17 +139,25 @@ get_tomcat_config_path() {
     # Fallback to find command
     if [ -z "$conf_path" ]; then
         write_log "No Tomcat configuration found in common paths, attempting to locate server.xml..."
-        conf_path=$(find /etc /usr /var /opt -type f -path "*/conf/server.xml" -exec dirname {} \; 2>/dev/null | head -n 1)
-        if [ -n "$conf_path" ]; then
-            write_log "Found Tomcat configuration via find: ${conf_path}"
+        local found_path
+        found_path=$(find / -type f -path "*/conf/server.xml" 2>/dev/null | head -n 1)
+        if [ -n "$found_path" ]; then
+            conf_path=$(dirname "$found_path")
+            if [ -f "$conf_path/tomcat-users.xml" ]; then
+                write_log "Found Tomcat configuration via find: ${conf_path}"
+            else
+                write_log "ERROR: Found server.xml but missing tomcat-users.xml at: ${conf_path}" 2
+                conf_path=""
+            fi
         fi
     fi
 
     if [ -z "$conf_path" ]; then
         write_log "ERROR: Could not locate Tomcat configuration directory."
-        write_log "  - Ensure Tomcat is installed (e.g., sudo apt install tomcat9)" 2
+        write_log "  - Ensure Tomcat is installed (e.g., sudo apt install tomcat)" 2
         write_log "  - Check for server.xml: sudo find / -name server.xml" 2
         write_log "  - Set CATALINA_HOME or CATALINA_BASE environment variables" 2
+        write_log "  - Or specify a custom path: $0 /path/to/conf" 2
         return 1
     fi
 
@@ -366,7 +419,7 @@ audit_server_xml() {
 
     if [ ! -f "$server_xml_path" ]; then
         write_log "Error: $server_xml_path not found"
-        write_log "  - Ensure Tomcat is installed correctly (e.g., sudo apt install tomcat9)" 2
+        write_log "  - Ensure Tomcat is installed correctly (e.g., sudo apt install tomcat)" 2
         write_log "  - Verify file exists: ls -l $server_xml_path" 2
         echo "$credential_handler $algorithm $iterations $salt_length"
         return 1
@@ -402,7 +455,7 @@ validate_tomcat_installation() {
         local full_path="$tomcat_home/$file"
         if [ ! -f "$full_path" ]; then
             write_log "ERROR: Missing required file $full_path" 2
-            write_log "  - Install Tomcat: sudo apt install tomcat9 (Kali/Debian)" 2
+            write_log "  - Install Tomcat: sudo apt install tomcat (Kali/Debian)" 2
             write_log "  - Or download: https://tomcat.apache.org/download-90.cgi" 2
             write_log "  - Verify path: ls -l $full_path" 2
             missing_required=1
@@ -440,6 +493,8 @@ validate_tomcat_installation() {
 
 # Main audit function
 audit_tomcat_config() {
+    local custom_conf_path="$1"
+
     # Check for sudo/root privileges
     if [ "$EUID" -ne 0 ]; then
         local timestamp=$(TZ=Asia/Kolkata date "+%Y-%m-%d %H:%M:%S")
@@ -460,19 +515,10 @@ audit_tomcat_config() {
     write_log "Hostname: $hostname"
     write_log "==========================="
 
-    # Check for running Tomcat processes
-    check_tomcat_process
-
     # Get Tomcat configuration path
     local conf_path
-    conf_path=$(get_tomcat_config_path)
+    conf_path=$(get_tomcat_config_path "$custom_conf_path")
     if [ $? -ne 0 ] || [ -z "$conf_path" ]; then
-        write_log "ERROR - No Tomcat configuration directory found"
-        write_log "  - Checked CATALINA_HOME: ${CATALINA_HOME:-unset}" 2
-        write_log "  - Checked CATALINA_BASE: ${CATALINA_BASE:-unset}" 2
-        write_log "  - Searched paths: /opt/tomcat/conf, /usr/share/tomcat*/conf, /etc/tomcat*/conf, etc." 2
-        write_log "  - Ensure Tomcat is installed and CATALINA_HOME or CATALINA_BASE is set correctly" 2
-        write_log "  - Try running: sudo find / -name server.xml" 2
         local timestamp="$exec_time"
         local combined_message=$(IFS="; "; echo "${log_messages[*]}")
         local log_entry="$timestamp,\"$combined_message\""
@@ -555,7 +601,7 @@ audit_tomcat_config() {
 
     if [ ! -f "$users_xml_path" ]; then
         write_log "Error: $users_xml_path not found" 4
-        write_log "  - Ensure Tomcat is installed correctly (e.g., sudo apt install tomcat9)" 4
+        write_log "  - Ensure Tomcat is installed correctly (e.g., sudo apt install tomcat)" 4
         write_log "  - Verify file exists: ls -l $users_xml_path" 4
         config_issues=1
     else
@@ -631,7 +677,7 @@ audit_tomcat_config() {
                             elif [ "$tomcat_version" = "8.0" ] || [ "$tomcat_version" = "8.5" ]; then
                                 if [ "$credential_handler" = "None" ] || \
                                    [[ ! "$algorithm" =~ ^(SHA-256|SHA-512)$ ]] || \
-                                   [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
+                                   [ "$iterations" -lt 16 ] || [ "$salt_length" -lt 16 ]; then
                                     compliance_status="Non-compliant"
                                     issues+=("PBKDF2 requires compatible handler.")
                                 else
@@ -680,18 +726,34 @@ audit_tomcat_config() {
     done
 
     write_log "==========================="
-    write_log "Overall Status: $( [ "$overall_secure" -eq 1 ] && echo "Secure" || echo "Insecure" )"
+    write_log "Overall Status: $( [ "$overall_secure" == 1 ] && echo "Secure" || echo "Insecure" )"
     write_log "Audit completed"
 
     # Write single CSV line
     local timestamp="$exec_time"
     local combined_message=$(IFS="; "; echo "${log_messages[*]}")
-    local log_entry="$timestamp,\"$combined_message\""
+    local log_entry="$timestamp,\"$combined_message)\""
     if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
-        printf "Error: Cannot write to %s.\n" "$LOG_FILE" >&2
+        printf "Error: Cannot write to %s\n" "$LOG_FILE" >&2
         logger -t TomcatAudit "Error: Cannot write to $LOG_FILE."
     fi
 }
 
-# Execute audit
-audit_tomcat_config
+# Parse command-line arguments
+if [ "$#" -gt 1 ]; then
+    echo "Usage: $0 [--custom-conf=/path/to/conf]" >&2
+    exit 1
+fi
+
+custom_conf_path=""
+if [ "$#" -eq 1 ]; then
+    if [[ "$1" =~ ^--custom-conf=(.*)$ ]]; then
+        custom_conf_path="${BASH_REMATCH[1]}"
+    else
+        echo "Usage: $0 [--custom-conf=/path/to/conf]" >&2
+        exit 1
+    fi
+fi
+
+# Execute audit with optional custom path
+audit_tomcat_config "$custom_conf_path"
