@@ -20,15 +20,41 @@ write_log() {
 if [ ! -f "$LOG_FILE" ]; then
     if ! echo "Timestamp,Message" > "$LOG_FILE" 2>/dev/null; then
         echo "Warning: Cannot create $LOG_FILE. Logging to console only." >&2
+        logger -t TomcatAudit "Warning: Cannot create $LOG_FILE."
     fi
 fi
 
 # Function to detect Tomcat path
 get_tomcat_config_path() {
+    # Check CATALINA_BASE first (for split configurations)
+    if [ -n "${CATALINA_BASE}" ] && [ -d "${CATALINA_BASE}/conf" ] && [ -f "${CATALINA_BASE}/conf/server.xml" ]; then
+        write_log "Found Tomcat configuration at CATALINA_BASE: ${CATALINA_BASE}/conf"
+        echo "${CATALINA_BASE}/conf"
+        return
+    fi
+
+    # Check CATALINA_HOME
     if [ -n "${CATALINA_HOME}" ] && [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ]; then
+        write_log "Found Tomcat configuration at CATALINA_HOME: ${CATALINA_HOME}/conf"
         echo "${CATALINA_HOME}/conf"
         return
     fi
+
+    # Infer CATALINA_HOME from catalina.sh if unset
+    if [ -z "$CATALINA_HOME" ]; then
+        local catalina_script
+        catalina_script=$(command -v catalina.sh 2>/dev/null)
+        if [ -n "$catalina_script" ] && [ -f "$catalina_script" ]; then
+            CATALINA_HOME=$(dirname "$(dirname "$catalina_script")")
+            write_log "Inferred CATALINA_HOME from catalina.sh: $CATALINA_HOME"
+            if [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ]; then
+                echo "${CATALINA_HOME}/conf"
+                return
+            fi
+        fi
+    fi
+
+    # Search common paths
     for path in \
         "/opt/tomcat/conf" \
         "/usr/local/tomcat/conf" \
@@ -36,15 +62,34 @@ get_tomcat_config_path() {
         "/var/lib/tomcat8/conf" \
         "/var/lib/tomcat9/conf" \
         "/var/lib/tomcat10/conf" \
+        "/usr/share/tomcat/conf" \
         "/usr/share/tomcat7/conf" \
         "/usr/share/tomcat8/conf" \
         "/usr/share/tomcat9/conf" \
-        "/usr/share/tomcat10/conf"; do
+        "/usr/share/tomcat10/conf" \
+        "/etc/tomcat/conf" \
+        "/etc/tomcat7/conf" \
+        "/etc/tomcat8/conf" \
+        "/etc/tomcat9/conf" \
+        "/etc/tomcat10/conf"; do
         if [ -d "${path}" ] && [ -f "${path}/server.xml" ]; then
+            write_log "Found Tomcat configuration at: ${path}"
             echo "${path}"
             return
         fi
     done
+
+    # Fallback to find command (limited to common directories to avoid long searches)
+    write_log "No Tomcat configuration found in common paths, attempting to locate server.xml..."
+    local found_path
+    found_path=$(find /etc /usr /var /opt -type f -path "*/conf/server.xml" -exec dirname {} \; 2>/dev/null | head -n 1)
+    if [ -n "$found_path" ]; then
+        write_log "Found Tomcat configuration via find: ${found_path}"
+        echo "$found_path"
+        return
+    fi
+
+    write_log "ERROR: Could not locate Tomcat configuration directory."
     echo ""
 }
 
@@ -53,7 +98,7 @@ detect_tomcat_version() {
     local tomcat_home="$1"
     local version_file="${tomcat_home}/RELEASE-NOTES"
     local server_xml="${tomcat_home}/conf/server.xml"
-    local version="7.0"  # Default fallback
+    local version="unknown"  # Avoid defaulting to 7.0
 
     if [ -f "$version_file" ]; then
         version_line=$(grep "Apache Tomcat Version" "$version_file" | head -1)
@@ -86,8 +131,8 @@ detect_tomcat_version() {
         fi
     fi
 
-    if [ "$version" = "7.0" ]; then
-        write_log "Warning: Could not determine Tomcat version at $tomcat_home, defaulting to 7.0"
+    if [ "$version" = "unknown" ]; then
+        write_log "ERROR: Could not determine Tomcat version at $tomcat_home"
     fi
     echo "$version"
 }
@@ -215,6 +260,7 @@ audit_tomcat_config() {
         local log_entry="$timestamp,\"$combined_message\""
         if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
             echo "Warning: Cannot write to $LOG_FILE." >&2
+            logger -t TomcatAudit "Warning: Cannot write to $LOG_FILE."
         fi
         exit 1
     fi
@@ -226,16 +272,42 @@ audit_tomcat_config() {
     write_log "Hostname: $hostname"
     write_log "==========================="
 
+    # Get Tomcat configuration path
     local conf_path=$(get_tomcat_config_path)
     if [ -z "$conf_path" ]; then
         write_log "ERROR - No Tomcat configuration directory found"
-        return
+        write_log "  - Checked CATALINA_HOME: ${CATALINA_HOME:-unset}"
+        write_log "  - Checked CATALINA_BASE: ${CATALINA_BASE:-unset}"
+        write_log "  - Searched paths: /opt/tomcat/conf, /usr/share/tomcat*/conf, /etc/tomcat*/conf, etc."
+        write_log "  - Ensure Tomcat is installed and CATALINA_HOME or CATALINA_BASE is set correctly"
+        write_log "  - Try running: sudo find / -name server.xml"
+        local timestamp="$exec_time"
+        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+        local log_entry="$timestamp,\"$combined_message\""
+        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+            echo "Warning: Cannot write to $LOG_FILE." >&2
+            logger -t TomcatAudit "Warning: Cannot write to $LOG_FILE."
+        fi
+        exit 1
     fi
     write_log "Config Path: $conf_path"
 
+    # Detect Tomcat version
     local tomcat_version=$(detect_tomcat_version "$(dirname "$conf_path")")
+    if [ "$tomcat_version" = "unknown" ]; then
+        write_log "ERROR - Cannot proceed with unknown Tomcat version"
+        local timestamp="$exec_time"
+        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+        local log_entry="$timestamp,\"$combined_message\""
+        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+            echo "Warning: Cannot write to $LOG_FILE." >&2
+            logger -t TomcatAudit "Warning: Cannot write to $LOG_FILE."
+        fi
+        exit 1
+    fi
     write_log "Tomcat Version: $tomcat_version"
 
+    # Audit server.xml
     local server_xml_path="$conf_path/server.xml"
     write_log "Auditing server.xml"
     read credential_handler algorithm iterations salt_length <<< $(audit_server_xml "$server_xml_path")
@@ -302,7 +374,7 @@ audit_tomcat_config() {
                         elif [ "$password_type" = "Hashed_SHA256" ]; then
                             if [ "$tomcat_version" = "7.0" ]; then
                                 compliance_status="Compliant"
-                            elif [ "$credential_handler" = "None" ] || [ "$handler_algorithm" != "SHA-256" ] || \
+                            elif [ "$credential_handler" = "None" ] || [ "$algorithm" != "SHA-256" ] || \
                                  [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
                                 compliance_status="Non-compliant"
                                 issues+=("SHA256 requires salt and iterations.")
@@ -313,7 +385,7 @@ audit_tomcat_config() {
                             if [ "$tomcat_version" = "7.0" ]; then
                                 compliance_status="Non-compliant"
                                 issues+=("SHA512 not supported in Tomcat 7.0. Use SHA-256.")
-                            elif [ "$credential_handler" = "None" ] || [ "$handler_algorithm" != "SHA-512" ] || \
+                            elif [ "$credential_handler" = "None" ] || [ "$algorithm" != "SHA-512" ] || \
                                  [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
                                 compliance_status="Non-compliant"
                                 issues+=("SHA512 requires salt and iterations.")
@@ -326,7 +398,7 @@ audit_tomcat_config() {
                                 issues+=("PBKDF2 not supported in Tomcat 7.0. Use SHA-256.")
                             elif [ "$tomcat_version" = "8.5" ]; then
                                 if [ "$credential_handler" = "None" ] || \
-                                   [[ ! "$handler_algorithm" =~ ^(SHA-256|SHA-512)$ ]] || \
+                                   [[ ! "$algorithm" =~ ^(SHA-256|SHA-512)$ ]] || \
                                    [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
                                     compliance_status="Non-compliant"
                                     issues+=("PBKDF2 requires compatible handler.")
@@ -335,7 +407,7 @@ audit_tomcat_config() {
                                 fi
                             else
                                 if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
-                                   [ "$handler_algorithm" = "PBKDF2WithHmacSHA512" ] && \
+                                   [ "$algorithm" = "PBKDF2WithHmacSHA512" ] && \
                                    [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
                                     compliance_status="Compliant"
                                 else
@@ -383,6 +455,7 @@ audit_tomcat_config() {
     local log_entry="$timestamp,\"$combined_message\""
     if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
         echo "Warning: Cannot write to $LOG_FILE." >&2
+        logger -t TomcatAudit "Warning: Cannot write to $LOG_FILE."
     fi
 }
 
