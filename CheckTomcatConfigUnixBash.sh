@@ -98,42 +98,126 @@ detect_tomcat_version() {
     local tomcat_home="$1"
     local version_file="${tomcat_home}/RELEASE-NOTES"
     local server_xml="${tomcat_home}/conf/server.xml"
-    local version="unknown"  # Avoid defaulting to 7.0
+    local catalina_jar="${tomcat_home}/lib/catalina.jar"
+    local version="unknown"
+    local full_version=""
 
+    # Method 1: Check RELEASE-NOTES
     if [ -f "$version_file" ]; then
+        write_log "Checking RELEASE-NOTES for version..."
         version_line=$(grep "Apache Tomcat Version" "$version_file" | head -1)
         if [[ "$version_line" =~ Apache\ Tomcat\ Version\ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
             full_version="${BASH_REMATCH[1]}"
             if [[ "$full_version" == 7.0.* ]]; then version="7.0"
+            elif [[ "$full_version" == 8.0.* ]]; then version="8.0"
             elif [[ "$full_version" == 8.5.* ]]; then version="8.5"
             elif [[ "$full_version" == 9.0.* ]]; then version="9.0"
             elif [[ "$full_version" == 10.0.* ]]; then version="10.0"
             elif [[ "$full_version" == 10.1.* ]]; then version="10.1"
             fi
+            write_log "Version found in RELEASE-NOTES: $full_version ($version)"
+        else
+            write_log "No version found in RELEASE-NOTES"
         fi
+    else
+        write_log "RELEASE-NOTES not found at $version_file"
     fi
 
-    tomcat_home_lower=$(echo "$tomcat_home" | tr '[:upper:]' '[:lower:]')
-    if [[ "$tomcat_home_lower" =~ tomcat7 ]]; then version="7.0"
-    elif [[ "$tomcat_home_lower" =~ tomcat8 ]]; then version="8.5"
-    elif [[ "$tomcat_home_lower" =~ tomcat9 ]]; then version="9.0"
-    elif [[ "$tomcat_home_lower" =~ tomcat10 ]]; then version="10.0"
+    # Method 2: Check directory name
+    if [ "$version" = "unknown" ]; then
+        write_log "Checking directory name for version..."
+        tomcat_home_lower=$(echo "$tomcat_home" | tr '[:upper:]' '[:lower:]')
+        if [[ "$tomcat_home_lower" =~ tomcat7 ]]; then version="7.0"
+        elif [[ "$tomcat_home_lower" =~ tomcat8 ]]; then version="8.5"
+        elif [[ "$tomcat_home_lower" =~ tomcat9 ]]; then version="9.0"
+        elif [[ "$tomcat_home_lower" =~ tomcat10 ]]; then version="10.0"
+        fi
+        [ "$version" != "unknown" ] && write_log "Version inferred from directory: $version"
     fi
 
-    if [ -f "$server_xml" ]; then
+    # Method 3: Check server.xml for VersionLoggerListener
+    if [ "$version" = "unknown" ] && [ -f "$server_xml" ]; then
+        write_log "Checking server.xml for version..."
         if grep -q "org.apache.catalina.startup.VersionLoggerListener" "$server_xml"; then
             content=$(cat "$server_xml")
-            if [[ "$tomcat_home_lower" =~ tomcat10 || "$content" =~ 10\. ]]; then version="10.0"
-            elif [[ "$content" =~ 9\. ]]; then version="9.0"
-            elif [[ "$content" =~ 8\. ]]; then version="8.5"
-            elif [[ "$content" =~ 7\. ]]; then version="7.0"
+            if [[ "$content" =~ 10\.[0-1] ]]; then version="10.0"
+            elif [[ "$content" =~ 9\.0 ]]; then version="9.0"
+            elif [[ "$content" =~ 8\.5 ]]; then version="8.5"
+            elif [[ "$content" =~ 8\.0 ]]; then version="8.0"
+            elif [[ "$content" =~ 7\.0 ]]; then version="7.0"
             fi
+            [ "$version" != "unknown" ] && write_log "Version inferred from server.xml: $version"
+        else
+            write_log "No VersionLoggerListener found in server.xml"
+        fi
+    elif [ ! -f "$server_xml" ]; then
+        write_log "server.xml not found at $server_xml"
+    fi
+
+    # Method 4: Check catalina.jar manifest
+    if [ "$version" = "unknown" ] && [ -f "$catalina_jar" ] && command -v unzip >/dev/null; then
+        write_log "Checking catalina.jar manifest for version..."
+        manifest_version=$(unzip -p "$catalina_jar" META-INF/MANIFEST.MF 2>/dev/null | grep "Implementation-Version" | sed -n 's/.*Implementation-Version: \([0-9]+\.[0-9]+\.[0-9]+\).*/\1/p')
+        if [ -n "$manifest_version" ]; then
+            if [[ "$manifest_version" == 7.0.* ]]; then version="7.0"
+            elif [[ "$manifest_version" == 8.0.* ]]; then version="8.0"
+            elif [[ "$manifest_version" == 8.5.* ]]; then version="8.5"
+            elif [[ "$manifest_version" == 9.0.* ]]; then version="9.0"
+            elif [[ "$manifest_version" == 10.0.* ]]; then version="10.0"
+            elif [[ "$manifest_version" == 10.1.* ]]; then version="10.1"
+            fi
+            write_log "Version found in catalina.jar manifest: $manifest_version ($version)"
+        else
+            write_log "No version found in catalina.jar manifest"
+        fi
+    elif [ ! -f "$catalina_jar" ]; then
+        write_log "catalina.jar not found at $catalina_jar"
+    fi
+
+    # Method 5: Run version.sh (if executable and Java is available)
+    if [ "$version" = "unknown" ] && [ -x "${tomcat_home}/bin/version.sh" ] && command -v java >/dev/null; then
+        write_log "Running version.sh to determine version..."
+        version_output=$("${tomcat_home}/bin/version.sh" 2>/dev/null | grep "Server version" | sed -n 's/.*Apache Tomcat\/\([0-9]+\.[0-9]+\.[0-9]+\).*/\1/p')
+        if [ -n "$version_output" ]; then
+            if [[ "$version_output" == 7.0.* ]]; then version="7.0"
+            elif [[ "$version_output" == 8.0.* ]]; then version="8.0"
+            elif [[ "$version_output" == 8.5.* ]]; then version="8.5"
+            elif [[ "$version_output" == 9.0.* ]]; then version="9.0"
+            elif [[ "$version_output" == 10.0.* ]]; then version="10.0"
+            elif [[ "$version_output" == 10.1.* ]]; then version="10.1"
+            fi
+            write_log "Version found from version.sh: $version_output ($version)"
+        else
+            write_log "No version found from version.sh"
+        fi
+    elif [ ! -x "${tomcat_home}/bin/version.sh" ]; then
+        write_log "version.sh not found or not executable at ${tomcat_home}/bin/version.sh"
+    fi
+
+    # Method 6: Check package manager (Debian/Ubuntu)
+    if [ "$version" = "unknown" ] && command -v dpkg >/dev/null; then
+        write_log "Checking package manager for Tomcat version..."
+        tomcat_package=$(dpkg -l | grep '^ii' | grep -E 'tomcat[0-9]+' | awk '{print $2}' | head -n 1)
+        if [ -n "$tomcat_package" ]; then
+            if [[ "$tomcat_package" =~ tomcat7 ]]; then version="7.0"
+            elif [[ "$tomcat_package" =~ tomcat8 ]]; then version="8.5"
+            elif [[ "$tomcat_package" =~ tomcat9 ]]; then version="9.0"
+            elif [[ "$tomcat_package" =~ tomcat10 ]]; then version="10.0"
+            fi
+            [ "$version" != "unknown" ] && write_log "Version inferred from package manager: $version"
+        else
+            write_log "No Tomcat package found via dpkg"
         fi
     fi
 
+    # Fallback: Assume 7.0 with warning
     if [ "$version" = "unknown" ]; then
-        write_log "ERROR: Could not determine Tomcat version at $tomcat_home"
+        version="7.0"
+        write_log "WARNING: Could not determine Tomcat version at $tomcat_home, defaulting to 7.0"
+        write_log "  - Ensure RELEASE-NOTES, catalina.jar, or version.sh is present"
+        write_log "  - Manual verification recommended"
     fi
+
     echo "$version"
 }
 
@@ -196,13 +280,13 @@ check_config_compliance() {
             write_log "  - Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256" 2
             write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'" 2
         fi
-    elif [ "$tomcat_version" = "8.5" ]; then
+    elif [ "$tomcat_version" = "8.0" ] || [ "$tomcat_version" = "8.5" ]; then
         if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
            [ "$algorithm" = "SHA-512" ] && \
            [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
-            config_status="Compliant for Tomcat 8.5"
+            config_status="Compliant for Tomcat $tomcat_version"
         else
-            write_log "  - Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16" 2
+            write_log "  - Tomcat $tomcat_version requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16" 2
             write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2
         fi
     else # Tomcat 9.0, 10.0, 10.1
@@ -294,17 +378,6 @@ audit_tomcat_config() {
 
     # Detect Tomcat version
     local tomcat_version=$(detect_tomcat_version "$(dirname "$conf_path")")
-    if [ "$tomcat_version" = "unknown" ]; then
-        write_log "ERROR - Cannot proceed with unknown Tomcat version"
-        local timestamp="$exec_time"
-        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
-        local log_entry="$timestamp,\"$combined_message\""
-        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
-            echo "Warning: Cannot write to $LOG_FILE." >&2
-            logger -t TomcatAudit "Warning: Cannot write to $LOG_FILE."
-        fi
-        exit 1
-    fi
     write_log "Tomcat Version: $tomcat_version"
 
     # Audit server.xml
@@ -396,7 +469,7 @@ audit_tomcat_config() {
                             if [ "$tomcat_version" = "7.0" ]; then
                                 compliance_status="Non-compliant"
                                 issues+=("PBKDF2 not supported in Tomcat 7.0. Use SHA-256.")
-                            elif [ "$tomcat_version" = "8.5" ]; then
+                            elif [ "$tomcat_version" = "8.0" ] || [ "$tomcat_version" = "8.5" ]; then
                                 if [ "$credential_handler" = "None" ] || \
                                    [[ ! "$algorithm" =~ ^(SHA-256|SHA-512)$ ]] || \
                                    [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
