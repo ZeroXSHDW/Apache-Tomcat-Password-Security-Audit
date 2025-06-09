@@ -102,10 +102,16 @@ detect_tomcat_version() {
     local version="unknown"
     local full_version=""
 
+    # Validate tomcat_home
+    if [ ! -d "$tomcat_home" ]; then
+        write_log "ERROR: Tomcat home directory $tomcat_home does not exist"
+        return 1
+    fi
+
     # Method 1: Check RELEASE-NOTES
     if [ -f "$version_file" ]; then
         write_log "Checking RELEASE-NOTES for version..."
-        version_line=$(grep "Apache Tomcat Version" "$version_file" | head -1)
+        version_line=$(grep "Apache Tomcat Version" "$version_file" | head -n 1)
         if [[ "$version_line" =~ Apache\ Tomcat\ Version\ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
             full_version="${BASH_REMATCH[1]}"
             if [[ "$full_version" == 7.0.* ]]; then version="7.0"
@@ -210,11 +216,32 @@ detect_tomcat_version() {
         fi
     fi
 
+    # Method 7: Check systemd service file
+    if [ "$version" = "unknown" ] && command -v systemctl >/dev/null; then
+        write_log "Checking systemd service file for version..."
+        service_file=$(find /etc/systemd/system /lib/systemd/system -name 'tomcat*.service' -type f 2>/dev/null | head -n 1)
+        if [ -n "$service_file" ]; then
+            version_output=$(grep -E 'CATALINA_HOME|ExecStart' "$service_file" | grep -oE 'tomcat[0-9]+' | head -n 1)
+            if [ -n "$version_output" ]; then
+                if [[ "$version_output" =~ tomcat7 ]]; then version="7.0"
+                elif [[ "$version_output" =~ tomcat8 ]]; then version="8.5"
+                elif [[ "$version_output" =~ tomcat9 ]]; then version="9.0"
+                elif [[ "$version_output" =~ tomcat10 ]]; then version="10.0"
+                fi
+                [ "$version" != "unknown" ] && write_log "Version inferred from systemd service: $version"
+            else
+                write_log "No version found in systemd service file"
+            fi
+        else
+            write_log "No Tomcat systemd service file found"
+        fi
+    fi
+
     # Fallback: Assume 7.0 with warning
     if [ "$version" = "unknown" ]; then
         version="7.0"
         write_log "WARNING: Could not determine Tomcat version at $tomcat_home, defaulting to 7.0"
-        write_log "  - Ensure RELEASE-NOTES, catalina.jar, or version.sh is present"
+        write_log "  - Ensure RELEASE-NOTES, catalina.jar, version.sh, or a Tomcat package is present"
         write_log "  - Manual verification recommended"
     fi
 
@@ -314,11 +341,12 @@ audit_server_xml() {
     if [ ! -f "$server_xml_path" ]; then
         write_log "Error: $server_xml_path not found"
         echo "$credential_handler $algorithm $iterations $salt_length"
-        return
+        return 1
     fi
 
     local realm_line=$(grep -E "org.apache.catalina.realm.(UserDatabaseRealm|MemoryRealm)" "$server_xml_path")
     if [ -z "$realm_line" ]; then
+        write_log "Warning: No UserDatabaseRealm or MemoryRealm found in $server_xml_path"
         echo "$credential_handler $algorithm $iterations $salt_length"
         return
     fi
@@ -376,14 +404,52 @@ audit_tomcat_config() {
     fi
     write_log "Config Path: $conf_path"
 
+    # Validate server.xml
+    local server_xml_path="$conf_path/server.xml"
+    if [ ! -f "$server_xml_path" ]; then
+        write_log "ERROR - server.xml not found at $server_xml_path"
+        write_log "  - The Tomcat installation at $(dirname "$conf_path") appears incomplete"
+        write_log "  - Please verify the installation or set CATALINA_HOME correctly"
+        local timestamp="$exec_time"
+        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+        local log_entry="$timestamp,\"$combined_message\""
+        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+            echo "Warning: Cannot write to $LOG_FILE." >&2
+            logger -t TomcatAudit "Warning: Cannot write to $LOG_FILE."
+        fi
+        exit 1
+    fi
+
     # Detect Tomcat version
-    local tomcat_version=$(detect_tomcat_version "$(dirname "$conf_path")")
+    local tomcat_home=$(dirname "$conf_path")
+    local tomcat_version=$(detect_tomcat_version "$tomcat_home")
+    if [ $? -ne 0 ]; then
+        write_log "ERROR - Failed to detect Tomcat version due to invalid installation"
+        local timestamp="$exec_time"
+        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+        local log_entry="$timestamp,\"$combined_message\""
+        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+            echo "Warning: Cannot write to $LOG_FILE." >&2
+            logger -t TomcatAudit "Warning: Cannot write to $LOG_FILE."
+        fi
+        exit 1
+    fi
     write_log "Tomcat Version: $tomcat_version"
 
     # Audit server.xml
-    local server_xml_path="$conf_path/server.xml"
     write_log "Auditing server.xml"
     read credential_handler algorithm iterations salt_length <<< $(audit_server_xml "$server_xml_path")
+    if [ $? -ne 0 ]; then
+        write_log "ERROR - Failed to audit server.xml"
+        local timestamp="$exec_time"
+        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+        local log_entry="$timestamp,\"$combined_message\""
+        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+            echo "Warning: Cannot write to $LOG_FILE." >&2
+            logger -t TomcatAudit "Warning: Cannot write to $LOG_FILE."
+        fi
+        exit 1
+    fi
 
     write_log "Server Configuration:"
     config_status=$(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length")
@@ -393,15 +459,21 @@ audit_tomcat_config() {
     write_log "  Iterations: $iterations"
     write_log "  Salt Length: $salt_length"
 
-    # Audit tomcat-users.xml inline
+    # Audit tomcat-users.xml
     local users_xml_path="$conf_path/tomcat-users.xml"
     write_log "Auditing tomcat-users.xml"
 
     audit_results=()
     local user_count=0
+    local config_issues=0
+
+    if [ "$config_status" = "Non-compliant" ]; then
+        config_issues=1
+    fi
 
     if [ ! -f "$users_xml_path" ]; then
         write_log "Error: $users_xml_path not found" 4
+        config_issues=1
     else
         write_log "User Audit Results:" 4
         write_log "Username | Password Type | Compliance" 4
@@ -412,9 +484,11 @@ audit_tomcat_config() {
         content=$(cat "$users_xml_path" 2>/dev/null)
         if [ $? -ne 0 ]; then
             write_log "Error: Cannot read $users_xml_path" 4
+            config_issues=1
         elif [ -z "$content" ]; then
             write_log "Error: $users_xml_path is empty" 4
             write_log "    No users found in $users_xml_path" 4
+            config_issues=1
         else
             # Parse using grep and sed
             local user_lines
@@ -503,12 +577,14 @@ audit_tomcat_config() {
                 done <<< "$user_lines"
             else
                 write_log "    No users found in $users_xml_path" 4
+                config_issues=1
             fi
         fi
     fi
 
+    # Determine overall status
     local overall_secure=1
-    if [ "$config_status" = "Non-compliant" ]; then
+    if [ "$config_issues" -eq 1 ]; then
         overall_secure=0
     fi
     for result in "${audit_results[@]}"; do
