@@ -24,6 +24,21 @@ if [ ! -f "$LOG_FILE" ]; then
     fi
 fi
 
+# Function to check for running Tomcat processes
+check_tomcat_process() {
+    write_log "Checking for running Tomcat processes..."
+    local tomcat_pid
+    tomcat_pid=$(pgrep -f "org.apache.catalina.startup.Bootstrap" 2>/dev/null)
+    if [ -n "$tomcat_pid" ]; then
+        write_log "Found running Tomcat process (PID: $tomcat_pid)" 2
+        write_log "  - Check process details with: ps -ef | grep $tomcat_pid" 2
+        write_log "  - Tomcat may be running from an alternate installation" 2
+    else
+        write_log "No running Tomcat processes found" 2
+        write_log "  - If Tomcat is installed, ensure it is running: sudo systemctl start tomcat9" 2
+    fi
+}
+
 # Function to detect Tomcat path
 get_tomcat_config_path() {
     local conf_path=""
@@ -87,6 +102,9 @@ get_tomcat_config_path() {
 
     if [ -z "$conf_path" ]; then
         write_log "ERROR: Could not locate Tomcat configuration directory."
+        write_log "  - Ensure Tomcat is installed (e.g., sudo apt install tomcat9)" 2
+        write_log "  - Check for server.xml: sudo find / -name server.xml" 2
+        write_log "  - Set CATALINA_HOME or CATALINA_BASE environment variables" 2
         return 1
     fi
     echo "$conf_path"
@@ -240,8 +258,8 @@ detect_tomcat_version() {
     if [ "$version" = "unknown" ]; then
         version="7.0"
         write_log "WARNING: Could not determine Tomcat version at $tomcat_home, defaulting to 7.0"
-        write_log "  - Ensure RELEASE-NOTES, catalina.jar, version.sh, or a Tomcat package is present"
-        write_log "  - Manual verification recommended"
+        write_log "  - Ensure RELEASE-NOTES, catalina.jar, version.sh, or a Tomcat package is present" 2
+        write_log "  - Manual verification recommended" 2
     fi
 
     echo "$version"
@@ -339,6 +357,8 @@ audit_server_xml() {
 
     if [ ! -f "$server_xml_path" ]; then
         write_log "Error: $server_xml_path not found"
+        write_log "  - Ensure Tomcat is installed correctly (e.g., sudo apt install tomcat9)" 2
+        write_log "  - Verify file exists: ls -l $server_xml_path" 2
         echo "$credential_handler $algorithm $iterations $salt_length"
         return 1
     fi
@@ -372,6 +392,9 @@ validate_tomcat_installation() {
     for file in "${required_files[@]}"; do
         if [ ! -f "$tomcat_home/$file" ]; then
             write_log "ERROR: Missing required file $tomcat_home/$file" 2
+            write_log "  - Install Tomcat: sudo apt install tomcat9 (Kali/Debian)" 2
+            write_log "  - Or download: https://tomcat.apache.org/download-90.cgi" 2
+            write_log "  - Verify path: ls -l $tomcat_home/$file" 2
             missing_required=1
         fi
     done
@@ -379,8 +402,7 @@ validate_tomcat_installation() {
     if [ $missing_required -eq 1 ]; then
         write_log "ERROR: Tomcat installation at $tomcat_home is incomplete" 2
         write_log "  - Required files (server.xml, tomcat-users.xml) are missing" 2
-        write_log "  - To reinstall, run: sudo apt install tomcat9 (for Kali/Debian)" 2
-        write_log "  - Or download from: https://tomcat.apache.org/download-90.cgi" 2
+        write_log "  - Check for other installations: sudo find / -name server.xml" 2
         write_log "  - Verify CATALINA_HOME ($CATALINA_HOME) and CATALINA_BASE ($CATALINA_BASE)" 2
         return 1
     fi
@@ -423,16 +445,19 @@ audit_tomcat_config() {
     write_log "Hostname: $hostname"
     write_log "==========================="
 
+    # Check for running Tomcat processes
+    check_tomcat_process
+
     # Get Tomcat configuration path
     local conf_path
     conf_path=$(get_tomcat_config_path)
     if [ $? -ne 0 ] || [ -z "$conf_path" ]; then
         write_log "ERROR - No Tomcat configuration directory found"
-        write_log "  - Checked CATALINA_HOME: ${CATALINA_HOME:-unset}"
-        write_log "  - Checked CATALINA_BASE: ${CATALINA_BASE:-unset}"
-        write_log "  - Searched paths: /opt/tomcat/conf, /usr/share/tomcat*/conf, /etc/tomcat*/conf, etc."
-        write_log "  - Ensure Tomcat is installed and CATALINA_HOME or CATALINA_BASE is set correctly"
-        write_log "  - Try running: sudo find / -name server.xml"
+        write_log "  - Checked CATALINA_HOME: ${CATALINA_HOME:-unset}" 2
+        write_log "  - Checked CATALINA_BASE: ${CATALINA_BASE:-unset}" 2
+        write_log "  - Searched paths: /opt/tomcat/conf, /usr/share/tomcat*/conf, /etc/tomcat*/conf, etc." 2
+        write_log "  - Ensure Tomcat is installed and CATALINA_HOME or CATALINA_BASE is set correctly" 2
+        write_log "  - Try running: sudo find / -name server.xml" 2
         local timestamp="$exec_time"
         local combined_message=$(IFS="; "; echo "${log_messages[*]}")
         local log_entry="$timestamp,\"$combined_message\""
@@ -511,6 +536,8 @@ audit_tomcat_config() {
 
     if [ ! -f "$users_xml_path" ]; then
         write_log "Error: $users_xml_path not found" 4
+        write_log "  - Ensure Tomcat is installed correctly (e.g., sudo apt install tomcat9)" 4
+        write_log "  - Verify file exists: ls -l $users_xml_path" 4
         config_issues=1
     else
         write_log "User Audit Results:" 4
@@ -522,6 +549,7 @@ audit_tomcat_config() {
         content=$(cat "$users_xml_path" 2>/dev/null)
         if [ $? -ne 0 ]; then
             write_log "Error: Cannot read $users_xml_path" 4
+            write_log "  - Check permissions: ls -l $users_xml_path" 4
             config_issues=1
         elif [ -z "$content" ]; then
             write_log "Error: $users_xml_path is empty" 4
