@@ -390,18 +390,24 @@ validate_tomcat_installation() {
 
     write_log "Validating Tomcat installation at $tomcat_home"
     for file in "${required_files[@]}"; do
-        if [ ! -f "$tomcat_home/$file" ]; then
-            write_log "ERROR: Missing required file $tomcat_home/$file" 2
+        local full_path="$tomcat_home/$file"
+        if [ ! -f "$full_path" ]; then
+            write_log "ERROR: Missing required file $full_path" 2
             write_log "  - Install Tomcat: sudo apt install tomcat9 (Kali/Debian)" 2
             write_log "  - Or download: https://tomcat.apache.org/download-90.cgi" 2
-            write_log "  - Verify path: ls -l $tomcat_home/$file" 2
+            write_log "  - Verify path: ls -l $full_path" 2
+            missing_required=1
+        elif [ ! -r "$full_path" ]; then
+            write_log "ERROR: File $full_path exists but is not readable" 2
+            write_log "  - Check permissions: ls -l $full_path" 2
+            write_log "  - Fix permissions: sudo chmod 644 $full_path" 2
             missing_required=1
         fi
     done
 
     if [ $missing_required -eq 1 ]; then
         write_log "ERROR: Tomcat installation at $tomcat_home is incomplete" 2
-        write_log "  - Required files (server.xml, tomcat-users.xml) are missing" 2
+        write_log "  - Required files (server.xml, tomcat-users.xml) are missing or unreadable" 2
         write_log "  - Check for other installations: sudo find / -name server.xml" 2
         write_log "  - Verify CATALINA_HOME ($CATALINA_HOME) and CATALINA_BASE ($CATALINA_BASE)" 2
         return 1
@@ -470,7 +476,9 @@ audit_tomcat_config() {
     write_log "Config Path: $conf_path"
 
     # Validate Tomcat installation
-    local tomcat_home=$(dirname "$conf_path")
+    local tomcat_home
+    tomcat_home=$(realpath "$(dirname "$conf_path")")
+    write_log "Tomcat Home: $tomcat_home"
     validate_tomcat_installation "$tomcat_home"
     if [ $? -ne 0 ]; then
         local timestamp="$exec_time"
