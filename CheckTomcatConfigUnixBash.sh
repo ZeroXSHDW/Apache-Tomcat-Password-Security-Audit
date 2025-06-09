@@ -13,7 +13,7 @@ write_log() {
     local log_message="${indent_spaces}${message}"
     
     log_messages+=("$log_message")
-    printf "%s\n" "${log_message}"
+    printf "%s\n" "${log_message}" >&2
 }
 
 # Ensure log file has header
@@ -26,16 +26,16 @@ fi
 
 # Function to check for running Tomcat processes
 check_tomcat_process() {
-    write_log "Checking for running Tomcat processes..." >&2
+    write_log "Checking for running Tomcat processes..."
     local tomcat_pid
     tomcat_pid=$(pgrep -f "org.apache.catalina.startup.Bootstrap" 2>/dev/null)
     if [ -n "$tomcat_pid" ]; then
-        write_log "Found running Tomcat process (PID: $tomcat_pid)" 2 >&2
-        write_log "  - Check process details with: ps -ef | grep $tomcat_pid" 2 >&2
-        write_log "  - Tomcat may be running from an alternate installation" 2 >&2
+        write_log "Found running Tomcat process (PID: $tomcat_pid)" 2
+        write_log "  - Check process details with: ps -ef | grep $tomcat_pid" 2
+        write_log "  - Tomcat may be running from an alternate installation" 2
     else
-        write_log "No running Tomcat processes found" 2 >&2
-        write_log "  - If Tomcat is installed, ensure it is running: sudo systemctl start tomcat9" 2 >&2
+        write_log "No running Tomcat processes found" 2
+        write_log "  - If Tomcat is installed, ensure it is running: sudo systemctl start tomcat9" 2
     fi
 }
 
@@ -45,11 +45,11 @@ get_tomcat_config_path() {
 
     # Check CATALINA_BASE
     if [ -n "${CATALINA_BASE}" ] && [ -d "${CATALINA_BASE}/conf" ] && [ -f "${CATALINA_BASE}/conf/server.xml" ]; then
-        write_log "Found Tomcat configuration at CATALINA_BASE: ${CATALINA_BASE}/conf" >&2
+        write_log "Found Tomcat configuration at CATALINA_BASE: ${CATALINA_BASE}/conf"
         conf_path="${CATALINA_BASE}/conf"
     # Check CATALINA_HOME
     elif [ -n "${CATALINA_HOME}" ] && [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ]; then
-        write_log "Found Tomcat configuration at CATALINA_HOME: ${CATALINA_HOME}/conf" >&2
+        write_log "Found Tomcat configuration at CATALINA_HOME: ${CATALINA_HOME}/conf"
         conf_path="${CATALINA_HOME}/conf"
     # Infer CATALINA_HOME from catalina.sh
     elif [ -z "$CATALINA_HOME" ]; then
@@ -57,7 +57,7 @@ get_tomcat_config_path() {
         catalina_script=$(command -v catalina.sh 2>/dev/null)
         if [ -n "$catalina_script" ] && [ -f "$catalina_script" ]; then
             CATALINA_HOME=$(dirname "$(dirname "$catalina_script")")
-            write_log "Inferred CATALINA_HOME from catalina.sh: $CATALINA_HOME" >&2
+            write_log "Inferred CATALINA_HOME from catalina.sh: $CATALINA_HOME"
             if [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ]; then
                 conf_path="${CATALINA_HOME}/conf"
             fi
@@ -84,7 +84,7 @@ get_tomcat_config_path() {
             "/etc/tomcat9/conf" \
             "/etc/tomcat10/conf"; do
             if [ -d "${path}" ] && [ -f "${path}/server.xml" ]; then
-                write_log "Found Tomcat configuration at: ${path}" >&2
+                write_log "Found Tomcat configuration at: ${path}"
                 conf_path="${path}"
                 break
             fi
@@ -93,20 +93,29 @@ get_tomcat_config_path() {
 
     # Fallback to find command
     if [ -z "$conf_path" ]; then
-        write_log "No Tomcat configuration found in common paths, attempting to locate server.xml..." >&2
+        write_log "No Tomcat configuration found in common paths, attempting to locate server.xml..."
         conf_path=$(find /etc /usr /var /opt -type f -path "*/conf/server.xml" -exec dirname {} \; 2>/dev/null | head -n 1)
         if [ -n "$conf_path" ]; then
-            write_log "Found Tomcat configuration via find: ${conf_path}" >&2
+            write_log "Found Tomcat configuration via find: ${conf_path}"
         fi
     fi
 
     if [ -z "$conf_path" ]; then
-        write_log "ERROR: Could not locate Tomcat configuration directory." >&2
-        write_log "  - Ensure Tomcat is installed (e.g., sudo apt install tomcat9)" 2 >&2
-        write_log "  - Check for server.xml: sudo find / -name server.xml" 2 >&2
-        write_log "  - Set CATALINA_HOME or CATALINA_BASE environment variables" 2 >&2
+        write_log "ERROR: Could not locate Tomcat configuration directory."
+        write_log "  - Ensure Tomcat is installed (e.g., sudo apt install tomcat9)" 2
+        write_log "  - Check for server.xml: sudo find / -name server.xml" 2
+        write_log "  - Set CATALINA_HOME or CATALINA_BASE environment variables" 2
         return 1
     fi
+
+    # Validate the path
+    if [ ! -d "$conf_path" ] || [ ! -f "$conf_path/server.xml" ] || [ ! -f "$conf_path/tomcat-users.xml" ]; then
+        write_log "ERROR: Invalid configuration directory: $conf_path"
+        write_log "  - Missing server.xml or tomcat-users.xml" 2
+        write_log "  - Verify path: ls -l $conf_path" 2
+        return 1
+    fi
+
     echo "$conf_path"
 }
 
@@ -121,13 +130,13 @@ detect_tomcat_version() {
 
     # Validate tomcat_home
     if [ ! -d "$tomcat_home" ]; then
-        write_log "ERROR: Tomcat home directory $tomcat_home does not exist" >&2
+        write_log "ERROR: Tomcat home directory $tomcat_home does not exist"
         return 1
     fi
 
     # Method 1: Check RELEASE-NOTES
     if [ -f "$version_file" ]; then
-        write_log "Checking RELEASE-NOTES for version..." >&2
+        write_log "Checking RELEASE-NOTES for version..."
         version_line=$(grep "Apache Tomcat Version" "$version_file" | head -n 1)
         if [[ "$version_line" =~ Apache\ Tomcat\ Version\ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
             full_version="${BASH_REMATCH[1]}"
@@ -138,29 +147,29 @@ detect_tomcat_version() {
             elif [[ "$full_version" == 10.0.* ]]; then version="10.0"
             elif [[ "$full_version" == 10.1.* ]]; then version="10.1"
             fi
-            write_log "Version found in RELEASE-NOTES: $full_version ($version)" >&2
+            write_log "Version found in RELEASE-NOTES: $full_version ($version)"
         else
-            write_log "No version found in RELEASE-NOTES" >&2
+            write_log "No version found in RELEASE-NOTES"
         fi
     else
-        write_log "RELEASE-NOTES not found at $version_file" >&2
+        write_log "RELEASE-NOTES not found at $version_file"
     fi
 
     # Method 2: Check directory name
     if [ "$version" = "unknown" ]; then
-        write_log "Checking directory name for version..." >&2
+        write_log "Checking directory name for version..."
         tomcat_home_lower=$(echo "$tomcat_home" | tr '[:upper:]' '[:lower:]')
         if [[ "$tomcat_home_lower" =~ tomcat7 ]]; then version="7.0"
         elif [[ "$tomcat_home_lower" =~ tomcat8 ]]; then version="8.5"
         elif [[ "$tomcat_home_lower" =~ tomcat9 ]]; then version="9.0"
         elif [[ "$tomcat_home_lower" =~ tomcat10 ]]; then version="10.0"
         fi
-        [ "$version" != "unknown" ] && write_log "Version inferred from directory: $version" >&2
+        [ "$version" != "unknown" ] && write_log "Version inferred from directory: $version"
     fi
 
     # Method 3: Check server.xml for VersionLoggerListener
     if [ "$version" = "unknown" ] && [ -f "$server_xml" ]; then
-        write_log "Checking server.xml for version..." >&2
+        write_log "Checking server.xml for version..."
         if grep -q "org.apache.catalina.startup.VersionLoggerListener" "$server_xml"; then
             content=$(cat "$server_xml")
             if [[ "$content" =~ 10\.[0-1] ]]; then version="10.0"
@@ -169,17 +178,17 @@ detect_tomcat_version() {
             elif [[ "$content" =~ 8\.0 ]]; then version="8.0"
             elif [[ "$content" =~ 7\.0 ]]; then version="7.0"
             fi
-            [ "$version" != "unknown" ] && write_log "Version inferred from server.xml: $version" >&2
+            [ "$version" != "unknown" ] && write_log "Version inferred from server.xml: $version"
         else
-            write_log "No VersionLoggerListener found in server.xml" >&2
+            write_log "No VersionLoggerListener found in server.xml"
         fi
     elif [ ! -f "$server_xml" ]; then
-        write_log "server.xml not found at $server_xml" >&2
+        write_log "server.xml not found at $server_xml"
     fi
 
     # Method 4: Check catalina.jar manifest
     if [ "$version" = "unknown" ] && [ -f "$catalina_jar" ] && command -v unzip >/dev/null; then
-        write_log "Checking catalina.jar manifest for version..." >&2
+        write_log "Checking catalina.jar manifest for version..."
         manifest_version=$(unzip -p "$catalina_jar" META-INF/MANIFEST.MF 2>/dev/null | grep "Implementation-Version" | sed -n 's/.*Implementation-Version: \([0-9]+\.[0-9]+\.[0-9]+\).*/\1/p')
         if [ -n "$manifest_version" ]; then
             if [[ "$manifest_version" == 7.0.* ]]; then version="7.0"
@@ -189,17 +198,17 @@ detect_tomcat_version() {
             elif [[ "$manifest_version" == 10.0.* ]]; then version="10.0"
             elif [[ "$manifest_version" == 10.1.* ]]; then version="10.1"
             fi
-            write_log "Version found in catalina.jar manifest: $manifest_version ($version)" >&2
+            write_log "Version found in catalina.jar manifest: $manifest_version ($version)"
         else
-            write_log "No version found in catalina.jar manifest" >&2
+            write_log "No version found in catalina.jar manifest"
         fi
     elif [ ! -f "$catalina_jar" ]; then
-        write_log "catalina.jar not found at $catalina_jar" >&2
+        write_log "catalina.jar not found at $catalina_jar"
     fi
 
     # Method 5: Run version.sh (if executable and Java is available)
     if [ "$version" = "unknown" ] && [ -x "${tomcat_home}/bin/version.sh" ] && command -v java >/dev/null; then
-        write_log "Running version.sh to determine version..." >&2
+        write_log "Running version.sh to determine version..."
         version_output=$("${tomcat_home}/bin/version.sh" 2>/dev/null | grep "Server version" | sed -n 's/.*Apache Tomcat\/\([0-9]+\.[0-9]+\.[0-9]+\).*/\1/p')
         if [ -n "$version_output" ]; then
             if [[ "$version_output" == 7.0.* ]]; then version="7.0"
@@ -209,17 +218,17 @@ detect_tomcat_version() {
             elif [[ "$version_output" == 10.0.* ]]; then version="10.0"
             elif [[ "$version_output" == 10.1.* ]]; then version="10.1"
             fi
-            write_log "Version found from version.sh: $version_output ($version)" >&2
+            write_log "Version found from version.sh: $version_output ($version)"
         else
-            write_log "No version found from version.sh" >&2
+            write_log "No version found from version.sh"
         fi
     elif [ ! -x "${tomcat_home}/bin/version.sh" ]; then
-        write_log "version.sh not found or not executable at ${tomcat_home}/bin/version.sh" >&2
+        write_log "version.sh not found or not executable at ${tomcat_home}/bin/version.sh"
     fi
 
     # Method 6: Check package manager (Debian/Ubuntu)
     if [ "$version" = "unknown" ] && command -v dpkg >/dev/null; then
-        write_log "Checking package manager for Tomcat version..." >&2
+        write_log "Checking package manager for Tomcat version..."
         tomcat_package=$(dpkg -l | grep '^ii' | grep -E 'tomcat[0-9]+' | awk '{print $2}' | head -n 1)
         if [ -n "$tomcat_package" ]; then
             if [[ "$tomcat_package" =~ tomcat7 ]]; then version="7.0"
@@ -227,15 +236,15 @@ detect_tomcat_version() {
             elif [[ "$tomcat_package" =~ tomcat9 ]]; then version="9.0"
             elif [[ "$tomcat_package" =~ tomcat10 ]]; then version="10.0"
             fi
-            [ "$version" != "unknown" ] && write_log "Version inferred from package manager: $version" >&2
+            [ "$version" != "unknown" ] && write_log "Version inferred from package manager: $version"
         else
-            write_log "No Tomcat package found via dpkg" >&2
+            write_log "No Tomcat package found via dpkg"
         fi
     fi
 
     # Method 7: Check systemd service file
     if [ "$version" = "unknown" ] && command -v systemctl >/dev/null; then
-        write_log "Checking systemd service file for version..." >&2
+        write_log "Checking systemd service file for version..."
         service_file=$(find /etc/systemd/system /lib/systemd/system -name 'tomcat*.service' -type f 2>/dev/null | head -n 1)
         if [ -n "$service_file" ]; then
             version_output=$(grep -E 'CATALINA_HOME|ExecStart' "$service_file" | grep -oE 'tomcat[0-9]+' | head -n 1)
@@ -245,21 +254,21 @@ detect_tomcat_version() {
                 elif [[ "$version_output" =~ tomcat9 ]]; then version="9.0"
                 elif [[ "$version_output" =~ tomcat10 ]]; then version="10.0"
                 fi
-                [ "$version" != "unknown" ] && write_log "Version inferred from systemd service: $version" >&2
+                [ "$version" != "unknown" ] && write_log "Version inferred from systemd service: $version"
             else
-                write_log "No version found in systemd service file" >&2
+                write_log "No version found in systemd service file"
             fi
         else
-            write_log "No Tomcat systemd service file found" >&2
+            write_log "No Tomcat systemd service file found"
         fi
     fi
 
     # Fallback: Assume 7.0 with warning
     if [ "$version" = "unknown" ]; then
         version="7.0"
-        write_log "WARNING: Could not determine Tomcat version at $tomcat_home, defaulting to 7.0" >&2
-        write_log "  - Ensure RELEASE-NOTES, catalina.jar, version.sh, or a Tomcat package is present" 2 >&2
-        write_log "  - Manual verification recommended" 2 >&2
+        write_log "WARNING: Could not determine Tomcat version at $tomcat_home, defaulting to 7.0"
+        write_log "  - Ensure RELEASE-NOTES, catalina.jar, version.sh, or a Tomcat package is present" 2
+        write_log "  - Manual verification recommended" 2
     fi
 
     echo "$version"
@@ -321,8 +330,8 @@ check_config_compliance() {
            [ "$algorithm" = "SHA-256" ]; then
             config_status="Compliant for Tomcat 7.0"
         else
-            write_log "  - Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256" 2 >&2
-            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'" 2 >&2
+            write_log "  - Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256" 2
+            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'" 2
         fi
     elif [ "$tomcat_version" = "8.0" ] || [ "$tomcat_version" = "8.5" ]; then
         if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
@@ -330,8 +339,8 @@ check_config_compliance() {
            [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
             config_status="Compliant for Tomcat $tomcat_version"
         else
-            write_log "  - Tomcat $tomcat_version requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16" 2 >&2
-            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2 >&2
+            write_log "  - Tomcat $tomcat_version requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16" 2
+            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2
         fi
     else # Tomcat 9.0, 10.0, 10.1
         if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
@@ -339,8 +348,8 @@ check_config_compliance() {
            [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
             config_status="Compliant for Tomcat $tomcat_version"
         else
-            write_log "  - Tomcat $tomcat_version requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16" 2 >&2
-            write_log "  - Recommendation: Configure SecretKeyCredentialHandler with algorithm='PBKDF2WithHmacSHA512', iterations='10000', saltLength='16'" 2 >&2
+            write_log "  - Tomcat $tomcat_version requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16" 2
+            write_log "  - Recommendation: Configure SecretKeyCredentialHandler with algorithm='PBKDF2WithHmacSHA512', iterations='10000', saltLength='16'" 2
         fi
     fi
 
@@ -356,16 +365,16 @@ audit_server_xml() {
     local salt_length=0
 
     if [ ! -f "$server_xml_path" ]; then
-        write_log "Error: $server_xml_path not found" >&2
-        write_log "  - Ensure Tomcat is installed correctly (e.g., sudo apt install tomcat9)" 2 >&2
-        write_log "  - Verify file exists: ls -l $server_xml_path" 2 >&2
+        write_log "Error: $server_xml_path not found"
+        write_log "  - Ensure Tomcat is installed correctly (e.g., sudo apt install tomcat9)" 2
+        write_log "  - Verify file exists: ls -l $server_xml_path" 2
         echo "$credential_handler $algorithm $iterations $salt_length"
         return 1
     fi
 
     local realm_line=$(grep -E "org.apache.catalina.realm.(UserDatabaseRealm|MemoryRealm)" "$server_xml_path")
     if [ -z "$realm_line" ]; then
-        write_log "Warning: No UserDatabaseRealm or MemoryRealm found in $server_xml_path" >&2
+        write_log "Warning: No UserDatabaseRealm or MemoryRealm found in $server_xml_path"
         echo "$credential_handler $algorithm $iterations $salt_length"
         return
     fi
@@ -388,44 +397,44 @@ validate_tomcat_installation() {
     local optional_files=("RELEASE-NOTES" "lib/catalina.jar" "bin/version.sh")
     local missing_required=0
 
-    write_log "Validating Tomcat installation at $tomcat_home" >&2
+    write_log "Validating Tomcat installation at $tomcat_home"
     for file in "${required_files[@]}"; do
         local full_path="$tomcat_home/$file"
         if [ ! -f "$full_path" ]; then
-            write_log "ERROR: Missing required file $full_path" 2 >&2
-            write_log "  - Install Tomcat: sudo apt install tomcat9 (Kali/Debian)" 2 >&2
-            write_log "  - Or download: https://tomcat.apache.org/download-90.cgi" 2 >&2
-            write_log "  - Verify path: ls -l $full_path" 2 >&2
+            write_log "ERROR: Missing required file $full_path" 2
+            write_log "  - Install Tomcat: sudo apt install tomcat9 (Kali/Debian)" 2
+            write_log "  - Or download: https://tomcat.apache.org/download-90.cgi" 2
+            write_log "  - Verify path: ls -l $full_path" 2
             missing_required=1
         elif [ ! -r "$full_path" ]; then
-            write_log "ERROR: File $full_path exists but is not readable" 2 >&2
-            write_log "  - Check permissions: ls -l $full_path" 2 >&2
-            write_log "  - Fix permissions: sudo chmod 644 $full_path" 2 >&2
+            write_log "ERROR: File $full_path exists but is not readable" 2
+            write_log "  - Check permissions: ls -l $full_path" 2
+            write_log "  - Fix permissions: sudo chmod 644 $full_path" 2
             missing_required=1
         fi
     done
 
     if [ $missing_required -eq 1 ]; then
-        write_log "ERROR: Tomcat installation at $tomcat_home is incomplete" 2 >&2
-        write_log "  - Required files (server.xml, tomcat-users.xml) are missing or unreadable" 2 >&2
-        write_log "  - Check for other installations: sudo find / -name server.xml" 2 >&2
-        write_log "  - Verify CATALINA_HOME ($CATALINA_HOME) and CATALINA_BASE ($CATALINA_BASE)" 2 >&2
+        write_log "ERROR: Tomcat installation at $tomcat_home is incomplete" 2
+        write_log "  - Required files (server.xml, tomcat-users.xml) are missing or unreadable" 2
+        write_log "  - Check for other installations: sudo find / -name server.xml" 2
+        write_log "  - Verify CATALINA_HOME ($CATALINA_HOME) and CATALINA_BASE ($CATALINA_BASE)" 2
         return 1
     fi
 
     local missing_optional=0
     for file in "${optional_files[@]}"; do
         if [ ! -f "$tomcat_home/$file" ]; then
-            write_log "Warning: Missing optional file $tomcat_home/$file" 2 >&2
+            write_log "Warning: Missing optional file $tomcat_home/$file" 2
             missing_optional=1
         fi
     done
 
     if [ $missing_optional -eq 1 ]; then
-        write_log "Warning: Some optional files are missing, version detection may be less accurate" 2 >&2
+        write_log "Warning: Some optional files are missing, version detection may be less accurate" 2
     fi
 
-    write_log "Tomcat installation validation passed" >&2
+    write_log "Tomcat installation validation passed"
     return 0
 }
 
@@ -434,7 +443,7 @@ audit_tomcat_config() {
     # Check for sudo/root privileges
     if [ "$EUID" -ne 0 ]; then
         local timestamp=$(TZ=Asia/Kolkata date "+%Y-%m-%d %H:%M:%S")
-        write_log "ERROR - This script must be run as root or with sudo" >&2
+        write_log "ERROR - This script must be run as root or with sudo"
         local combined_message=$(IFS="; "; echo "${log_messages[*]}")
         local log_entry="$timestamp,\"$combined_message\""
         if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
@@ -447,9 +456,9 @@ audit_tomcat_config() {
     # Get execution time and hostname
     local exec_time=$(TZ=Asia/Kolkata date "+%Y-%m-%d %H:%M:%S")
     local hostname=$(hostname)
-    write_log "Execution Time: $exec_time" >&2
-    write_log "Hostname: $hostname" >&2
-    write_log "===========================" >&2
+    write_log "Execution Time: $exec_time"
+    write_log "Hostname: $hostname"
+    write_log "==========================="
 
     # Check for running Tomcat processes
     check_tomcat_process
@@ -458,12 +467,12 @@ audit_tomcat_config() {
     local conf_path
     conf_path=$(get_tomcat_config_path)
     if [ $? -ne 0 ] || [ -z "$conf_path" ]; then
-        write_log "ERROR - No Tomcat configuration directory found" >&2
-        write_log "  - Checked CATALINA_HOME: ${CATALINA_HOME:-unset}" 2 >&2
-        write_log "  - Checked CATALINA_BASE: ${CATALINA_BASE:-unset}" 2 >&2
-        write_log "  - Searched paths: /opt/tomcat/conf, /usr/share/tomcat*/conf, /etc/tomcat*/conf, etc." 2 >&2
-        write_log "  - Ensure Tomcat is installed and CATALINA_HOME or CATALINA_BASE is set correctly" 2 >&2
-        write_log "  - Try running: sudo find / -name server.xml" 2 >&2
+        write_log "ERROR - No Tomcat configuration directory found"
+        write_log "  - Checked CATALINA_HOME: ${CATALINA_HOME:-unset}" 2
+        write_log "  - Checked CATALINA_BASE: ${CATALINA_BASE:-unset}" 2
+        write_log "  - Searched paths: /opt/tomcat/conf, /usr/share/tomcat*/conf, /etc/tomcat*/conf, etc." 2
+        write_log "  - Ensure Tomcat is installed and CATALINA_HOME or CATALINA_BASE is set correctly" 2
+        write_log "  - Try running: sudo find / -name server.xml" 2
         local timestamp="$exec_time"
         local combined_message=$(IFS="; "; echo "${log_messages[*]}")
         local log_entry="$timestamp,\"$combined_message\""
@@ -473,12 +482,14 @@ audit_tomcat_config() {
         fi
         exit 1
     fi
-    write_log "Config Path: $conf_path" >&2
+    write_log "Config Path: $conf_path"
+
+    # Derive Tomcat home directory
+    local tomcat_home
+    tomcat_home=$(dirname "$conf_path")
+    write_log "Tomcat Home: $tomcat_home"
 
     # Validate Tomcat installation
-    local tomcat_home
-    tomcat_home=$(realpath "$conf_path/..")
-    write_log "Tomcat Home: $tomcat_home" >&2
     validate_tomcat_installation "$tomcat_home"
     if [ $? -ne 0 ]; then
         local timestamp="$exec_time"
@@ -494,7 +505,7 @@ audit_tomcat_config() {
     # Detect Tomcat version
     local tomcat_version=$(detect_tomcat_version "$tomcat_home")
     if [ $? -ne 0 ]; then
-        write_log "ERROR - Failed to detect Tomcat version due to invalid installation" >&2
+        write_log "ERROR - Failed to detect Tomcat version due to invalid installation"
         local timestamp="$exec_time"
         local combined_message=$(IFS="; "; echo "${log_messages[*]}")
         local log_entry="$timestamp,\"$combined_message\""
@@ -504,14 +515,14 @@ audit_tomcat_config() {
         fi
         exit 1
     fi
-    write_log "Tomcat Version: $tomcat_version" >&2
+    write_log "Tomcat Version: $tomcat_version"
 
     # Audit server.xml
     local server_xml_path="$conf_path/server.xml"
-    write_log "Auditing server.xml" >&2
+    write_log "Auditing server.xml"
     read credential_handler algorithm iterations salt_length <<< $(audit_server_xml "$server_xml_path")
     if [ $? -ne 0 ]; then
-        write_log "ERROR - Failed to audit server.xml" >&2
+        write_log "ERROR - Failed to audit server.xml"
         local timestamp="$exec_time"
         local combined_message=$(IFS="; "; echo "${log_messages[*]}")
         local log_entry="$timestamp,\"$combined_message\""
@@ -522,17 +533,17 @@ audit_tomcat_config() {
         exit 1
     fi
 
-    write_log "Server Configuration:" >&2
+    write_log "Server Configuration:"
     config_status=$(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length")
-    write_log "  Status: $config_status" >&2
-    write_log "  Credential Handler: $credential_handler" >&2
-    write_log "  Algorithm: $algorithm" >&2
-    write_log "  Iterations: $iterations" >&2
-    write_log "  Salt Length: $salt_length" >&2
+    write_log "  Status: $config_status"
+    write_log "  Credential Handler: $credential_handler"
+    write_log "  Algorithm: $algorithm"
+    write_log "  Iterations: $iterations"
+    write_log "  Salt Length: $salt_length"
 
     # Audit tomcat-users.xml
     local users_xml_path="$conf_path/tomcat-users.xml"
-    write_log "Auditing tomcat-users.xml" >&2
+    write_log "Auditing tomcat-users.xml"
 
     audit_results=()
     local user_count=0
@@ -543,25 +554,25 @@ audit_tomcat_config() {
     fi
 
     if [ ! -f "$users_xml_path" ]; then
-        write_log "Error: $users_xml_path not found" 4 >&2
-        write_log "  - Ensure Tomcat is installed correctly (e.g., sudo apt install tomcat9)" 4 >&2
-        write_log "  - Verify file exists: ls -l $users_xml_path" 4 >&2
+        write_log "Error: $users_xml_path not found" 4
+        write_log "  - Ensure Tomcat is installed correctly (e.g., sudo apt install tomcat9)" 4
+        write_log "  - Verify file exists: ls -l $users_xml_path" 4
         config_issues=1
     else
-        write_log "User Audit Results:" 4 >&2
-        write_log "Username | Password Type | Compliance" 4 >&2
-        write_log "---------|---------------|-----------" 4 >&2
+        write_log "User Audit Results:" 4
+        write_log "Username | Password Type | Compliance" 4
+        write_log "---------|---------------|-----------" 4
 
         # Read the entire file
         local content
         content=$(cat "$users_xml_path" 2>/dev/null)
         if [ $? -ne 0 ]; then
-            write_log "Error: Cannot read $users_xml_path" 4 >&2
-            write_log "  - Check permissions: ls -l $users_xml_path" 4 >&2
+            write_log "Error: Cannot read $users_xml_path" 4
+            write_log "  - Check permissions: ls -l $users_xml_path" 4
             config_issues=1
         elif [ -z "$content" ]; then
-            write_log "Error: $users_xml_path is empty" 4 >&2
-            write_log "    No users found in $users_xml_path" 4 >&2
+            write_log "Error: $users_xml_path is empty" 4
+            write_log "    No users found in $users_xml_path" 4
             config_issues=1
         else
             # Parse using grep and sed
@@ -641,16 +652,16 @@ audit_tomcat_config() {
                             issues+=("Unknown password type: $password_type.")
                         fi
 
-                        write_log "    $username | $password_type | $compliance_status" 4 >&2
+                        write_log "    $username | $password_type | $compliance_status" 4
                         for issue in "${issues[@]}"; do
-                            write_log "        - $issue" 8 >&2
+                            write_log "        - $issue" 8
                         done
 
                         audit_results+=("$compliance_status")
                     fi
                 done <<< "$user_lines"
             else
-                write_log "    No users found in $users_xml_path" 4 >&2
+                write_log "    No users found in $users_xml_path" 4
                 config_issues=1
             fi
         fi
@@ -668,9 +679,9 @@ audit_tomcat_config() {
         fi
     done
 
-    write_log "===========================" >&2
-    write_log "Overall Status: $( [ "$overall_secure" -eq 1 ] && echo "Secure" || echo "Insecure" )" >&2
-    write_log "Audit completed" >&2
+    write_log "==========================="
+    write_log "Overall Status: $( [ "$overall_secure" -eq 1 ] && echo "Secure" || echo "Insecure" )"
+    write_log "Audit completed"
 
     # Write single CSV line
     local timestamp="$exec_time"
