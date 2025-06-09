@@ -26,71 +26,71 @@ fi
 
 # Function to detect Tomcat path
 get_tomcat_config_path() {
+    local conf_path=""
+
     # Check CATALINA_BASE first (for split configurations)
     if [ -n "${CATALINA_BASE}" ] && [ -d "${CATALINA_BASE}/conf" ] && [ -f "${CATALINA_BASE}/conf/server.xml" ]; then
         write_log "Found Tomcat configuration at CATALINA_BASE: ${CATALINA_BASE}/conf"
-        echo "${CATALINA_BASE}/conf"
-        return
-    fi
-
-    # Check CATALINA_HOME
-    if [ -n "${CATALINA_HOME}" ] && [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ]; then
+        conf_path="${CATALINA_BASE}/conf"
+    elif [ -n "${CATALINA_HOME}" ] && [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ]; then
         write_log "Found Tomcat configuration at CATALINA_HOME: ${CATALINA_HOME}/conf"
-        echo "${CATALINA_HOME}/conf"
-        return
-    fi
+        conf_path="${CATALINA_HOME}/conf"
+    else
+        # Infer CATALINA_HOME from catalina.sh if unset
+        if [ -z "$CATALINA_HOME" ]; then
+            local catalina_script
+            catalina_script=$(command -v catalina.sh 2>/dev/null)
+            if [ -n "$catalina_script" ] && [ -f "$catalina_script" ]; then
+                CATALINA_HOME=$(dirname "$(dirname "$catalina_script")")
+                write_log "Inferred CATALINA_HOME from catalina.sh: $CATALINA_HOME"
+                if [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ]; then
+                    conf_path="${CATALINA_HOME}/conf"
+                fi
+            fi
+        fi
 
-    # Infer CATALINA_HOME from catalina.sh if unset
-    if [ -z "$CATALINA_HOME" ]; then
-        local catalina_script
-        catalina_script=$(command -v catalina.sh 2>/dev/null)
-        if [ -n "$catalina_script" ] && [ -f "$catalina_script" ]; then
-            CATALINA_HOME=$(dirname "$(dirname "$catalina_script")")
-            write_log "Inferred CATALINA_HOME from catalina.sh: $CATALINA_HOME"
-            if [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ]; then
-                echo "${CATALINA_HOME}/conf"
-                return
+        # Search common paths if no valid CATALINA_HOME or CATALINA_BASE
+        if [ -z "$conf_path" ]; then
+            for path in \
+                "/opt/tomcat/conf" \
+                "/usr/local/tomcat/conf" \
+                "/var/lib/tomcat7/conf" \
+                "/var/lib/tomcat8/conf" \
+                "/var/lib/tomcat9/conf" \
+                "/var/lib/tomcat10/conf" \
+                "/usr/share/tomcat/conf" \
+                "/usr/share/tomcat7/conf" \
+                "/usr/share/tomcat8/conf" \
+                "/usr/share/tomcat9/conf" \
+                "/usr/share/tomcat10/conf" \
+                "/etc/tomcat/conf" \
+                "/etc/tomcat7/conf" \
+                "/etc/tomcat8/conf" \
+                "/etc/tomcat9/conf" \
+                "/etc/tomcat10/conf"; do
+                if [ -d "${path}" ] && [ -f "${path}/server.xml" ]; then
+                    write_log "Found Tomcat configuration at: ${path}"
+                    conf_path="${path}"
+                    break
+                fi
+            done
+        fi
+
+        # Fallback to find command
+        if [ -z "$conf_path" ]; then
+            write_log "No Tomcat configuration found in common paths, attempting to locate server.xml..."
+            conf_path=$(find /etc /usr /var /opt -type f -path "*/conf/server.xml" -exec dirname {} \; 2>/dev/null | head -n 1)
+            if [ -n "$conf_path" ]; then
+                write_log "Found Tomcat configuration via find: ${conf_path}"
             fi
         fi
     fi
 
-    # Search common paths
-    for path in \
-        "/opt/tomcat/conf" \
-        "/usr/local/tomcat/conf" \
-        "/var/lib/tomcat7/conf" \
-        "/var/lib/tomcat8/conf" \
-        "/var/lib/tomcat9/conf" \
-        "/var/lib/tomcat10/conf" \
-        "/usr/share/tomcat/conf" \
-        "/usr/share/tomcat7/conf" \
-        "/usr/share/tomcat8/conf" \
-        "/usr/share/tomcat9/conf" \
-        "/usr/share/tomcat10/conf" \
-        "/etc/tomcat/conf" \
-        "/etc/tomcat7/conf" \
-        "/etc/tomcat8/conf" \
-        "/etc/tomcat9/conf" \
-        "/etc/tomcat10/conf"; do
-        if [ -d "${path}" ] && [ -f "${path}/server.xml" ]; then
-            write_log "Found Tomcat configuration at: ${path}"
-            echo "${path}"
-            return
-        fi
-    done
-
-    # Fallback to find command (limited to common directories to avoid long searches)
-    write_log "No Tomcat configuration found in common paths, attempting to locate server.xml..."
-    local found_path
-    found_path=$(find /etc /usr /var /opt -type f -path "*/conf/server.xml" -exec dirname {} \; 2>/dev/null | head -n 1)
-    if [ -n "$found_path" ]; then
-        write_log "Found Tomcat configuration via find: ${found_path}"
-        echo "$found_path"
-        return
+    if [ -z "$conf_path" ]; then
+        write_log "ERROR: Could not locate Tomcat configuration directory."
+        return 1
     fi
-
-    write_log "ERROR: Could not locate Tomcat configuration directory."
-    echo ""
+    echo "$conf_path"
 }
 
 # Detect Tomcat version
@@ -362,6 +362,40 @@ audit_server_xml() {
     echo "$credential_handler $algorithm $iterations $salt_length"
 }
 
+# Validate Tomcat installation
+validate_tomcat_installation() {
+    local tomcat_home="$1"
+    local required_files=("conf/server.xml" "conf/tomcat-users.xml")
+    local optional_files=("RELEASE-NOTES" "lib/catalina.jar" "bin/version.sh")
+    local missing_required=0
+
+    for file in "${required_files[@]}"; do
+        if [ ! -f "$tomcat_home/$file" ]; then
+            write_log "ERROR: Missing required file $tomcat_home/$file"
+            missing_required=1
+        fi
+    done
+
+    if [ $missing_required -eq 1 ]; then
+        write_log "ERROR: Tomcat installation at $tomcat_home is incomplete"
+        return 1
+    fi
+
+    local missing_optional=0
+    for file in "${optional_files[@]}"; do
+        if [ ! -f "$tomcat_home/$file" ]; then
+            write_log "Warning: Missing optional file $tomcat_home/$file"
+            missing_optional=1
+        fi
+    done
+
+    if [ $missing_optional -eq 1 ]; then
+        write_log "Warning: Some optional files are missing, version detection may be less accurate"
+    fi
+
+    return 0
+}
+
 # Main audit function
 audit_tomcat_config() {
     # Check for sudo/root privileges
@@ -385,8 +419,9 @@ audit_tomcat_config() {
     write_log "==========================="
 
     # Get Tomcat configuration path
-    local conf_path=$(get_tomcat_config_path)
-    if [ -z "$conf_path" ]; then
+    local conf_path
+    conf_path=$(get_tomcat_config_path)
+    if [ $? -ne 0 ] || [ -z "$conf_path" ]; then
         write_log "ERROR - No Tomcat configuration directory found"
         write_log "  - Checked CATALINA_HOME: ${CATALINA_HOME:-unset}"
         write_log "  - Checked CATALINA_BASE: ${CATALINA_BASE:-unset}"
@@ -404,12 +439,14 @@ audit_tomcat_config() {
     fi
     write_log "Config Path: $conf_path"
 
-    # Validate server.xml
-    local server_xml_path="$conf_path/server.xml"
-    if [ ! -f "$server_xml_path" ]; then
-        write_log "ERROR - server.xml not found at $server_xml_path"
-        write_log "  - The Tomcat installation at $(dirname "$conf_path") appears incomplete"
+    # Validate Tomcat installation
+    local tomcat_home=$(dirname "$conf_path")
+    validate_tomcat_installation "$tomcat_home"
+    if [ $? -ne 0 ]; then
+        write_log "ERROR - Incomplete Tomcat installation at $tomcat_home"
         write_log "  - Please verify the installation or set CATALINA_HOME correctly"
+        write_log "  - To reinstall, run: sudo apt install tomcat9 (for Kali/Debian)"
+        write_log "  - Or download from: https://tomcat.apache.org/download-90.cgi"
         local timestamp="$exec_time"
         local combined_message=$(IFS="; "; echo "${log_messages[*]}")
         local log_entry="$timestamp,\"$combined_message\""
@@ -421,7 +458,6 @@ audit_tomcat_config() {
     fi
 
     # Detect Tomcat version
-    local tomcat_home=$(dirname "$conf_path")
     local tomcat_version=$(detect_tomcat_version "$tomcat_home")
     if [ $? -ne 0 ]; then
         write_log "ERROR - Failed to detect Tomcat version due to invalid installation"
@@ -437,6 +473,7 @@ audit_tomcat_config() {
     write_log "Tomcat Version: $tomcat_version"
 
     # Audit server.xml
+    local server_xml_path="$conf_path/server.xml"
     write_log "Auditing server.xml"
     read credential_handler algorithm iterations salt_length <<< $(audit_server_xml "$server_xml_path")
     if [ $? -ne 0 ]; then
