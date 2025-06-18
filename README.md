@@ -250,6 +250,41 @@ Example `tomcat-users.xml`:
   <user username="testuser" password="4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef" roles="manager"/>
 </tomcat-users>
 ```
+## Directory Descriptions
+
+```
+Apache-Tomcat-Password-Security-Audit/
+├── docs/                      # Documentation
+│   ├── README.md             # Main documentation
+│   └── LICENSE               # License file
+├── src/                      # Source code
+│   ├── unix/                 # Unix-specific scripts
+│   │   ├── scripts/         # Unix shell scripts
+│   │   └── python/          # Unix Python scripts
+│   ├── windows/             # Windows-specific scripts
+│   │   ├── powershell/      # PowerShell scripts
+│   │   └── batch/          # Batch scripts
+│   └── common/              # Common utilities
+├── tests/                    # Test framework
+│   ├── unix/                # Unix tests
+│   └── windows/             # Windows tests
+├── assets/                   # Static assets
+│   └── images/              # Images and other media
+└── install/                  # Installation and management scripts
+    ├── unix/                # Unix installation and management
+    └── windows/             # Windows installation and management
+```
+
+## Directory Descriptions
+
+- **docs/**: Contains all project documentation including the main README and LICENSE files
+- **src/**: Contains all source code organized by platform
+  - **unix/**: Unix-specific scripts and utilities
+  - **windows/**: Windows-specific scripts and utilities
+  - **common/**: Shared utilities used across platforms
+- **tests/**: Contains all test files organized by platform
+- **assets/**: Contains static assets like images
+- **install/**: Contains installation and management scripts for different platforms
 
 ## Troubleshooting
 - **Tomcat Not Found**:
