@@ -1,6 +1,6 @@
 # Apache Tomcat Password Security Auditor
 
-![Tomcat Configuration Security Auditor Banner](assets/banner.jpg)
+![Tomcat Configuration Security Auditor Banner](assets/images/banner.jpg)
 
 ## Overview
 
