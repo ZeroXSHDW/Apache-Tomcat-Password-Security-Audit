@@ -1,81 +1,182 @@
 # UpdateTomcatUserWin.ps1
-# Processes existing users with plaintext passwords, generates compliant hashes, updates tomcat-users.xml and server.xml, and restarts Tomcat service on Windows
+# Updates Tomcat user credentials with secure password hashing for Windows systems
+# Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark
 
+#Requires -RunAsAdministrator
+
+[CmdletBinding()]
 param (
-    [string]$TomcatConfPath
+    [Parameter(Mandatory=$false)]
+    [string]$CustomConfPath,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$Username = "tomcat",
+    
+    [Parameter(Mandatory=$false)]
+    [string]$Roles = "manager,admin"
 )
 
-# Log setup
-$logFile = "$env:LOCALAPPDATA\Temp\TomcatManager.csv"
-$logMessages = @()
+# Constants
+$LOG_FILE = "$env:TEMP\TomcatManager.csv"
+$LOG_DIR = "$env:TEMP"
+$LOG_FILE_PATH = Join-Path $LOG_DIR "TomcatManager.log"
+$TIMESTAMP = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+$HOSTNAME = $env:COMPUTERNAME
 
+# Configure logging
+$ErrorActionPreference = "Stop"
+$LogFile = Join-Path $LOG_DIR "TomcatManager.log"
+$LogCSV = Join-Path $LOG_DIR "TomcatManager.csv"
+
+# Function to write log messages
 function Write-Log {
     param(
         [string]$Message,
-        [int]$Indent = 0
+        [string]$Level = "INFO"
     )
-    $indentSpaces = "  " * $Indent
-    $logMessage = "$indentSpaces$Message"
-    $script:logMessages += $logMessage
+    $logMessage = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $Level - $Message"
+    Add-Content -Path $LogFile -Value $logMessage
     Write-Host $logMessage
 }
 
-# Ensure log file directory exists and set secure permissions
-$logDir = Split-Path $logFile -Parent
-if (-not (Test-Path $logDir)) {
-    New-Item -Path $logDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
-}
-if (-not (Test-Path $logFile)) {
-    Add-Content -Path $logFile -Value "Timestamp,Message" -ErrorAction SilentlyContinue
-}
-# Set log file permissions (restrict to current user)
-try {
-    $acl = Get-Acl $logFile -ErrorAction SilentlyContinue
-    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($env:USERNAME, "FullControl", "Allow")
-    $acl.SetAccessRule($rule)
-    Set-Acl $logFile $acl -ErrorAction SilentlyContinue
-} catch {
-    Write-Log "Warning: Cannot set permissions on $logFile" -Indent 2
+# Function to take ownership and grant full control
+function Set-FilePermissions {
+    param(
+        [string]$Path
+    )
+    try {
+        # Take ownership
+        $acl = Get-Acl $Path
+        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+        $owner = New-Object System.Security.Principal.SecurityIdentifier($identity.User)
+        $acl.SetOwner($owner)
+        Set-Acl -Path $Path -AclObject $acl
+
+        # Grant full control to current user
+        $acl = Get-Acl $Path
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            $identity.Name,
+            "FullControl",
+            "Allow"
+        )
+        $acl.AddAccessRule($rule)
+        Set-Acl -Path $Path -AclObject $acl
+        return $true
+    }
+    catch {
+        Write-Log "Error setting file permissions on $Path : $_" "ERROR"
+        return $false
+    }
 }
 
-Write-Log "Execution Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Log "Hostname: $env:COMPUTERNAME"
-Write-Log "==========================="
+# Function to validate XML structure
+function Test-XmlStructure {
+    param(
+        [string]$XmlFile
+    )
+    try {
+        if (-not (Test-Path $XmlFile)) {
+            Write-Log "XML file $XmlFile not found" "ERROR"
+            return $false
+        }
+        
+        # Check for XML declaration
+        $firstLine = Get-Content $XmlFile -TotalCount 1
+        if (-not $firstLine.Trim().StartsWith('<?xml')) {
+            Write-Log "Invalid XML declaration in $XmlFile" "ERROR"
+            return $false
+        }
+        
+        # Parse XML
+        [xml]$null = Get-Content $XmlFile
+        return $true
+    }
+    catch {
+        Write-Log "Error validating XML $XmlFile : $_" "ERROR"
+        return $false
+    }
+}
 
-# Function to detect Tomcat configuration path
+# Function to securely parse XML
+function Get-SecureXml {
+    param(
+        [string]$XmlFile
+    )
+    try {
+        if (-not (Test-Path $XmlFile)) {
+            Write-Log "XML file $XmlFile not found" "ERROR"
+            return $null
+        }
+        
+        if (-not (Test-XmlStructure $XmlFile)) {
+            return $null
+        }
+        
+        return [xml](Get-Content $XmlFile)
+    }
+    catch {
+        Write-Log "Error parsing XML $XmlFile : $_" "ERROR"
+        return $null
+    }
+}
+
+# Function to securely write XML
+function Set-SecureXml {
+    param(
+        [string]$XmlFile,
+        [xml]$XmlContent
+    )
+    try {
+        # Create backup
+        if (Test-Path $XmlFile) {
+            $backupFile = "$XmlFile.bak.$(Get-Date -Format 'yyyyMMddHHmmss')"
+            Copy-Item $XmlFile $backupFile
+            $acl = Get-Acl $backupFile
+            $acl.SetAccessRuleProtection($true, $false)
+            Set-Acl $backupFile $acl
+            Write-Log "Created backup: $backupFile"
+        }
+        
+        # Write to temporary file
+        $tempFile = "$XmlFile.tmp"
+        $XmlContent.Save($tempFile)
+        
+        # Validate temporary file
+        if (-not (Test-XmlStructure $tempFile)) {
+            Remove-Item $tempFile -Force
+            return $false
+        }
+        
+        # Move to final location
+        Move-Item $tempFile $XmlFile -Force
+        $acl = Get-Acl $XmlFile
+        $acl.SetAccessRuleProtection($true, $false)
+        Set-Acl $XmlFile $acl
+        return $true
+    }
+    catch {
+        Write-Log "Error writing XML $XmlFile : $_" "ERROR"
+        if (Test-Path $tempFile) {
+            Remove-Item $tempFile -Force
+        }
+        return $false
+    }
+}
+
+# Add dynamic Tomcat path detection (like audit script)
 function Get-TomcatConfigPath {
-    param([string]$CustomConfPath)
-
     if ($CustomConfPath -and (Test-Path $CustomConfPath)) {
-        $serverXml = Join-Path $CustomConfPath "server.xml"
-        $usersXml = Join-Path $CustomConfPath "tomcat-users.xml"
-        $digestBat = Join-Path (Split-Path $CustomConfPath -Parent) "bin\digest.bat"
-        if ((Test-Path $serverXml) -and (Test-Path $usersXml) -and (Test-Path $digestBat)) {
-            Write-Log "Found valid Tomcat configuration at custom path: $CustomConfPath"
-            return @{ Path = $CustomConfPath; Version = "Unknown" }
-        }
+        return $CustomConfPath
     }
-
-    $defaultPath = "F:\Koger\apps\apache-tomcat-7.0.94"
-    Write-Log "Checking default configuration path: $defaultPath"
-    if (Test-Path "$defaultPath\conf") {
-        $serverXml = "$defaultPath\conf\server.xml"
-        $usersXml = "$defaultPath\conf\tomcat-users.xml"
-        $digestBat = "$defaultPath\bin\digest.bat"
-        if ((Test-Path $serverXml) -and (Test-Path $usersXml) -and (Test-Path $digestBat)) {
-            $version = if ($defaultPath -match "apache-tomcat-(\d+\.\d+)") { $matches[1] } else { "7.0" }
-            Write-Log "Found valid Tomcat configuration at default path: $defaultPath\conf"
-            return @{ Path = "$defaultPath\conf"; Version = $version }
-        }
-    }
-
     $possiblePaths = @(
         "C:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
+        "C:\Program Files\Apache Software Foundation\Tomcat 8.0\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf",
         "C:\Program Files\Apache Software Foundation\Tomcat 10.1\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 7.0\conf",
+        "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.0\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.5\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 9.0\conf",
         "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.0\conf",
@@ -84,424 +185,489 @@ function Get-TomcatConfigPath {
         "C:\Tomcat7\conf",
         "C:\Tomcat8\conf",
         "C:\Tomcat9\conf",
-        "C:\Tomcat10\conf"
+        "C:\Tomcat10\conf",
+        "C:\Apache\Tomcat\conf",
+        "C:\Apache\Tomcat7\conf",
+        "C:\Apache\Tomcat8\conf",
+        "C:\Apache\Tomcat9\conf",
+        "C:\Apache\Tomcat10\conf",
+        "D:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
+        "D:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
+        "D:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
+        "D:\Program Files\Apache Software Foundation\Tomcat 10.0\conf",
+        "D:\Program Files\Apache Software Foundation\Tomcat 10.1\conf",
+        "D:\Tomcat\conf",
+        "E:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
+        "E:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
+        "E:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
+        "E:\Program Files\Apache Software Foundation\Tomcat 10.0\conf",
+        "E:\Program Files\Apache Software Foundation\Tomcat 10.1\conf",
+        "E:\Tomcat\conf"
     )
-
-    foreach ($path in $possiblePaths) {
-        if (Test-Path $path) {
-            $serverXml = Join-Path $path "server.xml"
-            $usersXml = Join-Path $path "tomcat-users.xml"
-            $digestBat = Join-Path (Split-Path $path -Parent) "bin\digest.bat"
-            if ((Test-Path $serverXml) -and (Test-Path $usersXml) -and (Test-Path $digestBat)) {
-                $version = if ($path -match "Tomcat\s*(\d+\.\d+)") { $matches[1] } else { "7.0" }
-                Write-Log "Found valid Tomcat configuration at: $path"
-                return @{ Path = $path; Version = $version }
+    $tomcatRoot = "C:\Program Files\Apache Software Foundation\Tomcat"
+    if (Test-Path $tomcatRoot) {
+        $subDirs = Get-ChildItem -Path $tomcatRoot -Directory -ErrorAction SilentlyContinue
+        foreach ($dir in $subDirs) {
+            $confPath = Join-Path $dir.FullName "conf"
+            if (Test-Path (Join-Path $confPath "server.xml")) {
+                $possiblePaths += $confPath
             }
         }
     }
-
-    Write-Log "ERROR: Could not locate Tomcat configuration directory" -Indent 2
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            $serverXml = Join-Path $path "server.xml"
+            if (Test-Path $serverXml) {
+                return $path
+            }
+        }
+    }
     return $null
 }
 
 # Function to detect Tomcat version
 function Get-TomcatVersion {
-    param([string]$TomcatHome)
+    param(
+        [string]$TomcatHome
+    )
+    try {
+        $versionFile = Join-Path $TomcatHome "RELEASE-NOTES"
+        $version = "7.0"  # Default
 
-    $versionFile = Join-Path $TomcatHome "RELEASE-NOTES"
-    $version = "7.0"  # Default
-
-    if (Test-Path $versionFile) {
-        $content = Get-Content $versionFile -Raw
-        if ($content -match "Apache Tomcat Version\s+(\d+\.\d+\.\d+)") {
-            $fullVersion = $matches[1]
-            if ($fullVersion -like "7.0.*") { $version = "7.0" }
-            elseif ($fullVersion -like "8.0.*") { $version = "8.0" }
-            elseif ($fullVersion -like "8.5.*") { $version = "8.5" }
-            elseif ($fullVersion -like "9.0.*") { $version = "9.0" }
-            elseif ($fullVersion -like "10.0.*") { $version = "10.0" }
-            elseif ($fullVersion -like "10.1.*") { $version = "10.1" }
-            Write-Log "Version found in RELEASE-NOTES: $fullVersion ($version)"
+        if (Test-Path $versionFile) {
+            $content = Get-Content $versionFile -Raw
+            if ($content -match "Apache Tomcat Version\s+(\d+\.\d+\.\d+)") {
+                $fullVersion = $matches[1]
+                switch -Regex ($fullVersion) {
+                    "^7\.0" { $version = "7.0" }
+                    "^8\.5" { $version = "8.5" }
+                    "^9\.0" { $version = "9.0" }
+                    "^10\.0" { $version = "10.0" }
+                    "^10\.1" { $version = "10.1" }
+                }
+            }
         }
-    } else {
-        Write-Log "Warning: RELEASE-NOTES not found, defaulting to version 7.0" -Indent 2
+        
+        Write-Log "Detected Tomcat version: $version"
+        return $version
     }
-
-    return $version
+    catch {
+        Write-Log "Error detecting Tomcat version: $_" "ERROR"
+        return "7.0"  # Default fallback
+    }
 }
 
-# Function to generate password hash using digest.bat
-function Generate-PasswordHash {
+# Function to find a valid JAVA_HOME
+function Find-JavaHome {
+    # Try JAVA_HOME first
+    if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe'))) {
+        return $env:JAVA_HOME
+    }
+    # Common JDK install locations
+    $candidates = @(
+        'C:\Program Files\Java',
+        'C:\Program Files\AdoptOpenJDK',
+        'C:\Program Files\Zulu',
+        'C:\Program Files\Eclipse Foundation',
+        'C:\Program Files (x86)\Java',
+        'C:\Program Files (x86)\AdoptOpenJDK',
+        'C:\Program Files (x86)\Zulu',
+        'C:\Program Files (x86)\Eclipse Foundation'
+    )
+    foreach ($base in $candidates) {
+        if (Test-Path $base) {
+            $jdks = Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'jdk*' }
+            foreach ($jdk in $jdks) {
+                $javaExe = Join-Path $jdk.FullName 'bin\java.exe'
+                if (Test-Path $javaExe) {
+                    return $jdk.FullName
+                }
+            }
+        }
+    }
+    return $null
+}
+
+# Function to generate password hash using Tomcat's digest tool
+function Get-PasswordHash {
     param(
         [string]$TomcatBin,
         [string]$Password,
-        [string]$TomcatVersion
+        [string]$Version,
+        [string]$TomcatHome
     )
-
-    $digestBat = Join-Path $TomcatBin "digest.bat"
-    $algorithm = ""
-    $iterations = ""
-    $saltLength = ""
-
-    switch ($TomcatVersion) {
-        "7.0" { $algorithm = "SHA-256" }
-        "8.5" { 
-            $algorithm = "SHA-512"
-            $iterations = "10000"
-            $saltLength = "16"
+    try {
+        # Auto-detect JAVA_HOME if not set or invalid
+        $javaHome = $env:JAVA_HOME
+        if (-not $javaHome -or -not (Test-Path (Join-Path $javaHome 'bin\java.exe'))) {
+            $javaHome = Find-JavaHome
+            if ($javaHome) {
+                Write-Log "Auto-detected JAVA_HOME: $javaHome"
+                $env:JAVA_HOME = $javaHome
+            }
         }
-        { $_ -in "9.0","10.0","10.1" } { 
+        # Check for JAVA_HOME or JRE_HOME
+        if (-not $env:JAVA_HOME -and -not $env:JRE_HOME) {
+            $msg = @(
+                "ERROR: Neither JAVA_HOME nor JRE_HOME is set, and no JDK was auto-detected. Java is required to run Tomcat's digest.bat.",
+                "Please install a JDK and set the JAVA_HOME environment variable to your Java installation directory.",
+                "Example: $env:JAVA_HOME = 'C:\Program Files\Java\jdk-17.0.1'"
+            ) -join "`n"
+            Write-Host $msg
+            Write-Log $msg "ERROR"
+            throw "Java not found. Set JAVA_HOME or JRE_HOME."
+        }
+        # Set CATALINA_HOME for digest.bat
+        $oldCatalinaHome = $env:CATALINA_HOME
+        $env:CATALINA_HOME = $TomcatHome
+        Write-Log "Set CATALINA_HOME to $TomcatHome for digest.bat"
+        $digestScript = Join-Path $TomcatBin "digest.bat"
+        if (-not (Test-Path $digestScript)) {
+            throw "digest.bat not found at $digestScript"
+        }
+        Write-Log "Generating password hash for Tomcat $Version"
+        if ($Version -eq "7.0") {
+            $algorithm = "SHA-256"
+            $args = @('-a', $algorithm, $Password)
+        } else {
             $algorithm = "PBKDF2WithHmacSHA512"
             $iterations = "10000"
             $saltLength = "16"
+            $args = @('-a', $algorithm, '-i', $iterations, '-s', $saltLength, $Password)
         }
-        default {
-            Write-Log "ERROR: Unsupported Tomcat version: $TomcatVersion" -Indent 2
-            return $null
+        Write-Log "Running: $digestScript $($args -join ' ')"
+        $result = & $digestScript @args 2>&1
+        Write-Log "digest.bat output: $result"
+        Write-Host "digest.bat output: $result"
+        # Restore previous CATALINA_HOME
+        $env:CATALINA_HOME = $oldCatalinaHome
+        if (-not $result -or $result.Count -eq 0) {
+            Write-Host "ERROR: digest.bat returned no output. Check Java installation and Tomcat environment."
+            throw "digest.bat returned no output."
         }
-    }
-
-    if (-not (Test-Path $digestBat)) {
-        Write-Log "ERROR: digest.bat not found at $digestBat" -Indent 2
-        return $null
-    }
-
-    # Verify JAVA_HOME
-    if (-not $env:JAVA_HOME) {
-        Write-Log "ERROR: JAVA_HOME is not set, required for digest.bat" -Indent 2
-        return $null
-    }
-
-    # Run digest.bat
-    $tempFile = [System.IO.Path]::GetTempFileName()
-    try {
-        if ($TomcatVersion -eq "7.0") {
-            Start-Process -FilePath $digestBat -ArgumentList "-a $algorithm `"$Password`"" -RedirectStandardOutput $tempFile -NoNewWindow -Wait
-        } else {
-            Start-Process -FilePath $digestBat -ArgumentList "-a $algorithm -i $iterations -s $saltLength `"$Password`"" -RedirectStandardOutput $tempFile -NoNewWindow -Wait
+        if ($result -match 'Neither the JAVA_HOME nor the JRE_HOME environment variable is defined correctly') {
+            $msg = @(
+                "ERROR: JAVA_HOME is not configured correctly. digest.bat output:",
+                $result,
+                "Please ensure JAVA_HOME points to a JDK (not a JRE) and contains bin\java.exe."
+            ) -join "`n"
+            Write-Host $msg
+            Write-Log $msg "ERROR"
+            throw "JAVA_HOME not set correctly."
         }
-
-        $hashOutput = Get-Content $tempFile -Raw
-        $hash = ($hashOutput -match '([0-9a-fA-F:]+)') ? $matches[1] : $null
-
-        if (-not $hash) {
-            Write-Log "ERROR: Failed to parse hash from digest.bat output" -Indent 2
-            return $null
+        if ($result -match 'The CATALINA_HOME environment variable is not defined correctly') {
+            $msg = @(
+                "ERROR: CATALINA_HOME is not configured correctly. digest.bat output:",
+                $result,
+                "Please check the Tomcat installation path."
+            ) -join "`n"
+            Write-Host $msg
+            Write-Log $msg "ERROR"
+            throw "CATALINA_HOME not set correctly."
         }
-
-        return $hash
-    } catch {
-        Write-Log "ERROR: Failed to generate hash using digest.bat: $($_.Exception.Message)" -Indent 2
-        return $null
-    } finally {
-        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
-    }
-}
-
-# Function to get users with plaintext passwords
-function Get-PlaintextUsers {
-    param([string]$UsersXmlPath)
-
-    if (-not (Test-Path $UsersXmlPath)) {
-        Write-Log "ERROR: $UsersXmlPath not found" -Indent 2
-        return $null
-    }
-
-    if ((Get-Item $UsersXmlPath).Length -eq 0) {
-        Write-Log "WARNING: $UsersXmlPath is empty" -Indent 2
-        return @()
-    }
-
-    try {
-        $xml = [xml](Get-Content $UsersXmlPath -Encoding UTF8)
-        $users = $xml.'tomcat-users'.user
-        $plaintextUsers = @()
-
-        foreach ($user in $users) {
-            $username = $user.username
-            $password = $user.password
-            # Check if password is plaintext (not a hash)
-            if ($password -and $password -notmatch '^[0-9a-fA-F:]+$' -or 
-                $password -notmatch '^[0-9a-fA-F]{32}$|^[0-9a-fA-F]{40}$|^[0-9a-fA-F]{64}$|^[0-9a-fA-F]{128}$|^[0-9a-fA-F]+:[0-9a-fA-F]+$') {
-                $plaintextUsers += @{ Username = $username; Password = $password }
-            }
+        if ($result -match 'Access is denied') {
+            $msg = @(
+                "ERROR: Access is denied when running digest.bat.",
+                $result,
+                "Try running PowerShell as administrator.",
+                "Also check permissions on the Tomcat and Java folders."
+            ) -join "`n"
+            Write-Host $msg
+            Write-Log $msg "ERROR"
+            throw "Access is denied. Try running as administrator."
         }
-
-        if ($plaintextUsers.Count -eq 0) {
-            Write-Log "No users with plaintext passwords found in $UsersXmlPath" -Indent 2
+        if ($result -match '([0-9a-fA-F:]+)$') {
+            $hash = $matches[1].Trim()
+            Write-Log "Generated hash: $hash"
+            return $hash
         }
-
-        return $plaintextUsers
-    } catch {
-        Write-Log "ERROR: Failed to read $UsersXmlPath: $($_.Exception.Message)" -Indent 2
+        throw "Failed to extract hash from digest.bat output: $result"
+    }
+    catch {
+        Write-Log "Error generating password hash: $_" "ERROR"
         return $null
     }
 }
 
-# Function to update tomcat-users.xml
-function Update-TomcatUsersXml {
+# Function to validate username
+function Test-Username {
+    param([string]$Username)
+    return $Username -match '^[a-zA-Z0-9_\-\.]+$'
+}
+
+# Function to validate roles
+function Test-Roles {
+    param([string]$Roles)
+    $validRoles = @("manager", "admin", "manager-gui", "manager-script", "manager-jmx", "manager-status")
+    $userRoles = $Roles -split ','
+    return $userRoles | Where-Object { $validRoles -contains $_ }
+}
+
+# Function to update Tomcat user
+function Update-TomcatUser {
     param(
         [string]$UsersXmlPath,
-        [array]$UserPairs
+        [string]$Username,
+        [string]$Password,
+        [string]$Roles
     )
-
-    $backupPath = "$UsersXmlPath.bak.$(Get-Date -Format 'yyyyMMddHHmmss')"
     try {
-        Copy-Item -Path $UsersXmlPath -Destination $backupPath -Force -ErrorAction Stop
-        Write-Log "Backed up $UsersXmlPath to $backupPath"
-        # Set backup permissions
-        $acl = Get-Acl $backupPath
-        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($env:USERNAME, "FullControl", "Allow")
-        $acl.SetAccessRule($rule)
-        Set-Acl $backupPath $acl -ErrorAction SilentlyContinue
-    } catch {
-        Write-Log "ERROR: Failed to backup $UsersXmlPath: $($_.Exception.Message)" -Indent 2
-        return $false
-    }
-
-    try {
-        $xml = [xml](Get-Content $UsersXmlPath -Encoding UTF8)
-        foreach ($pair in $UserPairs) {
-            $username = $pair.Username
-            $hash = $pair.Hash
-            $userNode = $xml.'tomcat-users'.user | Where-Object { $_.username -eq $username }
-            if ($userNode) {
-                $userNode.password = $hash
-                Write-Log "Updated user $username with new hash in $UsersXmlPath"
-            }
+        if (-not (Test-Path $UsersXmlPath)) {
+            throw "Users XML file not found"
         }
-        $xml.Save($UsersXmlPath)
+        
+        # Set permissions for tomcat-users.xml
+        if (-not (Set-FilePermissions -Path $UsersXmlPath)) {
+            throw "Failed to set permissions on tomcat-users.xml"
+        }
+        
+        $xml = Get-SecureXml -XmlFile $UsersXmlPath
+        if (-not $xml) {
+            throw "Failed to parse users XML file"
+        }
+        
+        $user = $xml.SelectSingleNode("//user[@username='$Username']")
+        if ($user) {
+            Write-Log "Updating existing user: $Username"
+            $user.SetAttribute("password", $Password)
+            $user.SetAttribute("roles", $Roles)
+        } else {
+            Write-Log "Creating new user: $Username"
+            $newUser = $xml.CreateElement("user")
+            $newUser.SetAttribute("username", $Username)
+            $newUser.SetAttribute("password", $Password)
+            $newUser.SetAttribute("roles", $Roles)
+            $xml.'tomcat-users'.AppendChild($newUser)
+        }
+        
+        if (-not (Set-SecureXml -XmlFile $UsersXmlPath -XmlContent $xml)) {
+            throw "Failed to write users XML file"
+        }
+        
         return $true
-    } catch {
-        Write-Log "ERROR: Failed to update $UsersXmlPath: $($_.Exception.Message)" -Indent 2
-        Copy-Item -Path $backupPath -Destination $UsersXmlPath -Force -ErrorAction SilentlyContinue
-        Write-Log "Restored $UsersXmlPath from backup"
+    }
+    catch {
+        Write-Log "Error updating Tomcat user: $_" "ERROR"
         return $false
     }
 }
 
-# Function to update server.xml
-function Update-ServerXml {
+# Function to patch CredentialHandler in server.xml
+function Patch-CredentialHandler {
     param(
         [string]$ServerXmlPath,
         [string]$TomcatVersion
     )
-
-    $backupPath = "$ServerXmlPath.bak.$(Get-Date -Format 'yyyyMMddHHmmss')"
     try {
-        Copy-Item -Path $ServerXmlPath -Destination $backupPath -Force -ErrorAction Stop
-        Write-Log "Backed up $ServerXmlPath to $backupPath"
-        $acl = Get-Acl $backupPath
-        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($env:USERNAME, "FullControl", "Allow")
-        $acl.SetAccessRule($rule)
-        Set-Acl $backupPath $acl -ErrorAction SilentlyContinue
-    } catch {
-        Write-Log "ERROR: Failed to backup $ServerXmlPath: $($_.Exception.Message)" -Indent 2
-        return $false
-    }
+        # Take ownership and set permissions
+        if (-not (Set-FilePermissions -Path $ServerXmlPath)) {
+            throw "Failed to set permissions on server.xml"
+        }
 
-    try {
-        $xml = [xml](Get-Content $ServerXmlPath -Encoding UTF8)
+        $xml = Get-SecureXml -XmlFile $ServerXmlPath
+        if (-not $xml) { throw "Failed to parse server.xml" }
+        
         $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']")
         if (-not $realm) {
-            $engine = $xml.SelectSingleNode("//Engine")
-            $realm = $xml.CreateElement("Realm")
-            $realm.SetAttribute("className", "org.apache.catalina.realm.UserDatabaseRealm")
-            $realm.SetAttribute("resourceName", "UserDatabase")
-            $engine.AppendChild($realm) | Out-Null
-            Write-Log "Added new Realm to $ServerXmlPath"
+            $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.MemoryRealm']")
         }
-
-        $credentialHandler = $realm.CredentialHandler
-        if ($credentialHandler) {
-            $realm.RemoveChild($credentialHandler) | Out-Null
+        if (-not $realm) { throw "No supported Realm found in server.xml" }
+        
+        $credHandler = $realm.SelectSingleNode("CredentialHandler")
+        if ($TomcatVersion -eq "7.0") {
+            $chClass = "org.apache.catalina.realm.MessageDigestCredentialHandler"
+            $chAlg = "SHA-256"
+            if ($credHandler) {
+                $credHandler.SetAttribute("className", $chClass)
+                $credHandler.SetAttribute("algorithm", $chAlg)
+                $credHandler.RemoveAttribute("iterations")
+                $credHandler.RemoveAttribute("saltLength")
+            } else {
+                $newCH = $xml.CreateElement("CredentialHandler")
+                $newCH.SetAttribute("className", $chClass)
+                $newCH.SetAttribute("algorithm", $chAlg)
+                $realm.AppendChild($newCH)
+            }
+        } else {
+            $chClass = "org.apache.catalina.realm.SecretKeyCredentialHandler"
+            $chAlg = "PBKDF2WithHmacSHA512"
+            $chIter = "10000"
+            $chSalt = "16"
+            if ($credHandler) {
+                $credHandler.SetAttribute("className", $chClass)
+                $credHandler.SetAttribute("algorithm", $chAlg)
+                $credHandler.SetAttribute("iterations", $chIter)
+                $credHandler.SetAttribute("saltLength", $chSalt)
+            } else {
+                $newCH = $xml.CreateElement("CredentialHandler")
+                $newCH.SetAttribute("className", $chClass)
+                $newCH.SetAttribute("algorithm", $chAlg)
+                $newCH.SetAttribute("iterations", $chIter)
+                $newCH.SetAttribute("saltLength", $chSalt)
+                $realm.AppendChild($newCH)
+            }
         }
-        $credentialHandler = $xml.CreateElement("CredentialHandler")
-
-        switch ($TomcatVersion) {
-            "7.0" {
-                $credentialHandler.SetAttribute("className", "org.apache.catalina.realm.MessageDigestCredentialHandler")
-                $credentialHandler.SetAttribute("algorithm", "SHA-256")
-            }
-            "8.5" {
-                $credentialHandler.SetAttribute("className", "org.apache.catalina.realm.MessageDigestCredentialHandler")
-                $credentialHandler.SetAttribute("algorithm", "SHA-512")
-                $credentialHandler.SetAttribute("iterations", "10000")
-                $credentialHandler.SetAttribute("saltLength", "16")
-            }
-            { $_ -in "9.0","10.0","10.1" } {
-                $credentialHandler.SetAttribute("className", "org.apache.catalina.realm.SecretKeyCredentialHandler")
-                $credentialHandler.SetAttribute("algorithm", "PBKDF2WithHmacSHA512")
-                $credentialHandler.SetAttribute("iterations", "10000")
-                $credentialHandler.SetAttribute("saltLength", "16")
-                $credentialHandler.SetAttribute("keyLength", "256")
-            }
-            default {
-                Write-Log "ERROR: Unsupported Tomcat version: $TomcatVersion" -Indent 2
-                return $false
-            }
+        
+        if (-not (Set-SecureXml -XmlFile $ServerXmlPath -XmlContent $xml)) {
+            throw "Failed to write server.xml with updated CredentialHandler"
         }
-
-        $realm.AppendChild($credentialHandler) | Out-Null
-        $xml.Save($ServerXmlPath)
-        Write-Log "Updated Realm configuration in $ServerXmlPath"
+        
+        Write-Log "Patched CredentialHandler in server.xml for Tomcat $TomcatVersion"
         return $true
     } catch {
-        Write-Log "ERROR: Failed to update $ServerXmlPath: $($_.Exception.Message)" -Indent 2
-        Copy-Item -Path $backupPath -Destination $ServerXmlPath -Force -ErrorAction SilentlyContinue
-        Write-Log "Restored $ServerXmlPath from backup"
+        Write-Log "Error patching CredentialHandler: $_" "ERROR"
         return $false
     }
 }
 
-# Function to restart Tomcat service
-function Restart-TomcatService {
-    param([string]$TomcatHome)
-
-    $serviceNames = @("Tomcat", "Tomcat7", "Tomcat8", "Tomcat9", "Tomcat10")
-    $service = $null
-
-    foreach ($svc in $serviceNames) {
-        $service = Get-Service -Name $svc -ErrorAction SilentlyContinue
-        if ($service -and $service.Status -eq "Running") {
-            break
+# Function to manage Tomcat service
+function Set-TomcatService {
+    param(
+        [string]$Action,
+        [int]$Timeout = 60,
+        [string]$TomcatHome
+    )
+    try {
+        # Set CATALINA_HOME if not already set
+        if (-not $env:CATALINA_HOME) {
+            $env:CATALINA_HOME = $TomcatHome
+            Write-Log "Set CATALINA_HOME to $TomcatHome"
         }
-    }
 
-    if ($service) {
-        Write-Log "Restarting Tomcat service: $($service.Name)"
-        try {
-            Restart-Service -Name $service.Name -Force -ErrorAction Stop
-            Start-Sleep -Seconds 5
-            if ((Get-Service -Name $service.Name).Status -ne "Running") {
-                Write-Log "ERROR: Tomcat service $($service.Name) failed to start" -Indent 2
-                return $false
-            }
-            Write-Log "Tomcat service $($service.Name) restarted successfully"
-            return $true
-        } catch {
-            Write-Log "ERROR: Failed to restart Tomcat service $($service.Name): $($_.Exception.Message)" -Indent 2
-            return $false
-        }
-    } else {
-        $catalinaBat = Join-Path $TomcatHome "bin\catalina.bat"
-        if (Test-Path $catalinaBat) {
-            Write-Log "No service found, using catalina.bat to restart"
-            try {
-                Start-Process -FilePath $catalinaBat -ArgumentList "stop" -NoNewWindow -Wait
-                Start-Sleep -Seconds 5
-                Start-Process -FilePath $catalinaBat -ArgumentList "start" -NoNewWindow -Wait
-                Start-Sleep -Seconds 5
-                $process = Get-Process -Name "java" -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "*$TomcatHome*" }
-                if (-not $process) {
-                    Write-Log "ERROR: Tomcat failed to start via catalina.bat" -Indent 2
-                    return $false
+        $service = Get-Service -Name "Tomcat*" -ErrorAction SilentlyContinue | 
+                  Where-Object { $_.Status -eq "Running" } | 
+                  Select-Object -First 1
+        
+        if ($service) {
+            Write-Log "Found Tomcat Windows service: $($service.Name)"
+            # Use Windows service
+            switch ($Action) {
+                "restart" {
+                    Write-Log "Stopping Tomcat service..."
+                    Stop-Service $service -Force
+                    Start-Sleep -Seconds 5
+                    Write-Log "Starting Tomcat service..."
+                    Start-Service $service
                 }
-                Write-Log "Tomcat restarted successfully via catalina.bat"
-                return $true
-            } catch {
-                Write-Log "ERROR: Failed to restart Tomcat using catalina.bat: $($_.Exception.Message)" -Indent 2
-                return $false
+                "stop" { Stop-Service $service -Force }
+                "start" { Start-Service $service }
             }
         } else {
-            Write-Log "ERROR: No Tomcat service or catalina.bat found" -Indent 2
-            return $false
+            Write-Log "No Tomcat service found, using catalina.bat"
+            # Use catalina.bat
+            $catalinaScript = Join-Path $TomcatHome "bin\catalina.bat"
+            if (-not (Test-Path $catalinaScript)) {
+                throw "catalina.bat not found at $catalinaScript"
+            }
+            
+            switch ($Action) {
+                "restart" {
+                    Write-Log "Stopping Tomcat using catalina.bat..."
+                    & $catalinaScript stop
+                    Start-Sleep -Seconds 5
+                    Write-Log "Starting Tomcat using catalina.bat..."
+                    & $catalinaScript start
+                }
+                "stop" { & $catalinaScript stop }
+                "start" { & $catalinaScript start }
+            }
         }
+        
+        # Wait for service to be ready
+        Write-Log "Waiting for Tomcat to be ready..."
+        $startTime = Get-Date
+        while ((Get-Date).Subtract($startTime).TotalSeconds -lt $Timeout) {
+            if (Test-NetConnection -ComputerName localhost -Port 8080 -WarningAction SilentlyContinue) {
+                Write-Log "Tomcat is ready"
+                return $true
+            }
+            Start-Sleep -Seconds 1
+        }
+        
+        throw "Service failed to start within timeout"
+    }
+    catch {
+        Write-Log "Error managing Tomcat service: $_" "ERROR"
+        return $false
     }
 }
 
-# Main execution
-$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {
-    Write-Log "ERROR: This script must be run as Administrator"
-    exit 1
+# Function to generate a secure random password
+function New-SecurePassword {
+    param(
+        [int]$Length = 16
+    )
+    $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{};:,.<>?'
+    $bytes = New-Object 'System.Byte[]' ($Length)
+    (New-Object System.Security.Cryptography.RNGCryptoServiceProvider).GetBytes($bytes)
+    $password = -join ($bytes | ForEach-Object { $chars[ $_ % $chars.Length ] })
+    return $password
 }
 
-$tomcatInfo = Get-TomcatConfigPath -CustomConfPath $TomcatConfPath
-if (-not $tomcatInfo) {
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $combinedMessage = $logMessages -join "; "
-    Add-Content -Path $logFile -Value "$timestamp,$combinedMessage" -ErrorAction SilentlyContinue
-    exit 1
-}
+# Main script
+try {
+    Write-Log "Starting Tomcat configuration and user update"
 
-$tomcatConfPath = $tomcatInfo.Path
-$tomcatHome = Split-Path $tomcatConfPath -Parent
-$tomcatVersion = Get-TomcatVersion -TomcatHome $tomcatHome
-Write-Log "Tomcat Home: $tomcatHome"
-Write-Log "Config Path: $tomcatConfPath"
-Write-Log "Tomcat Version: $tomcatVersion"
+    # Get Tomcat configuration path
+    $tomcatConfPath = Get-TomcatConfigPath
+    if (-not $tomcatConfPath) { throw "Could not determine Tomcat configuration path" }
+    $tomcatHome = Split-Path $tomcatConfPath
 
-$usersXmlPath = Join-Path $tomcatConfPath "tomcat-users.xml"
-Write-Log "Reading $usersXmlPath for users with plaintext passwords"
-$plaintextUsers = Get-PlaintextUsers -UsersXmlPath $usersXmlPath
-if ($null -eq $plaintextUsers) {
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $combinedMessage = $logMessages -join "; "
-    Add-Content -Path $logFile -Value "$timestamp,$combinedMessage" -ErrorAction SilentlyContinue
-    exit 1
-}
+    # Detect Tomcat version
+    $version = Get-TomcatVersion -TomcatHome $tomcatHome
+    Write-Log "Detected Tomcat version: $version"
 
-if ($plaintextUsers.Count -eq 0) {
-    Write-Log "No plaintext passwords to update"
-    Write-Log "Updating $usersXmlPath for compliance only"
-} else {
-    Write-Log "Found $($plaintextUsers.Count) user(s) with plaintext passwords"
-}
-
-$updatedUsers = @()
-foreach ($user in $plaintextUsers) {
-    $username = $user.Username
-    $password = $user.Password
-    Write-Log "Processing user: $username (Original plaintext password: [REDACTED])" -Indent 2
-    $hash = Generate-PasswordHash -TomcatBin (Join-Path $tomcatHome "bin") -Password $password -TomcatVersion $tomcatVersion
-    if (-not $hash) {
-        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        $combinedMessage = $logMessages -join "; "
-        Add-Content -Path $logFile -Value "$timestamp,$combinedMessage" -ErrorAction SilentlyContinue
-        exit 1
+    # 1. Patch CredentialHandler in server.xml first
+    $serverXmlPath = Join-Path $tomcatConfPath "server.xml"
+    $chResult = Patch-CredentialHandler -ServerXmlPath $serverXmlPath -TomcatVersion $version
+    if (-not $chResult) {
+        throw "Failed to patch CredentialHandler in server.xml"
     }
-    Write-Log "Generated Hash for $username: $hash" -Indent 2
-    $updatedUsers += @{ Username = $username; Hash = $hash }
-}
+    Write-Log "Successfully patched CredentialHandler in server.xml"
 
-if ($updatedUsers.Count -gt 0) {
-    Write-Log "Updating $usersXmlPath with new hashes"
-    if (-not (Update-TomcatUsersXml -UsersXmlPath $usersXmlPath -UserPairs $updatedUsers)) {
-        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        $combinedMessage = $logMessages -join "; "
-        Add-Content -Path $logFile -Value "$timestamp,$combinedMessage" -ErrorAction SilentlyContinue
-        exit 1
+    # 2. Validate user input
+    if (-not (Test-Username $Username)) { throw "Invalid username format" }
+    if (-not (Test-Roles $Roles)) { throw "Invalid roles specified" }
+
+    # 3. Generate a secure random password
+    $Password = New-SecurePassword -Length 16
+    Write-Log "Generated new password for $Username"
+
+    # 4. Generate secure hash for the user
+    $hash = Get-PasswordHash -TomcatBin (Join-Path $tomcatHome "bin") -Password $Password -Version $version -TomcatHome $tomcatHome
+    if (-not $hash) { throw "Failed to generate password hash" }
+
+    # 5. Update user in tomcat-users.xml
+    $usersXmlPath = Join-Path $tomcatConfPath "tomcat-users.xml"
+    $userResult = $false
+    if (Update-TomcatUser -UsersXmlPath $usersXmlPath -Username $Username -Password $hash -Roles $Roles) {
+        Write-Log "Successfully updated user $Username"
+        $userResult = $true
+    } else {
+        Write-Log "Failed to update user" "ERROR"
     }
-}
 
-$serverXmlPath = Join-Path $tomcatConfPath "server.xml"
-Write-Log "Updating $serverXmlPath for compliance"
-if (-not (Update-ServerXml -ServerXmlPath $serverXmlPath -TomcatVersion $tomcatVersion)) {
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $combinedMessage = $logMessages -join "; "
-    Add-Content -Path $logFile -Value "$timestamp,$combinedMessage" -ErrorAction SilentlyContinue
+    # 6. Restart Tomcat service
+    $restartResult = $false
+    if (Set-TomcatService -Action "restart" -TomcatHome $tomcatHome) {
+        Write-Log "Successfully restarted Tomcat service"
+        $restartResult = $true
+    } else {
+        Write-Log "Failed to restart Tomcat service" "ERROR"
+    }
+
+    # 7. Summary output
+    Write-Host ("=" * 27)
+    Write-Host "CredentialHandler patch: $($chResult)"
+    Write-Host "User update: $($userResult)"
+    Write-Host "Tomcat restart: $($restartResult)"
+    Write-Host "Audit with the check script to verify compliance."
+    Write-Host ("New credentials:")
+    Write-Host ("Username: $Username")
+    Write-Host ("Password: $Password")
+    Write-Log "Tomcat configuration and user update completed successfully"
+} catch {
+    Write-Log "Error in main script: $_" "ERROR"
+    Write-Host "ERROR: $_"
     exit 1
 }
-
-Write-Log "Restarting Tomcat to apply changes"
-if (-not (Restart-TomcatService -TomcatHome $tomcatHome)) {
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $combinedMessage = $logMessages -join "; "
-    Add-Content -Path $logFile -Value "$timestamp,$combinedMessage" -ErrorAction SilentlyContinue
-    exit 1
-}
-
-$complianceStatus = switch ($tomcatVersion) {
-    "7.0" { "Compliant with SHA-256 (MessageDigestCredentialHandler)" }
-    "8.5" { "Compliant with SHA-512, 10000 iterations, 16-byte salt (MessageDigestCredentialHandler)" }
-    { $_ -in "9.0","10.0","10.1" } { "Compliant with PBKDF2WithHmacSHA512, 10000 iterations, 16-byte salt (SecretKeyCredentialHandler)" }
-}
-Write-Log "Compliance Status: $complianceStatus"
-Write-Log "==========================="
-Write-Log "Overall Status: Secure"
-Write-Log "Audit completed"
-
-$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-$combinedMessage = $logMessages -join "; "
-Add-Content -Path $logFile -Value "$timestamp,$combinedMessage" -ErrorAction SilentlyContinue

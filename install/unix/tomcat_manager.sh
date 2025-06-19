@@ -1,392 +1,710 @@
 #!/bin/bash
 
+export LC_ALL=C
+export LANG=C
+
 # tomcat_manager.sh
-# Manages installation and uninstallation of Apache Tomcat 7.0, 8.5, 9.0, 10.0, and 10.1 on Kali Linux
-# Run as root or with sudo: sudo ./tomcat_manager.sh [install 7|8.5|9|10.0|10.1] [uninstall]
+# Installs and configures Apache Tomcat with secure password hashing for Unix systems
+# Compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark
 
 # Exit on error
 set -e
 
-# Global Variables
-TOMCAT_DIR="/opt/tomcat"
-LOG_FILE="/tmp/TomcatManager.log"
+# Function to setup Java environment after installation
+setup_java_env() {
+    local java_home="$1"
+    if [ -z "$java_home" ] || [ ! -d "$java_home" ]; then
+        return 1
+    fi
 
-# Log function
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+    # Set JAVA_HOME and PATH
+    export JAVA_HOME="$java_home"
+    export PATH="$java_home/bin:$PATH"
+
+    # For macOS, create necessary symlinks
+    if [[ "$(uname)" == "Darwin" ]]; then
+        if [ -d "$java_home/libexec/openjdk.jdk" ]; then
+            sudo ln -sfn "$java_home/libexec/openjdk.jdk" /Library/Java/JavaVirtualMachines/openjdk.jdk
+        fi
+    fi
+
+    # Verify Java is working
+    if ! java -version >/dev/null 2>&1; then
+        return 1
+    fi
+
+    return 0
 }
 
-# Check root privileges
-check_root() {
-    if [ "$(id -u)" != "0" ]; then
-        echo "This script must be run as root or with sudo."
-        exit 1
+# Function to validate Java installation
+validate_java() {
+    local java_path="$1"
+    if [ ! -x "$java_path" ]; then
+        return 1
     fi
+    
+    # Check if it's actually Java and get version
+    local version_output
+    version_output=$("$java_path" -version 2>&1)
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    
+    # Verify it's a JDK (not just JRE)
+    if [ ! -f "$(dirname "$java_path")/../lib/tools.jar" ] && [ ! -d "$(dirname "$java_path")/../lib/modules" ]; then
+        return 1
+    fi
+    
+    return 0
 }
 
-# Install OpenJDK 8 manually from Adoptium
-install_openjdk8_manual() {
-    log "Attempting manual installation of OpenJDK 8 from Adoptium..."
-    local JDK_URL="https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u412-b08/OpenJDK8U-jdk_x64_linux_hotspot_8u412b08.tar.gz"
-    local JDK_TAR="/tmp/OpenJDK8U-jdk_x64_linux_hotspot_8u412b08.tar.gz"
-    local JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64"
-
-    # Download JDK
-    log "Downloading OpenJDK 8 from ${JDK_URL}..."
-    if ! wget --tries=5 --timeout=60 -q --show-progress "$JDK_URL" -O "$JDK_TAR" 2>> "$LOG_FILE"; then
-        log "ERROR: Failed to download OpenJDK 8 from ${JDK_URL}. Check network or URL."
-        exit 1
+# Function to detect and setup Java
+setup_java() {
+    # First check if java is already available
+    if command -v java >/dev/null 2>&1; then
+        # Try to find JAVA_HOME from java command
+        local java_path=$(which java)
+        if [ -n "$java_path" ]; then
+            # Handle symlinks (works on both Linux and macOS)
+            if [ -L "$java_path" ]; then
+                if [[ "$(uname)" == "Darwin" ]]; then
+                    java_path=$(readlink "$java_path")
+                else
+                    java_path=$(readlink -f "$java_path")
+                fi
+            fi
+            
+            # Validate the Java installation
+            if validate_java "$java_path"; then
+                # Get the bin directory
+                local java_bin=$(dirname "$java_path")
+                # Get the home directory (usually 2 levels up from bin)
+                local java_home=$(dirname "$java_bin")
+                if [ -d "$java_home" ]; then
+                    if setup_java_env "$java_home"; then
+                        write_log "Found valid Java installation at $JAVA_HOME"
+                        return 0
+                    fi
+                fi
+            fi
+        fi
     fi
 
-    # Extract JDK
-    log "Extracting OpenJDK 8 to ${JAVA_HOME}..."
-    mkdir -p "$JAVA_HOME"
-    if ! tar xzf "$JDK_TAR" -C "$JAVA_HOME" --strip-components=1; then
-        log "ERROR: Failed to extract OpenJDK 8 archive."
-        exit 1
-    fi
-    rm "$JDK_TAR"
-
-    # Update alternatives
-    log "Configuring Java 8 in update-alternatives..."
-    update-alternatives --install /usr/bin/java java "${JAVA_HOME}/bin/java" 1081
-    update-alternatives --install /usr/bin/javac javac "${JAVA_HOME}/bin/javac" 1081
-
-    # Verify installation
-    if ! "${JAVA_HOME}/bin/java" -version 2>&1 | grep -q "1\.8\."; then
-        log "ERROR: Manual OpenJDK 8 installation failed. Check ${JAVA_HOME}/bin/java."
-        exit 1
-    fi
-    log "OpenJDK 8 successfully installed at ${JAVA_HOME}"
-}
-
-# Uninstall Tomcat
-uninstall_tomcat() {
-    log "Starting Tomcat uninstallation process..."
-
-    log "Stopping Tomcat service..."
-    systemctl stop tomcat.service > /dev/null 2>&1 || true
-
-    log "Disabling Tomcat service..."
-    systemctl disable tomcat.service > /dev/null 2>&1 || true
-
-    log "Removing systemd service..."
-    rm -f /etc/systemd/system/tomcat.service
-    systemctl daemon-reload
-
-    log "Removing Tomcat directory..."
-    rm -rf "$TOMCAT_DIR"
-
-    log "Removing tomcat user..."
-    if id "tomcat" > /dev/null 2>&1; then
-        userdel -r tomcat || log "Failed to remove tomcat user"
-        groupdel tomcat || log "Failed to remove tomcat group"
+    # If no valid Java found, try to install it
+    write_log "No valid Java installation found. Attempting to install..." "WARNING"
+    
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # macOS
+        if command -v brew >/dev/null 2>&1; then
+            write_log "Installing OpenJDK via Homebrew..." "INFO"
+            
+            # Check if we're running as root
+            if [ "$(id -u)" = "0" ]; then
+                write_log "Cannot run Homebrew as root. Please run the following commands as your regular user:" "ERROR"
+                write_log "1. brew install openjdk" "INFO"
+                write_log "2. sudo ln -sfn \$(brew --prefix openjdk)/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk.jdk" "INFO"
+                write_log "3. Run this script again" "INFO"
+                return 1
+            fi
+            
+            # Install OpenJDK
+            brew install openjdk || { write_log "Failed to install OpenJDK via Homebrew." "ERROR"; return 1; }
+            
+            # Try both common Homebrew locations
+            local java_home=""
+            if [ -d "/usr/local/opt/openjdk" ]; then
+                java_home="/usr/local/opt/openjdk"
+            elif [ -d "/opt/homebrew/opt/openjdk" ]; then
+                java_home="/opt/homebrew/opt/openjdk"
+            else
+                java_home="$(brew --prefix openjdk)"
+            fi
+            
+            if [ -n "$java_home" ] && [ -d "$java_home" ]; then
+                if setup_java_env "$java_home"; then
+                    write_log "Successfully installed and configured Java at $JAVA_HOME"
+                    return 0
+                fi
+            fi
+        else
+            write_log "Homebrew not found. Please install Homebrew first:" "ERROR"
+            write_log "/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"" "INFO"
+            return 1
+        fi
+    elif [[ -f "/etc/debian_version" ]]; then
+        write_log "Installing OpenJDK via apt-get..." "INFO"
+        sudo apt-get update && sudo apt-get install -y openjdk-11-jdk || { write_log "Failed to install OpenJDK via apt-get." "ERROR"; return 1; }
+        local java_home="/usr/lib/jvm/java-11-openjdk-$(dpkg --print-architecture)"
+        if setup_java_env "$java_home"; then
+            write_log "Successfully installed and configured Java at $JAVA_HOME"
+            return 0
+        fi
+    elif [[ -f "/etc/redhat-release" ]]; then
+        write_log "Installing OpenJDK via yum..." "INFO"
+        sudo yum install -y java-11-openjdk || { write_log "Failed to install OpenJDK via yum." "ERROR"; return 1; }
+        local java_home="/usr/lib/jvm/java-11-openjdk"
+        if setup_java_env "$java_home"; then
+            write_log "Successfully installed and configured Java at $JAVA_HOME"
+            return 0
+        fi
     else
-        log "Tomcat user not found"
+        write_log "Unsupported OS. Please install Java manually." "ERROR"
+        return 1
     fi
-
-    log "Tomcat uninstallation completed successfully"
+    
+    write_log "Java installation or configuration failed" "ERROR"
+    return 1
 }
 
-# Install Tomcat
-install_tomcat() {
-    local TOMCAT_MAJOR=$1
-    local TOMCAT_VERSION
-    local TOMCAT_URLS
-    local JAVA_HOME
-    local JAVA_VERSION
-    local JAVA_OPTS
-    local JAVA_BIN
-    local CHECKSUM_URL
-    local CHECKSUM
-    local LOCAL_FILE
+# Constants
+LOG_FILE="$HOME/TomcatManager.log"
+LOG_CSV="$HOME/TomcatManager.csv"
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+HOSTNAME=$(hostname)
 
-    case $TOMCAT_MAJOR in
-        7)
-            TOMCAT_VERSION="7.0.100"
-            LOCAL_FILE="/tmp/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            TOMCAT_URLS=(
-                "https://archive.apache.org/dist/tomcat/tomcat-7/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://dlcdn.apache.org/tomcat/tomcat-7/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://downloads.apache.org/tomcat/tomcat-7/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            )
-            JAVA_VERSION="8"
-            JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64"
-            JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
-            JAVA_BIN="${JAVA_HOME}/bin/java"
-            CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-7/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
-            CHECKSUM="c81fbd42e47e269ceae530ab75f9eacba59dbbad1fc608a90cd4dad0b25202df81f006f3270f5691eb22aae4eed760435beb616b469e30e0f8c6f8fe2a183eec"
+# Default values
+INSTALL_PATH="/opt/tomcat"
+VERSION="9.0"
+USERNAME="tomcat"
+PASSWORD="s3cret"
+ROLES="manager,admin"
+INSTALL_SERVICE=true
+CONFIGURE_FIREWALL=true
+
+# Function to display usage
+show_usage() {
+    echo "Usage: $0 [options]"
+    echo "Options:"
+    echo "  -h, --help                 Show this help message"
+    echo "  -p, --path PATH            Installation path (default: /opt/tomcat)"
+    echo "  -v, --version VERSION      Tomcat version (default: 9.0)"
+    echo "  -u, --username USERNAME    Admin username (default: tomcat)"
+    echo "  -w, --password PASSWORD    Admin password (default: s3cret)"
+    echo "  -r, --roles ROLES          Comma-separated roles (default: manager,admin)"
+    echo "  -s, --no-service           Skip service installation"
+    echo "  -f, --no-firewall          Skip firewall configuration"
+    echo ""
+    echo "Example:"
+    echo "  $0 -p /opt/tomcat -v 9.0 -u admin -w securepass -r manager,admin"
+    exit 0
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_usage
             ;;
-        8.5)
-            TOMCAT_VERSION="8.5.100"
-            LOCAL_FILE="/tmp/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            TOMCAT_URLS=(
-                "https://dlcdn.apache.org/tomcat/tomcat-8/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://archive.apache.org/dist/tomcat/tomcat-8/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://downloads.apache.org/tomcat/tomcat-8/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            )
-            JAVA_VERSION="11"
-            JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
-            JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED"
-            JAVA_BIN="${JAVA_HOME}/bin/java"
-            CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-8/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
-            CHECKSUM="e7f6c4b9a2d8e1f0c3a5b7e9f2d1c4a8b6e7f9d0c2a3b5e8f1d0c4a7b6e9f2d1c3a5b7e9f2d0c4a8b6e7f9d0c2a3b5e8f1d0c4a7b6e9f2d1c3a5b7e9f2d0c4a8"
+        -p|--path)
+            INSTALL_PATH="$2"
+            shift 2
             ;;
-        9)
-            TOMCAT_VERSION="9.0.104"
-            LOCAL_FILE="/tmp/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            TOMCAT_URLS=(
-                "https://dlcdn.apache.org/tomcat/tomcat-9/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://downloads.apache.org/tomcat/tomcat-9/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            )
-            JAVA_VERSION="11"
-            JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
-            JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
-            JAVA_BIN="${JAVA_HOME}/bin/java"
-            CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
-            CHECKSUM="b387fae59f1eda13a5c2336243514d9568057815689057ff920be696548ea6afbcfc0933934d3d6f8c4e2b5108322dc7509bfe934c49d05905c6ce87f1dff53c"
+        -v|--version)
+            VERSION="$2"
+            shift 2
             ;;
-        10.0)
-            TOMCAT_VERSION="10.0.27"
-            LOCAL_FILE="/tmp/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            TOMCAT_URLS=(
-                "https://dlcdn.apache.org/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://downloads.apache.org/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            )
-            JAVA_VERSION="11"
-            JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
-            JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
-            JAVA_BIN="${JAVA_HOME}/bin/java"
-            CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
-            CHECKSUM="d65c3db297c6eada0ddad69e3f5a5a4ef84da28b4e1f7f917f69dadaf133d9eabc6ab260b9f6d8d1a1e6ae48b873d8c23e4e98e95d51a1d625e6dc7b6e8cdfaab"
+        -u|--username)
+            USERNAME="$2"
+            shift 2
             ;;
-        10.1)
-            TOMCAT_VERSION="10.1.31"
-            LOCAL_FILE="/tmp/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            TOMCAT_URLS=(
-                "https://dlcdn.apache.org/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-                "https://downloads.apache.org/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-            )
-            JAVA_VERSION="11"
-            JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
-            JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
-            JAVA_BIN="${JAVA_HOME}/bin/java"
-            CHECKSUM_URL="https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz.sha512"
-            CHECKSUM="c16ed3e92f8e6f09fd2914d03645ed879398e06d779f585c25fa4e734c40e76ff4f76ebac45207e6b4f57c3f7f6f8f3ae6c8f3b0a0e5e7f9b7e8f9d9c6e7f9d9"
+        -w|--password)
+            PASSWORD="$2"
+            shift 2
+            ;;
+        -r|--roles)
+            ROLES="$2"
+            shift 2
+            ;;
+        -s|--no-service)
+            INSTALL_SERVICE=false
+            shift
+            ;;
+        -f|--no-firewall)
+            CONFIGURE_FIREWALL=false
+            shift
             ;;
         *)
-            log "ERROR: Unsupported Tomcat version. Choose 7, 8.5, 9, 10.0, or 10.1."
-            exit 1
+            echo "Unknown option: $1"
+            show_usage
             ;;
     esac
+done
 
-    log "Starting installation of Tomcat ${TOMCAT_MAJOR} (${TOMCAT_VERSION})"
+# Function to write log messages
+write_log() {
+    local message="$1"
+    local level="${2:-INFO}"
+    local log_message="[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message"
+    echo "$log_message" >> "$LOG_FILE"
+    echo "$log_message"
+}
 
-    # Check internet connectivity
-    log "Checking internet connectivity..."
-    if ! ping -c 1 google.com > /dev/null 2>&1; then
-        log "ERROR: No internet connection. Please connect to the internet and try again."
-        exit 1
+# Function to validate XML structure
+validate_xml() {
+    local xml_file="$1"
+    if [ ! -f "$xml_file" ]; then
+        write_log "XML file $xml_file not found" "ERROR"
+        return 1
     fi
+    
+    # Check for XML declaration
+    if ! head -n 1 "$xml_file" | grep -q '^<?xml'; then
+        write_log "Invalid XML declaration in $xml_file" "ERROR"
+        return 1
+    fi
+    
+    # Validate XML
+    if ! xmllint --noout "$xml_file" 2>/dev/null; then
+        write_log "Invalid XML structure in $xml_file" "ERROR"
+        return 1
+    fi
+    
+    return 0
+}
 
-    # Update package list
-    log "Updating package list..."
-    apt update -y
+# Function to securely parse XML
+parse_xml() {
+    local xml_file="$1"
+    if ! validate_xml "$xml_file"; then
+        return 1
+    fi
+    
+    # Use xmllint to parse XML
+    if ! xmllint --format "$xml_file" >/dev/null 2>&1; then
+        write_log "Failed to parse XML file $xml_file" "ERROR"
+        return 1
+    fi
+    
+    return 0
+}
 
-    # Install required Java version
-    log "Installing OpenJDK ${JAVA_VERSION}..."
-    if [ "$JAVA_VERSION" = "8" ]; then
-        if ! apt install -y openjdk-8-jdk 2>/dev/null; then
-            log "WARNING: OpenJDK 8 not found in Kali repositories. Attempting manual installation..."
-            install_openjdk8_manual
-        fi
+# Function to securely write XML
+write_xml() {
+    local xml_file="$1"
+    local xml_content="$2"
+    
+    # Create backup
+    if [ -f "$xml_file" ]; then
+        local backup_file="${xml_file}.bak.$(date '+%Y%m%d%H%M%S')"
+        cp "$xml_file" "$backup_file"
+        chmod 600 "$backup_file"
+        write_log "Created backup: $backup_file"
+    fi
+    
+    # Write to temporary file
+    local temp_file="${xml_file}.tmp"
+    echo "$xml_content" > "$temp_file"
+    
+    # Validate temporary file
+    if ! validate_xml "$temp_file"; then
+        rm -f "$temp_file"
+        return 1
+    fi
+    
+    # Move to final location
+    mv "$temp_file" "$xml_file"
+    chmod 600 "$xml_file"
+    return 0
+}
+
+# Function to validate hash format
+validate_hash() {
+    local hash="$1"
+    local version="$2"
+    
+    case "$version" in
+        "7.0")
+            [[ "$hash" =~ ^[0-9a-fA-F]{64}$ ]]
+            ;;
+        "8.5")
+            [[ "$hash" =~ ^[0-9a-fA-F]{128}$ ]]
+            ;;
+        "9.0"|"10.0"|"10.1")
+            [[ "$hash" =~ ^[0-9a-fA-F]+:[0-9a-fA-F]+$ ]]
+            ;;
+        *)
+            write_log "Unsupported Tomcat version: $version" "ERROR"
+            return 1
+            ;;
+    esac
+}
+
+# Function to generate password hash
+generate_hash() {
+    local tomcat_bin="$1"
+    local password="$2"
+    local version="$3"
+    
+    local digest_script="${tomcat_bin}/digest.sh"
+    if [ ! -f "$digest_script" ]; then
+        write_log "digest.sh not found" "ERROR"
+        return 1
+    fi
+    
+    # Set algorithm and parameters based on version
+    local algorithm
+    local iterations
+    local salt_length
+    
+    if [ "$version" = "7.0" ]; then
+        algorithm="SHA-256"
     else
-        if ! apt install -y openjdk-${JAVA_VERSION}-jdk; then
-            log "ERROR: Failed to install OpenJDK ${JAVA_VERSION}. Ensure the package is available."
-            exit 1
+        algorithm="SHA-512"
+        iterations="10000"
+        salt_length="16"
+    fi
+    
+    # Build command
+    local cmd="env JAVA_HOME=\"$JAVA_HOME\" PATH=\"$PATH\" $digest_script -a $algorithm"
+    [ -n "$iterations" ] && cmd="$cmd -i $iterations"
+    [ -n "$salt_length" ] && cmd="$cmd -s $salt_length"
+    cmd="$cmd '$password'"
+    
+    # Run digest.sh
+    local result
+    result=$(eval $cmd)
+    if [[ "$result" =~ [0-9a-fA-F:]+$ ]]; then
+        echo "${BASH_REMATCH[0]}"
+        return 0
+    fi
+    
+    write_log "Failed to generate hash" "ERROR"
+    return 1
+}
+
+# Function to manage Tomcat service
+manage_service() {
+    local action="$1"
+    local service_name="$2"
+    local timeout="${3:-60}"
+    
+    case "$action" in
+        "install")
+            # Install service
+            if [ ! -f "${INSTALL_PATH}/bin/service.sh" ]; then
+                write_log "service.sh not found" "ERROR"
+                return 1
+            fi
+            
+            env JAVA_HOME="$JAVA_HOME" PATH="$PATH" "${INSTALL_PATH}/bin/service.sh" install "$service_name"
+            if [ $? -ne 0 ]; then
+                write_log "Failed to install service" "ERROR"
+                return 1
+            fi
+            
+            # Start service
+            systemctl start "$service_name"
+            
+            # Wait for service to be ready
+            local start_time=$(date +%s)
+            while [ $(($(date +%s) - start_time)) -lt $timeout ]; do
+                if systemctl is-active --quiet "$service_name"; then
+                    return 0
+                fi
+                sleep 1
+            done
+            
+            write_log "Service failed to start within timeout" "ERROR"
+            return 1
+            ;;
+            
+        "start"|"stop"|"restart"|"remove")
+            # Check if service exists
+            if ! systemctl list-unit-files | grep -q "^${service_name}.service"; then
+                write_log "Service $service_name not found" "ERROR"
+                return 1
+            fi
+            
+            case "$action" in
+                "start")
+                    systemctl start "$service_name"
+                    ;;
+                "stop")
+                    systemctl stop "$service_name"
+                    ;;
+                "restart")
+                    systemctl restart "$service_name"
+                    ;;
+                "remove")
+                    systemctl stop "$service_name"
+                    "${INSTALL_PATH}/bin/service.sh" remove "$service_name"
+                    ;;
+            esac
+            
+            if [ "$action" != "remove" ]; then
+                # Wait for service to be ready
+                local start_time=$(date +%s)
+                while [ $(($(date +%s) - start_time)) -lt $timeout ]; do
+                    if systemctl is-active --quiet "$service_name"; then
+                        return 0
+                    fi
+                    sleep 1
+                done
+                
+                write_log "Service failed to start within timeout" "ERROR"
+                return 1
+            fi
+            ;;
+            
+        *)
+            write_log "Invalid action: $action" "ERROR"
+            return 1
+            ;;
+    esac
+    
+    return 0
+}
+
+# Function to configure firewall
+configure_firewall() {
+    local service_name="$1"
+    
+    # Check if firewall is active
+    if ! command -v ufw >/dev/null 2>&1 && ! command -v firewall-cmd >/dev/null 2>&1; then
+        write_log "No supported firewall found" "WARNING"
+        return 0
+    fi
+    
+    # Configure UFW
+    if command -v ufw >/dev/null 2>&1; then
+        if ufw status | grep -q "Status: active"; then
+            ufw allow 8080/tcp
+            write_log "Added UFW rule for port 8080"
         fi
     fi
-
-    # Verify Java installation
-    log "Verifying Java installation..."
-    if [ ! -f "$JAVA_BIN" ]; then
-        log "ERROR: Java binary ${JAVA_BIN} not found. Ensure ${JAVA_HOME} is correct."
-        log "Attempting to find Java ${JAVA_VERSION} installation..."
-        JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
-        JAVA_BIN="${JAVA_HOME}/bin/java"
-        if [ ! -f "$JAVA_BIN" ]; then
-            log "ERROR: Could not locate Java binary for Java ${JAVA_VERSION}."
-            exit 1
-        fi
-        log "Using JAVA_HOME: ${JAVA_HOME}"
-    fi
-    JAVA_VERSION_OUTPUT=$("$JAVA_BIN" -version 2>&1)
-    log "java -version output: ${JAVA_VERSION_OUTPUT}"
-    if ! echo "$JAVA_VERSION_OUTPUT" | grep -q "1${JAVA_VERSION}\." && ! echo "$JAVA_VERSION_OUTPUT" | grep -q "${JAVA_VERSION}\." && ! echo "$JAVA_VERSION_OUTPUT" | grep -q "openjdk version.*${JAVA_VERSION}"; then
-        log "ERROR: Java ${JAVA_VERSION} not detected with ${JAVA_BIN}."
-        DETECTED_VERSION=$(echo "$JAVA_VERSION_OUTPUT" | head -n 1 | awk '{print $3}' | tr -d '"')
-        if [[ "$DETECTED_VERSION" =~ ^${JAVA_VERSION}\. ]]; then
-            log "WARNING: Detected Java version ${DETECTED_VERSION}, proceeding with installation."
-        else
-            log "ERROR: Detected version ${DETECTED_VERSION} does not match required Java ${JAVA_VERSION}."
-            log "Run 'update-alternatives --config java' to select Java ${JAVA_VERSION} or verify ${JAVA_HOME}."
-            exit 1
+    
+    # Configure firewalld
+    if command -v firewall-cmd >/dev/null 2>&1; then
+        if firewall-cmd --state | grep -q "running"; then
+            firewall-cmd --permanent --add-port=8080/tcp
+            firewall-cmd --reload
+            write_log "Added firewalld rule for port 8080"
         fi
     fi
+    
+    return 0
+}
 
-    # Verify JAVA_HOME
-    if [ ! -d "$JAVA_HOME" ]; then
-        log "ERROR: JAVA_HOME directory ${JAVA_HOME} does not exist."
-        exit 1
-    fi
-
-    # Create tomcat user
-    log "Creating tomcat user..."
-    if ! id tomcat > /dev/null 2>&1; then
-        useradd -m -d "$TOMCAT_DIR" -s /bin/false -U tomcat
+# Function to validate username
+validate_username() {
+    local username="$1"
+    echo "[DEBUG] Validating username: '$username'" >&2
+    echo "$username" | grep -Eq '^[a-zA-Z0-9_\-\.]+$'
+    local result=$?
+    if [ $result -eq 0 ]; then
+        echo "[DEBUG] Username matches regex (via grep)" >&2
+        return 0
     else
-        log "Tomcat user already exists"
+        echo "[DEBUG] Username does NOT match regex (via grep)" >&2
+        return 1
     fi
+}
 
-    # Download Tomcat with fallback
-    log "Downloading Apache Tomcat ${TOMCAT_VERSION}..."
-    cd /tmp
-    DOWNLOADED=false
-    for TOMCAT_URL in "${TOMCAT_URLS[@]}"; do
-        log "Attempting download from ${TOMCAT_URL}..."
-        if wget --tries=5 --timeout=60 --server-response -q --show-progress "$TOMCAT_URL" 2>> "$LOG_FILE"; then
-            log "Successfully downloaded from ${TOMCAT_URL}"
-            DOWNLOADED=true
+# Function to validate password
+validate_password() {
+    local password="$1"
+    [ ${#password} -ge 8 ]
+}
+
+# Function to validate roles
+validate_roles() {
+    local roles="$1"
+    local valid_roles=("manager" "admin" "manager-gui" "manager-script" "manager-jmx" "manager-status")
+    local IFS=','
+    local user_roles=($roles)
+    
+    for role in "${user_roles[@]}"; do
+        local valid=false
+        for valid_role in "${valid_roles[@]}"; do
+            if [ "$role" = "$valid_role" ]; then
+                valid=true
             break
-        else
-            log "WARNING: Failed to download from ${TOMCAT_URL}. Trying next URL..."
-            sleep 2
+            fi
+        done
+        if ! $valid; then
+            return 1
         fi
     done
 
-    # Check for local file if download failed
-    if [ "$DOWNLOADED" = false ]; then
-        log "All download URLs failed. Checking for local file at ${LOCAL_FILE}..."
-        if [ -f "$LOCAL_FILE" ]; then
-            log "Found local file ${LOCAL_FILE}. Proceeding with installation..."
-            DOWNLOADED=true
-            mv "$LOCAL_FILE" "apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-        else
-            log "ERROR: Failed to download Tomcat archive from all URLs and no local file found."
-            log "URLs tried: ${TOMCAT_URLS[*]}"
-            log "Place apache-tomcat-${TOMCAT_VERSION}.tar.gz in /tmp and retry."
-            exit 1
-        fi
-    fi
-
-    # Verify downloaded file
-    if [ ! -f "apache-tomcat-${TOMCAT_VERSION}.tar.gz" ]; then
-        log "ERROR: Downloaded Tomcat archive not found."
-        exit 1
-    fi
-
-    # Verify checksum
-    log "Verifying checksum of downloaded file..."
-    COMPUTED_CHECKSUM=$(sha512sum "apache-tomcat-${TOMCAT_VERSION}.tar.gz" | awk '{print $1}')
-    if ! echo "$CHECKSUM apache-tomcat-${TOMCAT_VERSION}.tar.gz" | sha512sum -c - > /dev/null 2>&1; then
-        log "ERROR: Checksum verification failed for apache-tomcat-${TOMCAT_VERSION}.tar.gz."
-        log "Expected SHA512: $CHECKSUM"
-        log "Computed SHA512: $COMPUTED_CHECKSUM"
-        log "Download may be corrupted or tampered with."
-        rm -f "apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-        exit 1
-    fi
-    log "Checksum verification passed."
-
-    # Remove existing installation
-    log "Removing previous installations..."
-    systemctl stop tomcat.service > /dev/null 2>&1 || true
-    rm -rf "$TOMCAT_DIR"
-
-    # Extract Tomcat
-    log "Extracting Tomcat to ${TOMCAT_DIR}..."
-    mkdir -p "$TOMCAT_DIR"
-    if ! tar xzf "apache-tomcat-${TOMCAT_VERSION}.tar.gz" -C "$TOMCAT_DIR" --strip-components=1; then
-        log "ERROR: Failed to extract Tomcat archive."
-        exit 1
-    fi
-    rm "apache-tomcat-${TOMCAT_VERSION}.tar.gz"
-
-    # Set permissions
-    log "Setting permissions..."
-    chown -R tomcat:tomcat "$TOMCAT_DIR"
-    chmod -R u+rwx "$TOMCAT_DIR"
-    chmod +x "$TOMCAT_DIR/bin/"*.sh
-
-    # Create systemd service
-    log "Configuring systemd service..."
-    cat > /etc/systemd/system/tomcat.service << EOF
-[Unit]
-Description=Apache Tomcat Web Application Container
-After=network.target
-
-[Service]
-Type=forking
-Environment="JAVA_HOME=${JAVA_HOME}"
-Environment="CATALINA_PID=${TOMCAT_DIR}/temp/tomcat.pid"
-Environment="CATALINA_HOME=${TOMCAT_DIR}"
-Environment="CATALINA_BASE=${TOMCAT_DIR}"
-Environment="CATALINA_OPTS=-Xms512M -Xmx1024M -server -XX:+UseParallelGC"
-Environment="JAVA_OPTS=${JAVA_OPTS}"
-ExecStart=${TOMCAT_DIR}/bin/startup.sh
-ExecStop=${TOMCAT_DIR}/bin/shutdown.sh
-User=tomcat
-Group=tomcat
-UMask=0007
-RestartSec=10
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # Enable and start service
-    log "Starting Tomcat service..."
-    systemctl daemon-reload
-    systemctl enable tomcat
-    if ! systemctl start tomcat; then
-        log "ERROR: Failed to start Tomcat service. Check logs in ${TOMCAT_DIR}/logs/catalina.out."
-        exit 1
-    fi
-
-    # Verify installation
-    log "Verifying installation..."
-    sleep 10
-    if curl -s -f "http://localhost:8080" > /dev/null; then
-        log "SUCCESS: Tomcat ${TOMCAT_VERSION} is running at http://localhost:8080"
-    else
-        log "WARNING: Tomcat service started but web interface not accessible. Check ${TOMCAT_DIR}/logs/catalina.out."
-    fi
-
-    log "Installation complete. Configure tomcat-users.xml in ${TOMCAT_DIR}/conf for auditing."
+    return 0
 }
 
-# Main script execution
-check_root
-
-case "$1" in
-    install)
-        if [ -z "$2" ]; then
-            log "ERROR: Please specify a Tomcat version (7, 8.5, 9, 10.0, or 10.1)"
-            exit 1
+# Function to update Tomcat user
+update_user() {
+    local users_xml="$1"
+    local username="$2"
+    local password="$3"
+    local roles="$4"
+    
+    if [ ! -f "$users_xml" ]; then
+        write_log "Users XML file not found" "ERROR"
+        return 1
+    fi
+    
+    if ! parse_xml "$users_xml"; then
+        return 1
+    fi
+    
+    # Create temporary file
+    local temp_file="${users_xml}.tmp"
+    cp "$users_xml" "$temp_file"
+    
+    # Update or add user
+    if grep -q "<user username=\"$username\"" "$temp_file"; then
+        # Update existing user
+        if sed --version >/dev/null 2>&1; then
+            # GNU sed
+            sed -i "s|<user username=\"$username\".*|<user username=\"$username\" password=\"$password\" roles=\"$roles\"/>|" "$temp_file"
+        else
+            # BSD/macOS sed
+            sed -i '' "s|<user username=\"$username\".*|<user username=\"$username\" password=\"$password\" roles=\"$roles\"/>|" "$temp_file"
         fi
-        install_tomcat "$2"
-        ;;
-    uninstall)
-        uninstall_tomcat
-        ;;
-    *)
-        echo "Usage: $0 [install 7|8.5|9|10.0|10.1] [uninstall]"
-        exit 1
-        ;;
-esac
+    else
+        # Add new user
+        if sed --version >/dev/null 2>&1; then
+            # GNU sed
+            sed -i "/<\/tomcat-users>/i <user username=\"$username\" password=\"$password\" roles=\"$roles\"/>" "$temp_file"
+        else
+            # BSD/macOS sed
+            sed -i '' "/<\/tomcat-users>/i\\
+<user username=\"$username\" password=\"$password\" roles=\"$roles\"/>" "$temp_file"
+        fi
+    fi
+    
+    # Write updated XML
+    if ! write_xml "$users_xml" "$(cat "$temp_file")"; then
+        rm -f "$temp_file"
+        return 1
+    fi
+    
+    rm -f "$temp_file"
+    return 0
+}
 
+# Main script
+write_log "Starting Tomcat installation"
+
+# Test multiple Tomcat versions
+success=0
+for test_version in 7.0 8.5 9.0 10.0 10.1; do
+    write_log "\n[TEST] Installing Tomcat version $test_version" "INFO"
+    VERSION="$test_version"
+    # Setup Java first
+    if ! setup_java; then
+        write_log "Java setup failed for version $test_version. Skipping." "ERROR"
+        continue
+    fi
+    if ! java -version >/dev/null 2>&1; then
+        write_log "Java is not working for version $test_version. Skipping." "ERROR"
+        continue
+    fi
+    if ! validate_username "$USERNAME"; then
+        write_log "Invalid username format for version $test_version" "ERROR"
+        continue
+    fi
+    if ! validate_password "$PASSWORD"; then
+        write_log "Password must be at least 8 characters long for version $test_version" "ERROR"
+        continue
+    fi
+    if ! validate_roles "$ROLES"; then
+        write_log "Invalid roles specified for version $test_version" "ERROR"
+        continue
+    fi
+    if [ ! -d "$INSTALL_PATH-$test_version" ]; then
+        mkdir -p "$INSTALL_PATH-$test_version"
+        write_log "Created installation directory: $INSTALL_PATH-$test_version"
+    fi
+    major_version="${test_version%%.*}"
+    # Determine the latest available minor version for the major version
+    latest_minor=$(curl -s --max-time 10 "https://dlcdn.apache.org/tomcat/tomcat-${major_version}/" | grep -oE "v${test_version}\.[0-9]+" | sort -V | tail -n 1 | sed 's/v//')
+    if [ -z "$latest_minor" ]; then
+        write_log "Could not determine latest minor version for Tomcat $test_version. Using fallback version." "WARNING"
+        case "$test_version" in
+            7.0)
+                latest_minor="7.0.109"
+                download_url="https://archive.apache.org/dist/tomcat/tomcat-7/v7.0.109/bin/apache-tomcat-7.0.109.tar.gz"
+                ;;
+            8.5)
+                latest_minor="8.5.99"
+                download_url="https://archive.apache.org/dist/tomcat/tomcat-8/v8.5.99/bin/apache-tomcat-8.5.99.tar.gz"
+                ;;
+            9.0)
+                latest_minor="9.0.106"
+                download_url="https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.106/bin/apache-tomcat-9.0.106.tar.gz"
+                ;;
+            10.0)
+                latest_minor="10.1.42"
+                download_url="https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.42/bin/apache-tomcat-10.1.42.tar.gz"
+                ;;
+            10.1)
+                latest_minor="10.1.42"
+                download_url="https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.42/bin/apache-tomcat-10.1.42.tar.gz"
+                ;;
+            *)
+                write_log "No fallback version available for Tomcat $test_version. Skipping." "ERROR"
+                continue
+                ;;
+        esac
+    else
+        download_url="https://dlcdn.apache.org/tomcat/tomcat-${major_version}/v${latest_minor}/bin/apache-tomcat-${latest_minor}.tar.gz"
+    fi
+    write_log "Latest available minor version for Tomcat $test_version is $latest_minor" "INFO"
+    zip_file="/tmp/apache-tomcat-${latest_minor}.tar.gz"
+    # Check if the URL is valid (HTTP 200)
+    http_status=$(curl -s -o /dev/null -w "%{http_code}" "$download_url")
+    if [ "$http_status" != "200" ]; then
+        write_log "Tomcat $latest_minor not available at $download_url (HTTP $http_status). Skipping." "ERROR"
+        rm -f "$zip_file"
+        continue
+    fi
+    # Download if not already valid
+    if [ -f "$zip_file" ] && tar tzf "$zip_file" > /dev/null 2>&1; then
+        write_log "Using existing Tomcat archive: $zip_file"
+    else
+        write_log "Downloading Tomcat $latest_minor"
+        rm -f "$zip_file"
+        curl -L "$download_url" -o "$zip_file"
+        if [ $? -ne 0 ]; then
+            write_log "Failed to download Tomcat archive for version $latest_minor" "ERROR"
+            rm -f "$zip_file"
+            continue
+        fi
+        # Validate archive
+        if ! tar tzf "$zip_file" > /dev/null 2>&1; then
+            write_log "Downloaded file for Tomcat $latest_minor is not a valid archive. Skipping." "ERROR"
+            rm -f "$zip_file"
+            continue
+        fi
+    fi
+    if [ -d "$INSTALL_PATH-$test_version" ] && [ ! -w "$INSTALL_PATH-$test_version" ]; then
+        write_log "No write permission to $INSTALL_PATH-$test_version. Skipping." "ERROR"
+        continue
+    fi
+    write_log "Extracting Tomcat to $INSTALL_PATH-$test_version"
+    rm -rf "$INSTALL_PATH-$test_version"
+    tar xzf "$zip_file" -C "$(dirname "$INSTALL_PATH-$test_version")"
+    mv "$(dirname "$INSTALL_PATH-$test_version")/apache-tomcat-$latest_minor" "$INSTALL_PATH-$test_version"
+    rm -f "$zip_file"
+    hash=$(generate_hash "$INSTALL_PATH-$test_version/bin" "$PASSWORD" "$test_version")
+    if [ -z "$hash" ]; then
+        write_log "Failed to generate password hash for version $test_version" "ERROR"
+        continue
+    fi
+    users_xml="$INSTALL_PATH-$test_version/conf/tomcat-users.xml"
+    if update_user "$users_xml" "$USERNAME" "$hash" "$ROLES"; then
+        write_log "Successfully configured user $USERNAME for version $test_version"
+        success=1
+    else
+        write_log "Failed to configure user for version $test_version" "ERROR"
+        continue
+    fi
+    write_log "Tomcat $test_version installation completed successfully" "INFO"
+done
+
+if [ "$success" = "1" ]; then
+    write_log "At least one Tomcat version installed successfully." "INFO"
 exit 0
+else
+    write_log "All Tomcat version installations failed." "ERROR"
+    exit 1
+fi

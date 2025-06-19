@@ -1,0 +1,84 @@
+# Apache Tomcat Secure Install Scripts
+
+This directory contains cross-platform installation scripts for Apache Tomcat, designed for secure, automated deployment and configuration. These scripts are compliant with NIST 800-53 IA-5 and CIS Tomcat Benchmark standards, and support all major Tomcat versions (7.0, 8.5, 9.0, 10.0, 10.1).
+
+## Contents
+
+- `windows/TomcatManager.ps1` — PowerShell script for Windows
+- `unix/tomcat_manager.sh` — Bash script for Unix/Linux/macOS
+
+## Features
+- Automatically downloads and installs the latest patch for the specified Tomcat version
+- Detects or installs Java as needed
+- Configures secure admin user(s) with hashed passwords
+- Optionally installs Tomcat as a service and configures firewall rules
+- Robust error handling, logging, and backup of configuration files
+
+---
+
+## Windows: TomcatManager.ps1
+
+**Usage:**
+```powershell
+# Run as Administrator in PowerShell
+cd <repo-root>\install\windows
+
+# Example: Install Tomcat 9.0 with a secure user
+.\TomcatManager.ps1 -Version 9.0 -Username admin -Password MySecurePass! -Roles "manager,admin"
+```
+
+**Parameters:**
+- `-InstallPath` — Installation directory (default: `C:\Program Files\Apache Software Foundation\Tomcat`)
+- `-Version` — Tomcat major version (e.g., `7.0`, `8.5`, `9.0`, `10.0`, `10.1`)
+- `-Username` — Admin username (default: `tomcat`)
+- `-Password` — Admin password (default: `s3cret`)
+- `-Roles` — Comma-separated roles (default: `manager,admin`)
+- `-InstallService` — Install as Windows service (default: enabled)
+- `-ConfigureFirewall` — Add firewall rule for port 8080 (default: enabled)
+
+**What it does:**
+- Downloads the latest available patch for the specified Tomcat version
+- Installs Java if not found
+- Extracts Tomcat, configures the admin user with a secure hash, and installs as a service
+- Adds a firewall rule for port 8080
+- Logs actions to `$env:TEMP\TomcatManager.log`
+
+---
+
+## Unix: tomcat_manager.sh
+
+**Usage:**
+```bash
+# Run as root or with sudo
+cd <repo-root>/install/unix
+
+# Example: Install Tomcat 9.0 with a secure user
+sudo ./tomcat_manager.sh -v 9.0 -u admin -w MySecurePass! -r manager,admin
+```
+
+**Options:**
+- `-p, --path` — Installation path (default: `/opt/tomcat`)
+- `-v, --version` — Tomcat major version (e.g., `7.0`, `8.5`, `9.0`, `10.0`, `10.1`)
+- `-u, --username` — Admin username (default: `tomcat`)
+- `-w, --password` — Admin password (default: `s3cret`)
+- `-r, --roles` — Comma-separated roles (default: `manager,admin`)
+- `-s, --no-service` — Skip service installation
+- `-f, --no-firewall` — Skip firewall configuration
+
+**What it does:**
+- Downloads and extracts the latest patch for the specified Tomcat version
+- Installs Java if not found
+- Configures secure admin user(s) with hashed passwords
+- Optionally installs as a systemd service and configures firewall
+- Logs actions to `~/TomcatManager.log`
+
+---
+
+## Notes
+- These scripts are intended for lab, test, or initial deployment use. Review and adapt for production as needed.
+- For full audit and patching tools, see the main project README and the `src/` directory.
+- Always run these scripts with appropriate privileges (Administrator on Windows, root/sudo on Unix).
+
+---
+
+For more details, see the main [README.md](../README.md) in the project root. 

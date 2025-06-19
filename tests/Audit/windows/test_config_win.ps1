@@ -1,28 +1,45 @@
 # test_config_win.ps1
 # Tests CheckTomcatConfigWin.ps1 for various Tomcat configurations (7.0, 8.5, 9.0, 10.0, 10.1)
 
+#Requires -Version 7.0
+#Requires -RunAsAdministrator
+
 # Log setup
-$logFile = "$env:LOCALAPPDATA\Temp\TestTomcatConfig.log"
+$LOG_FILE = "$env:TEMP\TestTomcatConfig.log"
+$LOG_DIR = "$env:TEMP"
+$LOG_FILE_PATH = Join-Path $LOG_DIR "TestTomcatConfig.log"
+$TIMESTAMP = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+$HOSTNAME = $env:COMPUTERNAME
+
+# Configure logging
+$ErrorActionPreference = "Stop"
+$LogFile = Join-Path $LOG_DIR "TestTomcatConfig.log"
+$LogCSV = Join-Path $LOG_DIR "TestTomcatConfig.csv"
+
+# Function to write log messages
 function Write-Log {
-    param($Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$timestamp $Message" | Out-File -FilePath $logFile -Append
-    Write-Host "[$timestamp] $Message"
+    param(
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+    $logMessage = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $Level - $Message"
+    Add-Content -Path $LogFile -Value $logMessage
+    Write-Host $logMessage
 }
 
 Write-Log "Starting tests for CheckTomcatConfigWin.ps1..."
 
 # Verify script exists
 if (-not (Test-Path ".\CheckTomcatConfigWin.ps1")) {
-    Write-Log "Error: CheckTomcatConfigWin.ps1 not found"
-    exit
+    Write-Log "Error: CheckTomcatConfigWin.ps1 not found" "ERROR"
+    exit 1
 }
 Write-Log "Verified file exists: .\CheckTomcatConfigWin.ps1"
 
 # Clear existing log
-if (Test-Path $logFile) {
-    Clear-Content $logFile
-    Write-Log "Cleared existing log file: $logFile"
+if (Test-Path $LogFile) {
+    Clear-Content $LogFile
+    Write-Log "Cleared existing log file: $LogFile"
 }
 
 # Function to detect Tomcat path and version
@@ -51,18 +68,112 @@ function Get-TomcatConfigPath {
     return $null
 }
 
+# Function to validate XML structure
+function Test-XmlStructure {
+    param(
+        [string]$XmlFile
+    )
+    try {
+        if (-not (Test-Path $XmlFile)) {
+            Write-Log "XML file $XmlFile not found" "ERROR"
+            return $false
+        }
+        
+        # Check for XML declaration
+        $firstLine = Get-Content $XmlFile -TotalCount 1
+        if (-not $firstLine.Trim().StartsWith('<?xml')) {
+            Write-Log "Invalid XML declaration in $XmlFile" "ERROR"
+            return $false
+        }
+        
+        # Parse XML
+        [xml]$null = Get-Content $XmlFile
+        return $true
+    }
+    catch {
+        Write-Log "Error validating XML $XmlFile : $_" "ERROR"
+        return $false
+    }
+}
+
+# Function to securely parse XML
+function Get-SecureXml {
+    param(
+        [string]$XmlFile
+    )
+    try {
+        if (-not (Test-Path $XmlFile)) {
+            Write-Log "XML file $XmlFile not found" "ERROR"
+            return $null
+        }
+        
+        if (-not (Test-XmlStructure $XmlFile)) {
+            return $null
+        }
+        
+        return [xml](Get-Content $XmlFile)
+    }
+    catch {
+        Write-Log "Error parsing XML $XmlFile : $_" "ERROR"
+        return $null
+    }
+}
+
+# Function to securely write XML
+function Set-SecureXml {
+    param(
+        [string]$XmlFile,
+        [xml]$XmlContent
+    )
+    try {
+        # Create backup
+        if (Test-Path $XmlFile) {
+            $backupFile = "$XmlFile.bak.$(Get-Date -Format 'yyyyMMddHHmmss')"
+            Copy-Item $XmlFile $backupFile
+            $acl = Get-Acl $backupFile
+            $acl.SetAccessRuleProtection($true, $false)
+            Set-Acl $backupFile $acl
+            Write-Log "Created backup: $backupFile"
+        }
+        
+        # Write to temporary file
+        $tempFile = "$XmlFile.tmp"
+        $XmlContent.Save($tempFile)
+        
+        # Validate temporary file
+        if (-not (Test-XmlStructure $tempFile)) {
+            Remove-Item $tempFile -Force
+            return $false
+        }
+        
+        # Move to final location
+        Move-Item $tempFile $XmlFile -Force
+        $acl = Get-Acl $XmlFile
+        $acl.SetAccessRuleProtection($true, $false)
+        Set-Acl $XmlFile $acl
+        return $true
+    }
+    catch {
+        Write-Log "Error writing XML $XmlFile : $_" "ERROR"
+        if (Test-Path $tempFile) {
+            Remove-Item $tempFile -Force
+        }
+        return $false
+    }
+}
+
 # Detect Tomcat installation
 $tomcatInfo = Get-TomcatConfigPath
 if (-not $tomcatInfo) {
-    Write-Log "Error: No Tomcat configuration directory found"
-    exit
+    Write-Log "Error: No Tomcat configuration directory found" "ERROR"
+    exit 1
 }
 $tomcatConfPath = $tomcatInfo.Path
 $tomcatVersion = $tomcatInfo.Version
 Write-Log "Detected Tomcat version $tomcatVersion at $tomcatConfPath"
 
 # Backup directory
-$backupDir = "$env:LOCALAPPDATA\Temp\TomcatConfigBackup"
+$backupDir = "$env:TEMP\TomcatConfigBackup"
 if (-not (Test-Path $backupDir)) {
     New-Item -ItemType Directory -Path $backupDir | Out-Null
 }
@@ -139,11 +250,17 @@ foreach ($serverTest in $serverTests) {
         Write-Log "Running test: ${tomcatVersion}_${serverTest}_${passwordTest} for Tomcat $tomcatVersion"
 
         # Modify server.xml
-        $xml = [xml](Get-Content $serverXml -Encoding UTF8)
+        $xml = Get-SecureXml -XmlFile $serverXml
+        if (-not $xml) {
+            Write-Log "Failed to parse server.xml" "ERROR"
+            continue
+        }
+        
         $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']")
         if (-not $realm) {
             $realm = $xml.SelectSingleNode("//Realm[@className='org.apache.catalina.realm.MemoryRealm']")
         }
+        
         if ($serverTest -eq "NoCredentialHandler") {
             if ($realm.CredentialHandler) { $realm.RemoveChild($realm.CredentialHandler) }
         } else {
@@ -154,10 +271,19 @@ foreach ($serverTest in $serverTests) {
                 $realm.AppendChild($xml.ImportNode($newHandler.DocumentElement, $true))
             }
         }
-        $xml.Save($serverXml)
+        
+        if (-not (Set-SecureXml -XmlFile $serverXml -XmlContent $xml)) {
+            Write-Log "Failed to update server.xml" "ERROR"
+            continue
+        }
 
         # Modify tomcat-users.xml
-        $users = [xml](Get-Content $usersXml -Encoding UTF8)
+        $users = Get-SecureXml -XmlFile $usersXml
+        if (-not $users) {
+            Write-Log "Failed to parse tomcat-users.xml" "ERROR"
+            continue
+        }
+        
         $user = $users.SelectSingleNode("//user[@username='testuser']")
         if (-not $user) {
             $user = $users.CreateElement("user")
@@ -166,23 +292,31 @@ foreach ($serverTest in $serverTests) {
             $users.'tomcat-users'.AppendChild($user)
         }
         $user.SetAttribute("password", $passwordValues[$passwordTest])
-        # Save with explicit UTF-8 encoding
-        $writerSettings = New-Object System.Xml.XmlWriterSettings
-        $writerSettings.Encoding = [System.Text.Encoding]::UTF8
-        $writerSettings.Indent = $true
-        $writer = [System.Xml.XmlWriter]::Create($usersXml, $writerSettings)
-        $users.Save($writer)
-        $writer.Close()
+        
+        if (-not (Set-SecureXml -XmlFile $usersXml -XmlContent $users)) {
+            Write-Log "Failed to update tomcat-users.xml" "ERROR"
+            continue
+        }
 
         # Run CheckTomcatConfigWin.ps1
-        $output = & ".\CheckTomcatConfigWin.ps1" -TomcatConfPath $tomcatConfPath 2>&1
-        Write-Log "Test output: $output"
+        try {
+            $output = & ".\CheckTomcatConfigWin.ps1" -TomcatConfPath $tomcatConfPath 2>&1
+            Write-Log "Test output: $output"
+        }
+        catch {
+            Write-Log "Error running CheckTomcatConfigWin.ps1: $_" "ERROR"
+        }
     }
 }
 
 # Restore original files
-Copy-Item "$backupDir\server.xml.bak" $serverXml -Force
-Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force
-Write-Log "Restored original configuration files"
+try {
+    Copy-Item "$backupDir\server.xml.bak" $serverXml -Force
+    Copy-Item "$backupDir\tomcat-users.xml.bak" $usersXml -Force
+    Write-Log "Restored original configuration files"
+}
+catch {
+    Write-Log "Error restoring original files: $_" "ERROR"
+}
 
 Write-Log "All tests completed successfully"

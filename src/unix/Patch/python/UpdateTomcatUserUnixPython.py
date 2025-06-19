@@ -1,499 +1,440 @@
 #!/usr/bin/env python3
 # UpdateTomcatUserUnixPython.py
-# Processes existing users with plaintext passwords, generates compliant hashes, updates tomcat-users.xml and server.xml, and restarts Tomcat service
+# Update Tomcat user credentials with secure password hashing
 
 import os
-import re
 import sys
+import re
 import subprocess
-import datetime
-import socket
+import logging
 import xml.etree.ElementTree as ET
 import shutil
 import time
+import socket
+import argparse
+from datetime import datetime
 from pathlib import Path
+from typing import Optional, Tuple, List, Dict, Any
 
-# Log setup
+# Constants
 LOG_FILE = "/tmp/TomcatManager.csv"
-log_messages = []
+LOG_DIR = "/tmp"
+LOG_FILE_PATH = os.path.join(LOG_DIR, "TomcatManager.log")
+TIMESTAMP = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+HOSTNAME = socket.gethostname()
 
-def write_log(message, indent=0):
-    """
-    Store a log message in memory and print to console with indentation.
-    indent: Number of indentation levels (each level is two spaces).
-    """
-    indent_spaces = "  " * indent
-    log_message = f"{indent_spaces}{message}"
-    log_messages.append(log_message)
-    print(log_message, file=sys.stderr)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE_PATH),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
-# Ensure log file has header and secure permissions
-if not os.path.exists(LOG_FILE):
-    try:
-        with open(LOG_FILE, "w") as f:
-            f.write("Timestamp,Message\n")
-        os.chmod(LOG_FILE, 0o600)
-    except (PermissionError, OSError):
-        write_log(f"Warning: Cannot create {LOG_FILE}. Logging to console only.", indent=2)
-
-def get_tomcat_config_path(custom_conf_path=None):
-    """Locate Tomcat configuration directory."""
-    conf_path = None
-    default_path = "/mnt/f/Koger/apps/apache-tomcat-7.0.94"
-
-    # Check default path
-    write_log(f"Checking default configuration path: {default_path}")
-    if (os.path.isdir(f"{default_path}/conf") and
-        os.path.isfile(f"{default_path}/conf/server.xml") and
-        os.path.isfile(f"{default_path}/conf/tomcat-users.xml") and
-        os.path.isfile(f"{default_path}/bin/digest.sh")):
-        conf_path = f"{default_path}/conf"
-        write_log(f"Found valid Tomcat configuration at default path: {conf_path}")
-
-    # Check custom path
-    if not conf_path and custom_conf_path:
-        write_log(f"Checking custom configuration path: {custom_conf_path}")
-        if (os.path.isdir(custom_conf_path) and
-            os.path.isfile(f"{custom_conf_path}/server.xml") and
-            os.path.isfile(f"{custom_conf_path}/tomcat-users.xml") and
-            os.path.isfile(f"{os.path.dirname(custom_conf_path)}/bin/digest.sh")):
-            conf_path = custom_conf_path
-            write_log(f"Found valid Tomcat configuration at custom path: {conf_path}")
-        else:
-            write_log(f"ERROR: Invalid custom configuration path: {custom_conf_path}", indent=2)
-
-    # Check environment variables
-    if not conf_path and "CATALINA_BASE" in os.environ:
-        base = os.environ["CATALINA_BASE"]
-        if (os.path.isdir(f"{base}/conf") and
-            os.path.isfile(f"{base}/conf/server.xml") and
-            os.path.isfile(f"{base}/conf/tomcat-users.xml") and
-            os.path.isfile(f"{base}/bin/digest.sh")):
-            conf_path = f"{base}/conf"
-            write_log(f"Found Tomcat configuration at CATALINA_BASE: {conf_path}")
-
-    if not conf_path and "CATALINA_HOME" in os.environ:
-        home = os.environ["CATALINA_HOME"]
-        if (os.path.isdir(f"{home}/conf") and
-            os.path.isfile(f"{home}/conf/server.xml") and
-            os.path.isfile(f"{home}/conf/tomcat-users.xml") and
-            os.path.isfile(f"{home}/bin/digest.sh")):
-            conf_path = f"{home}/conf"
-            write_log(f"Found Tomcat configuration at CATALINA_HOME: {conf_path}")
-
-    # Search common paths
-    if not conf_path:
-        write_log("Searching common Tomcat configuration paths...")
-        possible_paths = [
-            "/opt/tomcat/conf",
-            "/usr/local/tomcat/conf",
-            "/var/lib/tomcat7/conf",
-            "/var/lib/tomcat8/conf",
-            "/var/lib/tomcat9/conf",
-            "/var/lib/tomcat10/conf",
-            "/usr/share/tomcat/conf",
-            "/usr/share/tomcat7/conf",
-            "/usr/share/tomcat8/conf",
-            "/usr/share/tomcat9/conf",
-            "/usr/share/tomcat10/conf",
-            "/etc/tomcat/conf",
-            "/etc/tomcat7/conf",
-            "/etc/tomcat8/conf",
-            "/etc/tomcat9/conf",
-            "/etc/tomcat10/conf"
-        ]
-        for path in possible_paths:
-            if (os.path.isdir(path) and
-                os.path.isfile(f"{path}/server.xml") and
-                os.path.isfile(f"{path}/tomcat-users.xml") and
-                os.path.isfile(f"{os.path.dirname(path)}/bin/digest.sh")):
-                conf_path = path
-                write_log(f"Found Tomcat configuration at: {path}")
-                break
-
-    if not conf_path:
-        write_log("ERROR: Could not locate Tomcat configuration directory.")
-        write_log("  - Ensure Tomcat is installed and digest.sh exists", indent=2)
-        return None
-
-    return conf_path
-
-def detect_tomcat_version(tomcat_home):
-    """Detect Tomcat version from RELEASE-NOTES or default to 7.0."""
-    version_file = os.path.join(tomcat_home, "RELEASE-NOTES")
-    version = "7.0"  # Default
-
-    if os.path.isfile(version_file):
+class XMLHandler:
+    """Handles XML operations securely"""
+    
+    @staticmethod
+    def validate_xml_structure(xml_file: str) -> bool:
+        """Validate XML structure and content"""
         try:
-            with open(version_file, "r") as f:
-                content = f.read()
-                match = re.search(r"Apache Tomcat Version\s+([0-9]+\.[0-9]+\.[0-9]+)", content)
-                if match:
-                    full_version = match.group(1)
-                    if full_version.startswith("7.0"): version = "7.0"
-                    elif full_version.startswith("8.0"): version = "8.0"
-                    elif full_version.startswith("8.5"): version = "8.5"
-                    elif full_version.startswith("9.0"): version = "9.0"
-                    elif full_version.startswith("10.0"): version = "10.0"
-                    elif full_version.startswith("10.1"): version = "10.1"
-                    write_log(f"Version found in RELEASE-NOTES: {full_version} ({version})")
-        except Exception as e:
-            write_log(f"Warning: Error reading {version_file}: {str(e)}", indent=2)
-    else:
-        write_log("Warning: RELEASE-NOTES not found, defaulting to version 7.0", indent=2)
-
-    return version
-
-def generate_password_hash(tomcat_bin, password, tomcat_version):
-    """Generate compliant hash using digest.sh."""
-    digest_script = os.path.join(tomcat_bin, "digest.sh")
-    algorithm = ""
-    iterations = ""
-    salt_length = ""
-
-    # Set algorithm and parameters based on Tomcat version
-    if tomcat_version == "7.0":
-        algorithm = "SHA-256"
-    elif tomcat_version == "8.5":
-        algorithm = "SHA-512"
-        iterations = "10000"
-        salt_length = "16"
-    elif tomcat_version in ["9.0", "10.0", "10.1"]:
-        algorithm = "PBKDF2WithHmacSHA512"
-        iterations = "10000"
-        salt_length = "16"
-    else:
-        write_log(f"ERROR: Unsupported Tomcat version: {tomcat_version}", indent=2)
-        return None
-
-    if not (os.path.isfile(digest_script) and os.access(digest_script, os.X_OK)):
-        write_log(f"ERROR: digest.sh not found or not executable at {digest_script}", indent=2)
-        return None
-
-    # Verify JAVA_HOME
-    if "JAVA_HOME" not in os.environ:
-        write_log("ERROR: JAVA_HOME is not set, required for digest.sh", indent=2)
-        return None
-
-    # Run digest.sh
-    try:
-        cmd = [digest_script, "-a", algorithm]
-        if tomcat_version != "7.0":
-            cmd.extend(["-i", iterations, "-s", salt_length])
-        cmd.append(password)
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            write_log("ERROR: Failed to generate hash using digest.sh", indent=2)
-            return None
-
-        # Extract hash
-        match = re.search(r'[0-9a-fA-F:]+', result.stdout)
-        if not match:
-            write_log("ERROR: Failed to parse hash from digest.sh output", indent=2)
-            return None
-        return match.group(0)
-    except Exception as e:
-        write_log(f"ERROR: Failed to generate hash: {str(e)}", indent=2)
-        return None
-
-def get_plaintext_users(users_xml_path):
-    """Extract users with plaintext passwords from tomcat-users.xml."""
-    if not os.path.isfile(users_xml_path):
-        write_log(f"ERROR: {users_xml_path} not found", indent=2)
-        return None
-
-    if os.path.getsize(users_xml_path) == 0:
-        write_log(f"WARNING: {users_xml_path} is empty", indent=2)
-        return []
-
-    try:
-        with open(users_xml_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        users = []
-        user_pattern = re.compile(r'<user[^>]*username="([^"]+)"[^>]*password="([^"]+)"[^>]*>')
-        for match in user_pattern.finditer(content):
-            username = match.group(1)
-            password = match.group(2)
-            # Check if password is plaintext (not a hash)
-            if not re.match(r'^[0-9a-fA-F:]+$', password) or not re.match(
-                r'^[0-9a-fA-F]{32}$|^[0-9a-fA-F]{40}$|^[0-9a-fA-F]{64}$|^[0-9a-fA-F]{128}$|^[0-9a-fA-F]+:[0-9a-fA-F]+$',
-                password):
-                users.append({"username": username, "password": password})
-        if not users:
-            write_log(f"No users with plaintext passwords found in {users_xml_path}", indent=2)
-        return users
-    except Exception as e:
-        write_log(f"ERROR: Failed to read {users_xml_path}: {str(e)}", indent=2)
-        return None
-
-def update_tomcat_users_xml(users_xml_path, user_pairs):
-    """Update tomcat-users.xml with new hashes."""
-    backup_path = f"{users_xml_path}.bak.{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-    try:
-        shutil.copy2(users_xml_path, backup_path)
-        os.chmod(backup_path, 0o600)
-        write_log(f"Backed up {users_xml_path} to {backup_path}")
-    except Exception as e:
-        write_log(f"ERROR: Failed to backup {users_xml_path}: {str(e)}", indent=2)
-        return False
-
-    try:
-        tree = ET.parse(users_xml_path)
-        root = tree.getroot()
-        for pair in user_pairs:
-            username = pair["username"]
-            hash_value = pair["hash"]
-            for user in root.findall(".//user"):
-                if user.get("username") == username:
-                    user.set("password", hash_value)
-                    write_log(f"Updated user {username} with new hash in {users_xml_path}")
-        tree.write(users_xml_path)
-        # Basic XML validation
-        with open(users_xml_path, "r", encoding="utf-8") as f:
-            if "</tomcat-users>" not in f.read():
-                raise ValueError("Invalid XML")
-        return True
-    except Exception as e:
-        write_log(f"ERROR: Failed to update {users_xml_path}: {str(e)}", indent=2)
-        shutil.copy2(backup_path, users_xml_path)
-        write_log(f"Restored {users_xml_path} from backup")
-        return False
-
-def update_server_xml(server_xml_path, tomcat_version):
-    """Configure server.xml for compliance."""
-    backup_path = f"{server_xml_path}.bak.{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-    try:
-        shutil.copy2(server_xml_path, backup_path)
-        os.chmod(backup_path, 0o600)
-        write_log(f"Backed up {server_xml_path} to {backup_path}")
-    except Exception as e:
-        write_log(f"ERROR: Failed to backup {server_xml_path}: {str(e)}", indent=2)
-        return False
-
-    try:
-        tree = ET.parse(server_xml_path)
-        root = tree.getroot()
-        realm = root.find(".//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']")
-        if not realm:
-            engine = root.find(".//Engine")
-            realm = ET.SubElement(engine, "Realm", className="org.apache.catalina.realm.UserDatabaseRealm", resourceName="UserDatabase")
-            write_log(f"Added new Realm to {server_xml_path}")
-
-        # Remove existing CredentialHandler
-        for ch in realm.findall("CredentialHandler"):
-            realm.remove(ch)
-
-        # Add new CredentialHandler
-        ch = ET.SubElement(realm, "CredentialHandler")
-        if tomcat_version == "7.0":
-            ch.set("className", "org.apache.catalina.realm.MessageDigestCredentialHandler")
-            ch.set("algorithm", "SHA-256")
-        elif tomcat_version == "8.5":
-            ch.set("className", "org.apache.catalina.realm.MessageDigestCredentialHandler")
-            ch.set("algorithm", "SHA-512")
-            ch.set("iterations", "10000")
-            ch.set("saltLength", "16")
-        elif tomcat_version in ["9.0", "10.0", "10.1"]:
-            ch.set("className", "org.apache.catalina.realm.SecretKeyCredentialHandler")
-            ch.set("algorithm", "PBKDF2WithHmacSHA512")
-            ch.set("iterations", "10000")
-            ch.set("saltLength", "16")
-            ch.set("keyLength", "256")
-        else:
-            write_log(f"ERROR: Unsupported Tomcat version: {tomcat_version}", indent=2)
-            return False
-
-        tree.write(server_xml_path)
-        # Basic XML validation
-        with open(server_xml_path, "r", encoding="utf-8") as f:
-            if "</Server>" not in f.read():
-                raise ValueError("Invalid XML")
-        write_log(f"Updated Realm configuration in {server_xml_path}")
-        return True
-    except Exception as e:
-        write_log(f"ERROR: Failed to update {server_xml_path}: {str(e)}", indent=2)
-        shutil.copy2(backup_path, server_xml_path)
-        write_log(f"Restored {server_xml_path} from backup")
-        return False
-
-def restart_tomcat_service(tomcat_home):
-    """Restart Tomcat service."""
-    service_name = None
-    for svc in ["tomcat", "tomcat7", "tomcat8", "tomcat9", "tomcat10"]:
-        try:
-            result = subprocess.run(["systemctl", "is-active", svc], capture_output=True, text=True)
-            if result.returncode == 0:
-                service_name = svc
-                break
-        except subprocess.CalledProcessError:
-            continue
-
-    if service_name:
-        write_log(f"Restarting Tomcat service: {service_name}")
-        try:
-            subprocess.run(["systemctl", "restart", service_name], check=True, capture_output=True)
-            time.sleep(5)
-            result = subprocess.run(["systemctl", "is-active", service_name], capture_output=True, text=True)
-            if result.returncode != 0:
-                write_log(f"ERROR: Tomcat service {service_name} failed to start", indent=2)
+            if not os.path.exists(xml_file):
+                logger.error(f"XML file {xml_file} not found")
                 return False
-            write_log(f"Tomcat service {service_name} restarted successfully")
-            return True
-        except subprocess.CalledProcessError as e:
-            write_log(f"ERROR: Failed to restart Tomcat service {service_name}: {str(e)}", indent=2)
-            return False
-    else:
-        catalina_script = os.path.join(tomcat_home, "bin/catalina.sh")
-        if os.path.isfile(catalina_script) and os.access(catalina_script, os.X_OK):
-            write_log("No systemd service found, using catalina.sh to restart")
-            try:
-                subprocess.run([catalina_script, "stop"], capture_output=True, check=True)
-                time.sleep(5)
-                subprocess.run([catalina_script, "start"], capture_output=True, check=True)
-                time.sleep(5)
-                result = subprocess.run(["pgrep", "-f", "org.apache.catalina.startup.Bootstrap"], capture_output=True)
-                if result.returncode != 0:
-                    write_log("ERROR: Tomcat failed to start via catalina.sh", indent=2)
+                
+            # Check for XML declaration
+            with open(xml_file, 'r') as f:
+                first_line = f.readline().strip()
+                if not first_line.startswith('<?xml'):
+                    logger.error(f"Invalid XML declaration in {xml_file}")
                     return False
-                write_log("Tomcat restarted successfully via catalina.sh")
-                return True
-            except subprocess.CalledProcessError as e:
-                write_log(f"ERROR: Failed to restart Tomcat using catalina.sh: {str(e)}", indent=2)
+            
+            # Parse XML
+            ET.parse(xml_file)
+            return True
+        except ET.ParseError as e:
+            logger.error(f"Invalid XML structure in {xml_file}: {str(e)}")
+            return False
+        except Exception as e:
+            logger.error(f"Error validating XML {xml_file}: {str(e)}")
+            return False
+
+    @staticmethod
+    def secure_parse_xml(xml_file: str) -> Tuple[bool, Optional[ET.ElementTree]]:
+        """Securely parse XML file with validation"""
+        try:
+            if not os.path.exists(xml_file):
+                logger.error(f"XML file {xml_file} not found")
+                return False, None
+                
+            if not os.access(xml_file, os.R_OK):
+                logger.error(f"No read permission for {xml_file}")
+                return False, None
+                
+            if not XMLHandler.validate_xml_structure(xml_file):
+                return False, None
+                
+            tree = ET.parse(xml_file)
+            return True, tree
+        except Exception as e:
+            logger.error(f"Error parsing XML {xml_file}: {str(e)}")
+            return False, None
+
+    @staticmethod
+    def secure_write_xml(xml_file: str, tree: ET.ElementTree) -> bool:
+        """Securely write XML file with backup"""
+        try:
+            # Create backup
+            if os.path.exists(xml_file):
+                backup_file = f"{xml_file}.bak.{int(time.time())}"
+                shutil.copy2(xml_file, backup_file)
+                os.chmod(backup_file, 0o600)
+                logger.info(f"Created backup: {backup_file}")
+            
+            # Write to temporary file
+            temp_file = f"{xml_file}.tmp"
+            tree.write(temp_file, encoding='utf-8', xml_declaration=True)
+            
+            # Validate temporary file
+            if not XMLHandler.validate_xml_structure(temp_file):
+                os.remove(temp_file)
                 return False
-        else:
-            write_log("ERROR: No Tomcat service or catalina.sh found", indent=2)
+            
+            # Move to final location
+            shutil.move(temp_file, xml_file)
+            os.chmod(xml_file, 0o600)
+            return True
+        except Exception as e:
+            logger.error(f"Error writing XML {xml_file}: {str(e)}")
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            return False
+
+class TomcatVersionDetector:
+    """Detects Tomcat version from various sources"""
+    
+    @staticmethod
+    def detect_version(tomcat_home: str) -> str:
+        """Detect Tomcat version from RELEASE-NOTES or path"""
+        version = "7.0"  # Default fallback
+        
+        # Check RELEASE-NOTES
+        release_notes = os.path.join(tomcat_home, "RELEASE-NOTES")
+        if os.path.exists(release_notes):
+            try:
+                with open(release_notes, 'r') as f:
+                    content = f.read()
+                    match = re.search(r"Apache Tomcat Version (\d+\.\d+\.\d+)", content)
+                    if match:
+                        full_version = match.group(1)
+                        if full_version.startswith("7.0"): version = "7.0"
+                        elif full_version.startswith("8.5"): version = "8.5"
+                        elif full_version.startswith("9.0"): version = "9.0"
+                        elif full_version.startswith("10.0"): version = "10.0"
+                        elif full_version.startswith("10.1"): version = "10.1"
+            except Exception as e:
+                logger.warning(f"Error reading RELEASE-NOTES: {str(e)}")
+        
+        # Check path name
+        tomcat_home_lower = tomcat_home.lower()
+        if "tomcat7" in tomcat_home_lower: version = "7.0"
+        elif "tomcat8" in tomcat_home_lower: version = "8.5"
+        elif "tomcat9" in tomcat_home_lower: version = "9.0"
+        elif "tomcat10" in tomcat_home_lower: version = "10.0"
+        
+        return version
+
+class PasswordHandler:
+    """Handles password operations securely"""
+    
+    HASH_PATTERNS = {
+        "7.0": re.compile(r'^[0-9a-fA-F]{64}$'),
+        "8.5": re.compile(r'^[0-9a-fA-F]{128}$'),
+        "9.0": re.compile(r'^[0-9a-fA-F]+:[0-9a-fA-F]+$'),
+        "10.0": re.compile(r'^[0-9a-fA-F]+:[0-9a-fA-F]+$'),
+        "10.1": re.compile(r'^[0-9a-fA-F]+:[0-9a-fA-F]+$')
+    }
+    
+    @staticmethod
+    def validate_hash_format(hash_value: str, version: str) -> bool:
+        """Validate hash format based on Tomcat version"""
+        pattern = PasswordHandler.HASH_PATTERNS.get(version)
+        if not pattern:
+            logger.error(f"Unsupported Tomcat version: {version}")
+            return False
+        return bool(pattern.match(hash_value))
+
+    @staticmethod
+    def generate_password_hash(tomcat_bin: str, password: str, version: str) -> Optional[str]:
+        """Generate password hash using digest.sh"""
+        try:
+            digest_script = os.path.join(tomcat_bin, "digest.sh")
+            if not os.path.exists(digest_script) or not os.access(digest_script, os.X_OK):
+                logger.error("digest.sh not found or not executable")
+                return None
+            
+            # Set algorithm and parameters based on version
+            algorithm = "SHA-256" if version == "7.0" else "SHA-512"
+            iterations = None if version == "7.0" else "10000"
+            salt_length = None if version == "7.0" else "16"
+            
+            # Build command
+            cmd = [digest_script, "-a", algorithm]
+            if iterations:
+                cmd.extend(["-i", iterations])
+            if salt_length:
+                cmd.extend(["-s", salt_length])
+            cmd.append(password)
+            
+            # Run digest.sh
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            hash_value = re.search(r'[0-9a-fA-F:]+$', result.stdout)
+            
+            if not hash_value:
+                logger.error("Failed to generate hash")
+                return None
+                
+            return hash_value.group(0)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error running digest.sh: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"Error generating hash: {str(e)}")
+            return None
+
+class ServiceManager:
+    """Manages Tomcat service operations"""
+    
+    @staticmethod
+    def get_service_name() -> Optional[str]:
+        """Get active Tomcat service name"""
+        for svc in ["tomcat", "tomcat7", "tomcat8", "tomcat9", "tomcat10"]:
+            try:
+                result = subprocess.run(
+                    ["systemctl", "is-active", "--quiet", svc],
+                    capture_output=True
+                )
+                if result.returncode == 0:
+                    return svc
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def manage_service(tomcat_home: str, action: str, timeout: int = 60) -> bool:
+        """Manage Tomcat service (start/stop/restart)"""
+        try:
+            service_name = ServiceManager.get_service_name()
+            
+            if service_name:
+                # Use systemd
+                if action == "restart":
+                    subprocess.run(["systemctl", "stop", service_name], check=True)
+                    time.sleep(5)
+                    subprocess.run(["systemctl", "start", service_name], check=True)
+                else:
+                    subprocess.run(["systemctl", action, service_name], check=True)
+            else:
+                # Use catalina.sh
+                catalina_script = os.path.join(tomcat_home, "bin", "catalina.sh")
+                if not os.path.exists(catalina_script) or not os.access(catalina_script, os.X_OK):
+                    logger.error("catalina.sh not found or not executable")
+                    return False
+                
+                if action == "restart":
+                    subprocess.run([catalina_script, "stop"], check=True)
+                    time.sleep(5)
+                    subprocess.run([catalina_script, "start"], check=True)
+                else:
+                    subprocess.run([catalina_script, action], check=True)
+            
+            # Wait for service to be ready
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                try:
+                    with socket.create_connection(("localhost", 8080), timeout=1):
+                        return True
+                except (socket.timeout, socket.error):
+                    time.sleep(1)
+            
+            logger.error("Service failed to start within timeout")
+            return False
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error managing service: {str(e)}")
+            return False
+        except Exception as e:
+            logger.error(f"Error managing service: {str(e)}")
+            return False
+
+class UserManager:
+    """Manages Tomcat user operations"""
+    
+    VALID_ROLES = {
+        "manager-gui", "manager-script", "manager-jmx", "manager-status",
+        "admin-gui", "admin-script"
+    }
+    
+    @staticmethod
+    def validate_username(username: str) -> bool:
+        """Validate username format"""
+        if not re.match(r'^[a-zA-Z0-9_]+$', username):
+            logger.error("Invalid username format")
+            return False
+        return True
+
+    @staticmethod
+    def validate_password(password: str) -> bool:
+        """Validate password requirements"""
+        if len(password) < 8:
+            logger.error("Password must be at least 8 characters")
+            return False
+        return True
+
+    @staticmethod
+    def validate_roles(roles: str) -> bool:
+        """Validate role names"""
+        role_list = roles.split(',')
+        for role in role_list:
+            if role not in UserManager.VALID_ROLES:
+                logger.error(f"Invalid role: {role}")
+                return False
+        return True
+
+    @staticmethod
+    def update_user(
+        users_xml_path: str,
+        username: str,
+        password: str,
+        roles: str,
+        tomcat_version: str,
+        tomcat_bin: str
+    ) -> bool:
+        """Update or create user in tomcat-users.xml"""
+        try:
+            # Validate inputs
+            if not all([
+                UserManager.validate_username(username),
+                UserManager.validate_password(password),
+                UserManager.validate_roles(roles)
+            ]):
+                return False
+            
+            # Generate password hash
+            hash_value = PasswordHandler.generate_password_hash(
+                tomcat_bin, password, tomcat_version
+            )
+            if not hash_value:
+                return False
+            
+            # Parse XML
+            success, tree = XMLHandler.secure_parse_xml(users_xml_path)
+            if not success or not tree:
+                return False
+            
+            root = tree.getroot()
+            
+            # Find existing user
+            user = root.find(f".//user[@username='{username}']")
+            
+            if user is not None:
+                # Update existing user
+                user.set('password', hash_value)
+                user.set('roles', roles)
+            else:
+                # Create new user
+                new_user = ET.SubElement(root, 'user')
+                new_user.set('username', username)
+                new_user.set('password', hash_value)
+                new_user.set('roles', roles)
+            
+            # Write changes
+            return XMLHandler.secure_write_xml(users_xml_path, tree)
+        except Exception as e:
+            logger.error(f"Error updating user: {str(e)}")
             return False
 
 def main():
-    """Main function to execute the audit and update process."""
+    """Main function"""
+    # Check root privileges
     if os.geteuid() != 0:
-        write_log("ERROR: This script must be run as root or with sudo")
+        logger.error("This script must be run as root or with sudo")
         sys.exit(1)
-
+    
+    # Create log directory
+    os.makedirs(LOG_DIR, exist_ok=True)
+    
+    # Initialize log file
+    if not os.path.exists(LOG_FILE):
+        with open(LOG_FILE, 'w') as f:
+            f.write("Timestamp,Message\n")
+    
     # Parse arguments
-    custom_conf_path = None
-    for arg in sys.argv[1:]:
-        if arg.startswith("--custom-conf="):
-            custom_conf_path = arg.split("=", 1)[1]
-        else:
-            write_log(f"ERROR: Unknown argument: {arg}")
-            sys.exit(1)
-
-    exec_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    hostname = socket.gethostname()
-    write_log(f"Execution Time: {exec_time}")
-    write_log(f"Hostname: {hostname}")
-    write_log("===========================")
-
-    conf_path = get_tomcat_config_path(custom_conf_path)
+    parser = argparse.ArgumentParser(description='Update Tomcat user credentials')
+    parser.add_argument('--username', required=True, help='Username')
+    parser.add_argument('--password', required=True, help='Password')
+    parser.add_argument('--roles', required=True, help='Comma-separated roles')
+    parser.add_argument('--conf-path', help='Custom Tomcat configuration path')
+    args = parser.parse_args()
+    
+    # Get Tomcat configuration path
+    conf_path = args.conf_path
     if not conf_path:
-        combined_message = "; ".join(log_messages)
-        log_entry = f"{exec_time},\"{combined_message}\""
-        try:
-            with open(LOG_FILE, "a") as f:
-                f.write(log_entry + "\n")
-        except PermissionError:
-            write_log(f"Error: Cannot write to {LOG_FILE}")
+        if 'CATALINA_HOME' in os.environ:
+            conf_path = os.path.join(os.environ['CATALINA_HOME'], 'conf')
+        elif 'CATALINA_BASE' in os.environ:
+            conf_path = os.path.join(os.environ['CATALINA_BASE'], 'conf')
+        else:
+            for path in [
+                "/opt/tomcat/conf",
+                "/usr/local/tomcat/conf",
+                "/var/lib/tomcat/conf",
+                "/usr/share/tomcat/conf"
+            ]:
+                if os.path.isdir(path) and os.path.exists(os.path.join(path, "server.xml")):
+                    conf_path = path
+                    break
+    
+    if not conf_path:
+        logger.error("Could not locate Tomcat configuration directory")
         sys.exit(1)
-
+    
     tomcat_home = os.path.dirname(conf_path)
-    write_log(f"Tomcat Home: {tomcat_home}")
-    write_log(f"Config Path: {conf_path}")
-
-    tomcat_version = detect_tomcat_version(tomcat_home)
-    write_log(f"Tomcat Version: {tomcat_version}")
-
+    logger.info(f"Tomcat Home: {tomcat_home}")
+    logger.info(f"Config Path: {conf_path}")
+    
+    # Detect Tomcat version
+    tomcat_version = TomcatVersionDetector.detect_version(tomcat_home)
+    logger.info(f"Tomcat Version: {tomcat_version}")
+    
+    # Update user
     users_xml_path = os.path.join(conf_path, "tomcat-users.xml")
-    write_log(f"Reading {users_xml_path} for users with plaintext passwords")
-    plaintext_users = get_plaintext_users(users_xml_path)
-    if plaintext_users is None:
-        combined_message = "; ".join(log_messages)
-        log_entry = f"{exec_time},\"{combined_message}\""
-        try:
-            with open(LOG_FILE, "a") as f:
-                f.write(log_entry + "\n")
-        except PermissionError:
-            write_log(f"Error: Cannot write to {LOG_FILE}")
+    if not UserManager.update_user(
+        users_xml_path,
+        args.username,
+        args.password,
+        args.roles,
+        tomcat_version,
+        os.path.join(tomcat_home, "bin")
+    ):
+        logger.error("Failed to update user")
         sys.exit(1)
-
-    if not plaintext_users:
-        write_log("No plaintext passwords to update")
-        write_log(f"Updating {users_xml_path} for compliance only")
-    else:
-        write_log(f"Found {len(plaintext_users)} user(s) with plaintext passwords")
-
-    updated_users = []
-    for user in plaintext_users:
-        username = user["username"]
-        password = user["password"]
-        write_log(f"Processing user: {username} (Original plaintext password: [REDACTED])", indent=2)
-        hash_value = generate_password_hash(tomcat_home + "/bin", password, tomcat_version)
-        if not hash_value:
-            combined_message = "; ".join(log_messages)
-            log_entry = f"{exec_time},\"{combined_message}\""
-            try:
-                with open(LOG_FILE, "a") as f:
-                    f.write(log_entry + "\n")
-            except PermissionError:
-                write_log(f"Error: Cannot write to {LOG_FILE}")
-            sys.exit(1)
-        write_log(f"Generated Hash for {username}: {hash_value}", indent=2)
-        updated_users.append({"username": username, "hash": hash_value})
-
-    if updated_users:
-        write_log(f"Updating {users_xml_path} with new hashes")
-        if not update_tomcat_users_xml(users_xml_path, updated_users):
-            combined_message = "; ".join(log_messages)
-            log_entry = f"{exec_time},\"{combined_message}\""
-            try:
-                with open(LOG_FILE, "a") as f:
-                    f.write(log_entry + "\n")
-            except PermissionError:
-                write_log(f"Error: Cannot write to {LOG_FILE}")
-            sys.exit(1)
-
-    server_xml_path = os.path.join(conf_path, "server.xml")
-    write_log(f"Updating {server_xml_path} for compliance")
-    if not update_server_xml(server_xml_path, tomcat_version):
-        combined_message = "; ".join(log_messages)
-        log_entry = f"{exec_time},\"{combined_message}\""
-        try:
-            with open(LOG_FILE, "a") as f:
-                f.write(log_entry + "\n")
-            except PermissionError:
-                write_log(f"Error: Cannot write to {LOG_FILE}")
+    
+    # Restart Tomcat
+    logger.info("Restarting Tomcat to apply changes")
+    if not ServiceManager.manage_service(tomcat_home, "restart"):
+        logger.error("Failed to restart Tomcat service")
         sys.exit(1)
-
-    write_log("Restarting Tomcat to apply changes")
-    if not restart_tomcat_service(tomcat_home):
-        combined_message = "; ".join(log_messages)
-        log_entry = f"{exec_time},\"{combined_message}\""
-        try:
-            with open(LOG_FILE, "a") as f:
-                f.write(log_entry + "\n")
-        except PermissionError:
-            write_log(f"Error: Cannot write to {LOG_FILE}")
-        sys.exit(1)
-
-    compliance_status = {
-        "7.0": "Compliant with SHA-256 (MessageDigestCredentialHandler)",
-        "8.5": "Compliant with SHA-512, 10000 iterations, 16-byte salt (MessageDigestCredentialHandler)",
-        "9.0": "Compliant with PBKDF2WithHmacSHA512, 10000 iterations, 16-byte salt (SecretKeyCredentialHandler)",
-        "10.0": "Compliant with PBKDF2WithHmacSHA512, 10000 iterations, 16-byte salt (SecretKeyCredentialHandler)",
-        "10.1": "Compliant with PBKDF2WithHmacSHA512, 10000 iterations, 16-byte salt (SecretKeyCredentialHandler)"
-    }.get(tomcat_version, "Unknown compliance status")
-    write_log(f"Compliance Status: {compliance_status}")
-    write_log("===========================")
-    write_log("Overall Status: Secure")
-    write_log("Audit completed")
-
-    combined_message = "; ".join(log_messages)
-    log_entry = f"{exec_time},\"{combined_message}\""
-    try:
-        with open(LOG_FILE, "a") as f:
-            f.write(log_entry + "\n")
-    except PermissionError:
-        write_log(f"Error: Cannot write to {LOG_FILE}")
+    
+    logger.info(f"User {args.username} updated successfully")
+    logger.info("Overall Status: Secure")
+    
+    # Log results
+    log_message = f"User: {args.username}; Roles: {args.roles}; Tomcat Version: {tomcat_version}; Status: Updated"
+    with open(LOG_FILE, 'a') as f:
+        f.write(f"{TIMESTAMP},\"{log_message}\"\n")
 
 if __name__ == "__main__":
     main()

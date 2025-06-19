@@ -47,6 +47,12 @@
   - PowerShell remoting enabled for remote auditing.
 - **Java**: Java 8 for Tomcat 7.0; Java 11 for 8.5, 9.0, 10.0, 10.1.
 
+### Secure Tomcat Installation (Recommended)
+
+For automated, secure installation of Tomcat (all supported versions), use the install scripts provided in the `install/` directory. These scripts handle download, extraction, Java setup, secure user configuration, and service management for both Windows and Unix.
+
+See [install/README.md](install/README.md) for full instructions and usage examples.
+
 ### Clone Repository
 ```bash
 git clone https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit ~/tomcat-audit
@@ -381,7 +387,7 @@ Apache-Tomcat-Password-Security-Audit/
   - Ensure `server.xml`, `tomcat-users.xml`, and `digest.sh`/`digest.bat` exist in the `conf` and `bin` directories.
 - **Unix Permissions**:
   - Run with `sudo`.
-  - Check write access to `/tmp` and Tomcat’s `conf` directory:
+  - Check write access to `/tmp` and Tomcat's `conf` directory:
     ```bash
     sudo chmod 644 /opt/tomcat/conf/*
     ```
