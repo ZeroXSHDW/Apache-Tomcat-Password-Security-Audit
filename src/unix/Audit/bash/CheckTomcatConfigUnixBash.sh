@@ -427,26 +427,62 @@ fi
         exit 1
     fi
     
-    # Report compliance status
-    local compliance_status
-    case $tomcat_version in
-        "7.0")
-            compliance_status="Compliant with SHA-256 (MessageDigestCredentialHandler)"
-            ;;
-        "8.5")
-            compliance_status="Compliant with SHA-512, 10000 iterations, 16-byte salt (MessageDigestCredentialHandler)"
-            ;;
-        "9.0"|"10.0"|"10.1")
-            compliance_status="Compliant with PBKDF2WithHmacSHA512, 10000 iterations, 16-byte salt (SecretKeyCredentialHandler)"
-            ;;
-    esac
-    
-    echo "Compliance Status: $compliance_status"
+    # Print timestamp and hostname
+    local timestamp_fmt=$(date '+%I:%M %p %Z, %A, %B %d, %Y')
+    echo "$timestamp_fmt"
+    echo "$HOSTNAME"
+    echo "==========================="
+    echo "Config Path: $conf_path"
+    echo "Tomcat Version: $tomcat_version"
+    echo "Auditing server.xml"
+    echo "Server Configuration:"
+
+    # Parse CredentialHandler details
+    local credential_handler algorithm iterations salt_length
+    credential_handler=$(xmllint --xpath 'string(//Realm/CredentialHandler/@className)' "$server_xml_path" 2>/dev/null)
+    algorithm=$(xmllint --xpath 'string(//Realm/CredentialHandler/@algorithm)' "$server_xml_path" 2>/dev/null)
+    iterations=$(xmllint --xpath 'string(//Realm/CredentialHandler/@iterations)' "$server_xml_path" 2>/dev/null)
+    salt_length=$(xmllint --xpath 'string(//Realm/CredentialHandler/@saltLength)' "$server_xml_path" 2>/dev/null)
+    local ch_status="Non-compliant"
+    if check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length" | grep -q 'Compliant'; then
+        ch_status="Compliant for Tomcat $tomcat_version"
+    fi
+    echo "  Status: $ch_status"
+    echo "  Credential Handler: $credential_handler"
+    echo "  Algorithm: $algorithm"
+    echo "  Iterations: $iterations"
+    echo "  Salt Length: $salt_length"
+
+    echo "Auditing tomcat-users.xml"
+    echo "User Audit Results:"
+    printf '%-10s | %-15s | %-10s\n' "Username" "Password Type" "Compliance"
+    printf '%-10s | %-15s | %-10s\n' "----------" "---------------" "-----------"
+    # Print user audit table
+    while IFS= read -r line; do
+        if [[ $line =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
+            local username="${BASH_REMATCH[1]}"
+            local password="${BASH_REMATCH[2]}"
+            local ptype="Plaintext"
+            local compliance="Non-compliant"
+            if validate_hash_format "$password" "$tomcat_version"; then
+                if [[ "$password" == *:* ]]; then
+                    ptype="Salted_PBKDF2"
+                elif [[ "$password" =~ ^[0-9a-fA-F]{128}$ ]]; then
+                    ptype="Salted_SHA512"
+                elif [[ "$password" =~ ^[0-9a-fA-F]{64}$ ]]; then
+                    ptype="SHA256"
+                fi
+                compliance="Compliant"
+            fi
+            printf '%-10s | %-15s | %-10s\n' "$username" "$ptype" "$compliance"
+        fi
+    done < "$users_xml_path"
+    echo "==========================="
     echo "Overall Status: Secure"
-    echo "Audit completed"
+    echo "Audit completed. Log: $LOG_FILE"
     
     # Log results
-    local log_message="Tomcat Home: $tomcat_home; Config Path: $conf_path; Version: $tomcat_version; Status: $compliance_status"
+    local log_message="Tomcat Home: $tomcat_home; Config Path: $conf_path; Version: $tomcat_version; Status: $ch_status"
     echo "$TIMESTAMP,\"$log_message\"" >> "$LOG_FILE"
 }
 
