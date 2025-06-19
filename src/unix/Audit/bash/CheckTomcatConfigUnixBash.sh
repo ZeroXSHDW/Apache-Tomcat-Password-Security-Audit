@@ -2,559 +2,687 @@
 # CheckTomcatConfigUnixBash.sh
 # Audit Apache Tomcat configuration for security compliance with NIST 800-53 IA-5 and CIS Tomcat Benchmark
 
-# Constants
+# Log setup
 LOG_FILE="/tmp/TomcatManager.csv"
-LOG_DIR="/tmp"
-LOG_FILE_PATH="$LOG_DIR/TomcatManager.log"
-TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-HOSTNAME=$(hostname)
+log_messages=()
 
-# Error handling
-set -e
-trap 'handle_error $? $LINENO' ERR
-
-# Function to handle errors
-handle_error() {
-    local exit_code=$1
-    local line_number=$2
-    echo "Error occurred in script at line $line_number with exit code $exit_code"
-    echo "Error occurred in script at line $line_number with exit code $exit_code" >> "$LOG_FILE_PATH"
-    exit $exit_code
+write_log() {
+    local message="$1"
+    local indent=${2:-0}
+    local indent_spaces=$(printf "%${indent}s" | tr ' ' ' ')
+    local log_message="${indent_spaces}${message}"
+    
+    log_messages+=("$log_message")
+    printf "%s\n" "${log_message}" >&2
 }
 
-# Function to validate XML structure
-validate_xml_structure() {
-    local xml_file=$1
-    if ! grep -q '<?xml' "$xml_file"; then
-        echo "Error: Invalid XML declaration in $xml_file"
-        return 1
+# Ensure log file has header
+if [ ! -f "$LOG_FILE" ]; then
+    if ! echo "Timestamp,Message" > "$LOG_FILE" 2>/dev/null; then
+        printf "Warning: Cannot create %s. Logging to console only.\n" "$LOG_FILE" >&2
+        logger -t TomcatAudit "Warning: Cannot create $LOG_FILE."
     fi
-    if ! xmllint --noout "$xml_file" 2>/dev/null; then
-        echo "Error: Invalid XML structure in $xml_file"
-        return 1
+fi
+
+# Function to check for running Tomcat processes and extract config path
+check_tomcat_process() {
+    write_log "Checking for running Tomcat processes..."
+    local tomcat_pid
+    tomcat_pid=$(pgrep -f "org.apache.catalina.startup.Bootstrap" 2>/dev/null)
+    if [ -n "$tomcat_pid" ]; then
+        write_log "Found running Tomcat process (PID: $tomcat_pid)" 2
+        write_log "  - Check process details with: ps -ef | grep $tomcat_pid" 2
+        # Attempt to extract CATALINA_HOME or CATALINA_BASE from process args
+        local proc_args
+        proc_args=$(ps -p "$tomcat_pid" -o args 2>/dev/null)
+        local catalina_home
+        catalina_home=$(echo "$proc_args" | grep -o -E '\-Dcatalina\.home=[^ ]+' | sed 's/-Dcatalina\.home=//')
+        local catalina_base
+        catalina_base=$(echo "$proc_args" | grep -o -E '\-Dcatalina\.base=[^ ]+' | sed 's/-Dcatalina\.base=//')
+        if [ -n "$catalina_base" ] && [ -d "$catalina_base/conf" ] && [ -f "$catalina_base/conf/server.xml" ]; then
+            write_log "  - Found CATALINA_BASE from process: $catalina_base/conf" 2
+            echo "$catalina_base/conf"
+        elif [ -n "$catalina_home" ] && [ -d "$catalina_home/conf" ] && [ -f "$catalina_home/conf/server.xml" ]; then
+            write_log "  - Found CATALINA_HOME from process: $catalina_home/conf" 2
+            echo "$catalina_home/conf"
+        else
+            write_log "  - Could not determine config path from process arguments" 2
+        fi
+        write_log "  - Tomcat may be running from an alternate installation" 2
+    else
+        write_log "No running Tomcat processes found" 2
+        write_log "  - If Tomcat is installed, ensure it is running: sudo systemctl start tomcat" 2
     fi
-    return 0
 }
 
-# Function to securely parse XML
-secure_parse_xml() {
-    local xml_file=$1
-    if [ ! -f "$xml_file" ]; then
-        echo "Error: XML file $xml_file not found"
+# Function to detect Tomcat configuration path
+get_tomcat_config_path() {
+    local custom_conf_path="$1"
+    local conf_path=""
+
+    # Check custom path provided as argument
+    if [ -n "$custom_conf_path" ]; then
+        write_log "Checking custom configuration path: $custom_conf_path"
+        if [ -d "$custom_conf_path" ] && [ -f "$custom_conf_path/server.xml" ] && [ -f "$custom_conf_path/tomcat-users.xml" ]; then
+            conf_path="$custom_conf_path"
+            write_log "Found valid Tomcat configuration at custom path: $conf_path"
+        else
+            write_log "ERROR: Invalid custom configuration path: $custom_conf_path" 2
+            write_log "  - Missing server.xml or tomcat-users.xml" 2
+            write_log "  - Verify path: ls -l $custom_conf_path" 2
             return 1
-    fi
-    if [ ! -r "$xml_file" ]; then
-        echo "Error: No read permission for $xml_file"
-        return 1
-    fi
-    if ! validate_xml_structure "$xml_file"; then
-        return 1
-    fi
-    return 0
-}
-
-# Function to securely write XML
-secure_write_xml() {
-    local xml_file=$1
-    local temp_file="${xml_file}.tmp"
-    local backup_file="${xml_file}.bak.$(date +%Y%m%d%H%M%S)"
-    
-    # Create backup
-    if [ -f "$xml_file" ]; then
-        cp "$xml_file" "$backup_file"
-        chmod 600 "$backup_file"
-    fi
-    
-    # Write to temporary file
-    if ! xmllint --format - > "$temp_file"; then
-        echo "Error: Failed to write XML to temporary file"
-        rm -f "$temp_file"
-        return 1
-    fi
-
-    # Validate temporary file
-    if ! validate_xml_structure "$temp_file"; then
-        echo "Error: Invalid XML structure in temporary file"
-        rm -f "$temp_file"
-        return 1
-    fi
-
-    # Move temporary file to final location
-    mv "$temp_file" "$xml_file"
-    chmod 600 "$xml_file"
-    return 0
-}
-
-# Function to detect Tomcat version
-detect_tomcat_version() {
-    local tomcat_home=$1
-    local version="7.0"  # Default fallback
-    
-    # Check RELEASE-NOTES
-    if [ -f "$tomcat_home/RELEASE-NOTES" ]; then
-        local full_version=$(grep -o "Apache Tomcat Version [0-9]\+\.[0-9]\+\.[0-9]\+" "$tomcat_home/RELEASE-NOTES" | grep -o "[0-9]\+\.[0-9]\+" | head -1)
-        if [[ $full_version == 7.0* ]]; then version="7.0"
-        elif [[ $full_version == 8.5* ]]; then version="8.5"
-        elif [[ $full_version == 9.0* ]]; then version="9.0"
-        elif [[ $full_version == 10.0* ]]; then version="10.0"
-        elif [[ $full_version == 10.1* ]]; then version="10.1"
         fi
     fi
-    
-    # Check path name
-    local tomcat_home_lower=$(echo "$tomcat_home" | tr '[:upper:]' '[:lower:]')
-    if [[ $tomcat_home_lower == *"tomcat7"* ]]; then version="7.0"
-    elif [[ $tomcat_home_lower == *"tomcat8"* ]]; then version="8.5"
-    elif [[ $tomcat_home_lower == *"tomcat9"* ]]; then version="9.0"
-    elif [[ $tomcat_home_lower == *"tomcat10"* ]]; then version="10.0"
+
+    # Check CATALINA_BASE
+    if [ -z "$conf_path" ] && [ -n "${CATALINA_BASE}" ] && [ -d "${CATALINA_BASE}/conf" ] && [ -f "${CATALINA_BASE}/conf/server.xml" ] && [ -f "${CATALINA_BASE}/conf/tomcat-users.xml" ]; then
+        write_log "Found Tomcat configuration at CATALINA_BASE: ${CATALINA_BASE}/conf"
+        conf_path="${CATALINA_BASE}/conf"
+    fi
+
+    # Check CATALINA_HOME
+    if [ -z "$conf_path" ] && [ -n "${CATALINA_HOME}" ] && [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ] && [ -f "${CATALINA_HOME}/conf/tomcat-users.xml" ]; then
+        write_log "Found Tomcat configuration at CATALINA_HOME: ${CATALINA_HOME}/conf"
+        conf_path="${CATALINA_HOME}/conf"
+    fi
+
+    # Check running process
+    if [ -z "$conf_path" ]; then
+        local process_conf_path
+        process_conf_path=$(check_tomcat_process)
+        if [ -n "$process_conf_path" ] && [ -d "$process_conf_path" ] && [ -f "$process_conf_path/server.xml" ] && [ -f "$process_conf_path/tomcat-users.xml" ]; then
+            conf_path="$process_conf_path"
+        fi
+    fi
+
+    # Infer CATALINA_HOME from catalina.sh
+    if [ -z "$conf_path" ] && [ -z "$CATALINA_HOME" ]; then
+        local catalina_script
+        catalina_script=$(command -v catalina.sh 2>/dev/null)
+        if [ -n "$catalina_script" ] && [ -f "$catalina_script" ]; then
+            CATALINA_HOME=$(dirname "$(dirname "$catalina_script")")
+            write_log "Inferred CATALINA_HOME from catalina.sh: $CATALINA_HOME"
+            if [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ] && [ -f "${CATALINA_HOME}/conf/tomcat-users.xml" ]; then
+                conf_path="${CATALINA_HOME}/conf"
+            fi
+        fi
+    fi
+
+    # Search common paths
+    if [ -z "$conf_path" ]; then
+        write_log "Searching common Tomcat configuration paths..."
+        for path in \
+            "/opt/tomcat/conf" \
+            "/usr/local/tomcat/conf" \
+            "/var/lib/tomcat7/conf" \
+            "/var/lib/tomcat8/conf" \
+            "/var/lib/tomcat9/conf" \
+            "/var/lib/tomcat10/conf" \
+            "/usr/share/tomcat/conf" \
+            "/usr/share/tomcat7/conf" \
+            "/usr/share/tomcat8/conf" \
+            "/usr/share/tomcat9/conf" \
+            "/usr/share/tomcat10/conf" \
+            "/etc/tomcat/conf" \
+            "/etc/tomcat7/conf" \
+            "/etc/tomcat8/conf" \
+            "/etc/tomcat9/conf" \
+            "/etc/tomcat10/conf"; do
+            if [ -d "${path}" ] && [ -f "${path}/server.xml" ] && [ -f "${path}/tomcat-users.xml" ]; then
+                write_log "Found Tomcat configuration at: ${path}"
+                conf_path="${path}"
+                break
+            fi
+        done
+    fi
+
+    # Fallback to find command
+    if [ -z "$conf_path" ]; then
+        write_log "No Tomcat configuration found in common paths, attempting to locate server.xml..."
+        local found_path
+        found_path=$(find / -type f -path "*/conf/server.xml" 2>/dev/null | head -n 1)
+        if [ -n "$found_path" ]; then
+            conf_path=$(dirname "$found_path")
+            if [ -f "$conf_path/tomcat-users.xml" ]; then
+                write_log "Found Tomcat configuration via find: ${conf_path}"
+            else
+                write_log "ERROR: Found server.xml but missing tomcat-users.xml at: ${conf_path}" 2
+                conf_path=""
+            fi
+        fi
+    fi
+
+    if [ -z "$conf_path" ]; then
+        write_log "ERROR: Could not locate Tomcat configuration directory."
+        write_log "  - Ensure Tomcat is installed (e.g., sudo apt install tomcat)" 2
+        write_log "  - Check for server.xml: sudo find / -name server.xml" 2
+        write_log "  - Set CATALINA_HOME or CATALINA_BASE environment variables" 2
+        write_log "  - Or specify a custom path: $0 /path/to/conf" 2
+        return 1
+    fi
+
+    # Validate the path
+    if [ ! -d "$conf_path" ] || [ ! -f "$conf_path/server.xml" ] || [ ! -f "$conf_path/tomcat-users.xml" ]; then
+        write_log "ERROR: Invalid configuration directory: $conf_path"
+        write_log "  - Missing server.xml or tomcat-users.xml" 2
+        write_log "  - Verify path: ls -l $conf_path" 2
+        return 1
+    fi
+
+    echo "$conf_path"
+}
+
+# Detect Tomcat version
+detect_tomcat_version() {
+    local tomcat_home="$1"
+    local version_file="${tomcat_home}/RELEASE-NOTES"
+    local server_xml="${tomcat_home}/conf/server.xml"
+    local catalina_jar="${tomcat_home}/lib/catalina.jar"
+    local version="unknown"
+    local full_version=""
+
+    # Validate tomcat_home
+    if [ ! -d "$tomcat_home" ]; then
+        write_log "ERROR: Tomcat home directory $tomcat_home does not exist"
+        return 1
+    fi
+
+    # Method 1: Check RELEASE-NOTES
+    if [ -f "$version_file" ]; then
+        write_log "Checking RELEASE-NOTES for version..."
+        version_line=$(grep "Apache Tomcat Version" "$version_file" | head -n 1)
+        if [[ "$version_line" =~ Apache\ Tomcat\ Version\ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            full_version="${BASH_REMATCH[1]}"
+            case "$full_version" in
+                7.0.*) version="7.0" ;;
+                8.0.*) version="8.0" ;;
+                8.5.*) version="8.5" ;;
+                9.0.*) version="9.0" ;;
+                10.0.*) version="10.0" ;;
+                10.1.*) version="10.1" ;;
+            esac
+            write_log "Version found in RELEASE-NOTES: $full_version ($version)"
+        else
+            write_log "No version found in RELEASE-NOTES"
+        fi
+    else
+        write_log "RELEASE-NOTES not found at $version_file"
+    fi
+
+    # Method 2: Check directory name
+    if [ "$version" = "unknown" ]; then
+        write_log "Checking directory name for version..."
+        tomcat_home_lower=$(echo "$tomcat_home" | tr '[:upper:]' '[:lower:]')
+        case "$tomcat_home_lower" in
+            *tomcat7*) version="7.0" ;;
+            *tomcat8.5*) version="8.5" ;;
+            *tomcat8*) version="8.0" ;;
+            *tomcat9*) version="9.0" ;;
+            *tomcat10.1*) version="10.1" ;;
+            *tomcat10*) version="10.0" ;;
+        esac
+        [ "$version" != "unknown" ] && write_log "Version inferred from directory: $version"
+    fi
+
+    # Method 3: Check catalina.jar manifest
+    if [ "$version" = "unknown" ] && [ -f "$catalina_jar" ] && command -v unzip >/dev/null; then
+        write_log "Checking catalina.jar manifest for version..."
+        manifest_version=$(unzip -p "$catalina_jar" META-INF/MANIFEST.MF 2>/dev/null | grep "Implementation-Version" | sed -n 's/.*Implementation-Version: \([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p')
+        if [ -n "$manifest_version" ]; then
+            case "$manifest_version" in
+                7.0.*) version="7.0" ;;
+                8.0.*) version="8.0" ;;
+                8.5.*) version="8.5" ;;
+                9.0.*) version="9.0" ;;
+                10.0.*) version="10.0" ;;
+                10.1.*) version="10.1" ;;
+            esac
+            write_log "Version found in catalina.jar manifest: $manifest_version ($version)"
+        else
+            write_log "No version found in catalina.jar manifest"
+        fi
+    elif [ ! -f "$catalina_jar" ]; then
+        write_log "catalina.jar not found at $catalina_jar"
+    fi
+
+    # Fallback: Assume 7.0 with warning
+    if [ "$version" = "unknown" ]; then
+        version="7.0"
+        write_log "WARNING: Could not determine Tomcat version at $tomcat_home, defaulting to 7.0"
+        write_log "  - Ensure RELEASE-NOTES, catalina.jar, version.sh, or a Tomcat package is present" 2
+        write_log "  - Manual verification recommended" 2
     fi
 
     echo "$version"
 }
 
-# Function to validate hash format
-validate_hash_format() {
-    local hash=$1
-    local version=$2
-    
-    case $version in
-        "7.0")
-            [[ $hash =~ ^[0-9a-fA-F]{64}$ ]] && return 0
-            ;;
-        "8.5")
-            [[ $hash =~ ^[0-9a-fA-F]{128}$ ]] && return 0
-            ;;
-        "9.0"|"10.0"|"10.1")
-            [[ $hash =~ ^[0-9a-fA-F]+:[0-9a-fA-F]+$ ]] && return 0
-            ;;
-    esac
-    return 1
+# Detect password type
+detect_password_type() {
+    local password="$1"
+    local type="Unknown"
+    local is_secure=0
+
+    if ! [[ "$password" =~ ^[0-9a-fA-F:]+$ ]]; then
+        type="Plaintext"
+        is_secure=0
+    elif [[ "$password" =~ ^([0-9a-fA-F]+):([0-9a-fA-F]+)$ ]]; then
+        local hash_part="${BASH_REMATCH[1]}"
+        local hash_length=${#hash_part}
+        if [ "$hash_length" -eq 32 ] && [[ "$hash_part" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            type="Salted_MD5"
+            is_secure=0
+        elif [ "$hash_length" -ge 32 ] && [[ "$hash_part" =~ ^[0-9a-fA-F]+$ ]]; then
+            type="Salted_PBKDF2"
+            is_secure=1
+        else
+            type="Unknown"
+            is_secure=0
+        fi
+    else
+        local length=${#password}
+        if [ "$length" -eq 32 ] && [[ "$password" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            type="Hashed_MD5"
+            is_secure=0
+        elif [ "$length" -eq 40 ] && [[ "$password" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            type="Hashed_SHA1"
+            is_secure=0
+        elif [ "$length" -eq 64 ] && [[ "$password" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            type="Hashed_SHA256"
+            is_secure=1
+        elif [ "$length" -eq 128 ] && [[ "$password" =~ ^[0-9a-fA-F]{128}$ ]]; then
+            type="Hashed_SHA512"
+            is_secure=1
+        fi
+    fi
+
+    echo "$type $is_secure"
 }
 
-# Function to generate password hash
-generate_password_hash() {
-    local tomcat_bin=$1
-    local password=$2
-    local version=$3
-    local digest_script="$tomcat_bin/digest.sh"
-    
-    if [ ! -x "$digest_script" ]; then
-        echo "Error: digest.sh not found or not executable"
-        return 1
+# Check configuration compliance for Tomcat version
+check_config_compliance() {
+    local tomcat_version="$1"
+    local credential_handler="$2"
+    local algorithm="$3"
+    local iterations="$4"
+    local salt_length="$5"
+    local config_status="Non-compliant"
+
+    if [ "$tomcat_version" = "7.0" ]; then
+        if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
+           [ "$algorithm" = "SHA-256" ]; then
+            config_status="Compliant for Tomcat 7.0"
+        else
+            write_log "  - Tomcat 7.0 requires MessageDigestCredentialHandler with SHA-256" 2
+            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-256'" 2
+        fi
+    elif [ "$tomcat_version" = "8.0" ] || [ "$tomcat_version" = "8.5" ]; then
+        if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
+           [ "$algorithm" = "SHA-512" ] && \
+           [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
+            config_status="Compliant for Tomcat $tomcat_version"
+        else
+            write_log "  - Tomcat $tomcat_version requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16" 2
+            write_log "  - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'" 2
+        fi
+    else # Tomcat 9.0, 10.0, 10.1
+        if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
+           [ "$algorithm" = "PBKDF2WithHmacSHA512" ] && \
+           [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
+            config_status="Compliant for Tomcat $tomcat_version"
+        else
+            write_log "  - Tomcat $tomcat_version requires SecretKeyCredentialHandler with PBKDF2WithHmacSHA512, iterations >= 10000, saltLength >= 16" 2
+            write_log "  - Recommendation: Configure SecretKeyCredentialHandler with algorithm='PBKDF2WithHmacSHA512', iterations='10000', saltLength='16'" 2
+        fi
     fi
-    
-    local algorithm
-    local iterations
-    local salt_length
-    
-    case $version in
-        "7.0")
-            algorithm="SHA-256"
-            ;;
-        "8.5")
-            algorithm="SHA-512"
-            iterations="10000"
-            salt_length="16"
-            ;;
-        "9.0"|"10.0"|"10.1")
-            algorithm="PBKDF2WithHmacSHA512"
-            iterations="10000"
-            salt_length="16"
-            ;;
-    esac
-    
-    local cmd="$digest_script -a $algorithm"
-    [ -n "$iterations" ] && cmd="$cmd -i $iterations"
-    [ -n "$salt_length" ] && cmd="$cmd -s $salt_length"
-    cmd="$cmd $password"
-    
-    local hash=$($cmd 2>/dev/null | grep -o '[0-9a-fA-F:]*$')
-    if [ -z "$hash" ]; then
-        echo "Error: Failed to generate hash"
+
+    printf "%s" "$config_status"
+}
+
+# Audit server.xml
+audit_server_xml() {
+    local server_xml_path="$1"
+    local credential_handler="None"
+    local algorithm="None"
+    local iterations=0
+    local salt_length=0
+
+    if [ ! -f "$server_xml_path" ]; then
+        write_log "Error: $server_xml_path not found"
+        write_log "  - Ensure Tomcat is installed correctly (e.g., sudo apt install tomcat)" 2
+        write_log "  - Verify file exists: ls -l $server_xml_path" 2
+        echo "$credential_handler $algorithm $iterations $salt_length"
         return 1
     fi
 
-    echo "$hash"
+    local realm_line=$(grep -E "org.apache.catalina.realm.(UserDatabaseRealm|MemoryRealm)" "$server_xml_path")
+    if [ -z "$realm_line" ]; then
+        write_log "Warning: No UserDatabaseRealm or MemoryRealm found in $server_xml_path"
+        echo "$credential_handler $algorithm $iterations $salt_length"
+        return
+    fi
+
+    local ch_line=$(awk '/<CredentialHandler/,/\/>/' "$server_xml_path" | tr -d '\n' | sed 's/.*<CredentialHandler\s*\([^>]*\)\/>.*/\1/')
+    if [ -n "$ch_line" ]; then
+        credential_handler=$(echo "$ch_line" | grep -o 'className="[^"]*"' | sed 's/className="\([^"]*\)"/\1/' || echo "Unknown")
+        algorithm=$(echo "$ch_line" | grep -o 'algorithm="[^"]*"' | sed 's/algorithm="\([^"]*\)"/\1/' || echo "None")
+        iterations=$(echo "$ch_line" | grep -o 'iterations="[0-9]*"' | sed 's/iterations="\([0-9]*\)"/\1/' || echo "0")
+        salt_length=$(echo "$ch_line" | grep -o 'saltLength="[0-9]*"' | sed 's/saltLength="\([0-9]*\)"/\1/' || echo "0")
+    fi
+
+    echo "$credential_handler $algorithm $iterations $salt_length"
+}
+
+# Validate Tomcat installation
+validate_tomcat_installation() {
+    local tomcat_home="$1"
+    local required_files=("conf/server.xml" "conf/tomcat-users.xml")
+    local optional_files=("RELEASE-NOTES" "lib/catalina.jar" "bin/version.sh")
+    local missing_required=0
+
+    write_log "Validating Tomcat installation at $tomcat_home"
+    for file in "${required_files[@]}"; do
+        local full_path="$tomcat_home/$file"
+        if [ ! -f "$full_path" ]; then
+            write_log "ERROR: Missing required file $full_path" 2
+            write_log "  - Install Tomcat: sudo apt install tomcat (Kali/Debian)" 2
+            write_log "  - Or download: https://tomcat.apache.org/download-90.cgi" 2
+            write_log "  - Verify path: ls -l $full_path" 2
+            missing_required=1
+        elif [ ! -r "$full_path" ]; then
+            write_log "ERROR: File $full_path exists but is not readable" 2
+            write_log "  - Check permissions: ls -l $full_path" 2
+            write_log "  - Fix permissions: sudo chmod 644 $full_path" 2
+            missing_required=1
+        fi
+    done
+
+    if [ $missing_required -eq 1 ]; then
+        write_log "ERROR: Tomcat installation at $tomcat_home is incomplete" 2
+        write_log "  - Required files (server.xml, tomcat-users.xml) are missing or unreadable" 2
+        write_log "  - Check for other installations: sudo find / -name server.xml" 2
+        write_log "  - Verify CATALINA_HOME ($CATALINA_HOME) and CATALINA_BASE ($CATALINA_BASE)" 2
+        return 1
+    fi
+
+    local missing_optional=0
+    for file in "${optional_files[@]}"; do
+        if [ ! -f "$tomcat_home/$file" ]; then
+            write_log "Warning: Missing optional file $tomcat_home/$file" 2
+            missing_optional=1
+        fi
+    done
+
+    if [ $missing_optional -eq 1 ]; then
+        write_log "Warning: Some optional files are missing, version detection may be less accurate" 2
+    fi
+
+    write_log "Tomcat installation validation passed"
     return 0
 }
 
-# Function to manage Tomcat service
-manage_tomcat_service() {
-    local tomcat_home=$1
-    local action=$2
-    local timeout=60
-    
-    # Check if using systemd
-    local service_name
-    for svc in tomcat tomcat7 tomcat8 tomcat9 tomcat10; do
-        if systemctl is-active --quiet $svc 2>/dev/null; then
-            service_name=$svc
+# Main audit function
+audit_tomcat_config() {
+    local custom_conf_path="$1"
+
+    # Check for sudo/root privileges
+    if [ "$EUID" -ne 0 ]; then
+        local timestamp=$(TZ=Asia/Kolkata date "+%Y-%m-%d %H:%M:%S")
+        write_log "ERROR - This script must be run as root or with sudo"
+        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+        local log_entry="$timestamp,\"$combined_message\""
+        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+            printf "Error: Cannot write to %s.\n" "$LOG_FILE" >&2
+            logger -t TomcatAudit "Error: Cannot write to $LOG_FILE."
+        fi
+        exit 1
+    fi
+
+    # Get execution time and hostname
+    local exec_time=$(TZ=Asia/Kolkata date "+%Y-%m-%d %H:%M:%S")
+    local hostname=$(hostname)
+    write_log "Execution Time: $exec_time"
+    write_log "Hostname: $hostname"
+    write_log "==========================="
+
+    # Get Tomcat configuration path
+    local conf_path
+    conf_path=$(get_tomcat_config_path "$custom_conf_path")
+    if [ $? -ne 0 ] || [ -z "$conf_path" ]; then
+        local timestamp="$exec_time"
+        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+        local log_entry="$timestamp,\"$combined_message\""
+        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+            printf "Error: Cannot write to %s.\n" "$LOG_FILE" >&2
+            logger -t TomcatAudit "Error: Cannot write to $LOG_FILE."
+        fi
+        exit 1
+    fi
+    write_log "Config Path: $conf_path"
+
+    # Derive Tomcat home directory
+    local tomcat_home
+    tomcat_home=$(dirname "$conf_path")
+    write_log "Tomcat Home: $tomcat_home"
+
+    # Validate Tomcat installation
+    validate_tomcat_installation "$tomcat_home"
+    if [ $? -ne 0 ]; then
+        local timestamp="$exec_time"
+        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+        local log_entry="$timestamp,\"$combined_message\""
+        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+            printf "Error: Cannot write to %s.\n" "$LOG_FILE" >&2
+            logger -t TomcatAudit "Error: Cannot write to $LOG_FILE."
+        fi
+        exit 1
+    fi
+
+    # Detect Tomcat version
+    local tomcat_version=$(detect_tomcat_version "$tomcat_home")
+    if [ $? -ne 0 ]; then
+        write_log "ERROR - Failed to detect Tomcat version due to invalid installation"
+        local timestamp="$exec_time"
+        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+        local log_entry="$timestamp,\"$combined_message\""
+        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+            printf "Error: Cannot write to %s.\n" "$LOG_FILE" >&2
+            logger -t TomcatAudit "Error: Cannot write to $LOG_FILE."
+        fi
+        exit 1
+    fi
+    write_log "Tomcat Version: $tomcat_version"
+
+    # Audit server.xml
+    local server_xml_path="$conf_path/server.xml"
+    write_log "Auditing server.xml"
+    read credential_handler algorithm iterations salt_length <<< $(audit_server_xml "$server_xml_path")
+    if [ $? -ne 0 ]; then
+        write_log "ERROR - Failed to audit server.xml"
+        local timestamp="$exec_time"
+        local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+        local log_entry="$timestamp,\"$combined_message\""
+        if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+            printf "Error: Cannot write to %s.\n" "$LOG_FILE" >&2
+            logger -t TomcatAudit "Error: Cannot write to $LOG_FILE."
+        fi
+        exit 1
+    fi
+
+    write_log "Server Configuration:"
+    config_status=$(check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length")
+    write_log "  Status: $config_status"
+    write_log "  Credential Handler: $credential_handler"
+    write_log "  Algorithm: $algorithm"
+    write_log "  Iterations: $iterations"
+    write_log "  Salt Length: $salt_length"
+
+    # Audit tomcat-users.xml
+    local users_xml_path="$conf_path/tomcat-users.xml"
+    write_log "Auditing tomcat-users.xml"
+
+    audit_results=()
+    local user_count=0
+    local config_issues=0
+
+    if [ "$config_status" = "Non-compliant" ]; then
+        config_issues=1
+    fi
+
+    if [ ! -f "$users_xml_path" ]; then
+        write_log "Error: $users_xml_path not found" 4
+        write_log "  - Ensure Tomcat is installed correctly (e.g., sudo apt install tomcat)" 4
+        write_log "  - Verify file exists: ls -l $users_xml_path" 4
+        config_issues=1
+    else
+        write_log "User Audit Results:" 4
+        write_log "Username | Password Type | Compliance" 4
+        write_log "---------|---------------|-----------" 4
+
+        # Read the entire file
+        local content
+        content=$(cat "$users_xml_path" 2>/dev/null)
+        if [ $? -ne 0 ]; then
+            write_log "Error: Cannot read $users_xml_path" 4
+            write_log "  - Check permissions: ls -l $users_xml_path" 4
+            config_issues=1
+        elif [ -z "$content" ]; then
+            write_log "Error: $users_xml_path is empty" 4
+            write_log "    No users found in $users_xml_path" 4
+            config_issues=1
+        else
+            # Parse using grep and sed
+            local user_lines
+            user_lines=$(echo "$content" | grep '<user' || true)
+            if [ -n "$user_lines" ]; then
+                while IFS= read -r user_line; do
+                    if [ -z "$user_line" ]; then
+                        continue
+                    fi
+                    local username
+                    local password
+                    username=$(echo "$user_line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
+                    password=$(echo "$user_line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
+                    if [ -n "$username" ] && [ -n "$password" ]; then
+                        ((user_count++))
+                        read password_type is_secure <<< $(detect_password_type "$password")
+
+                        local compliance_status="Non-compliant"
+                        local issues=()
+
+                        if [ "$password_type" = "Plaintext" ]; then
+                            compliance_status="Non-compliant"
+                            issues+=("Plaintext passwords detected. Use salted SHA-256 or PBKDF2.")
+                        elif [[ "$password_type" =~ ^(Hashed_MD5|Salted_MD5)$ ]]; then
+                            compliance_status="Non-compliant"
+                            issues+=("Weak MD5 hashing detected. Use SHA-256 or PBKDF2.")
+                        elif [ "$password_type" = "Hashed_SHA1" ]; then
+                            compliance_status="Non-compliant"
+                            issues+=("Weak SHA1 hashing detected. Use SHA-256 or PBKDF2.")
+                        elif [ "$password_type" = "Hashed_SHA256" ]; then
+                            if [ "$tomcat_version" = "7.0" ]; then
+                                compliance_status="Compliant"
+                            elif [ "$credential_handler" = "None" ] || [ "$algorithm" != "SHA-256" ] || \
+                                 [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
+                                compliance_status="Non-compliant"
+                                issues+=("SHA256 requires salt and iterations.")
+                            else
+                                compliance_status="Compliant"
+                            fi
+                        elif [ "$password_type" = "Hashed_SHA512" ]; then
+                            if [ "$tomcat_version" = "7.0" ]; then
+                                compliance_status="Non-compliant"
+                                issues+=("SHA512 not supported in Tomcat 7.0. Use SHA-256.")
+                            elif [ "$credential_handler" = "None" ] || [ "$algorithm" != "SHA-512" ] || \
+                                 [ "$iterations" -lt 10000 ] || [ "$salt_length" -lt 16 ]; then
+                                compliance_status="Non-compliant"
+                                issues+=("SHA512 requires salt and iterations.")
+                            else
+                                compliance_status="Compliant"
+                            fi
+                        elif [ "$password_type" = "Salted_PBKDF2" ]; then
+                            if [ "$tomcat_version" = "7.0" ]; then
+                                compliance_status="Non-compliant"
+                                issues+=("PBKDF2 not supported in Tomcat 7.0. Use SHA-256.")
+                            elif [ "$tomcat_version" = "8.0" ] || [ "$tomcat_version" = "8.5" ]; then
+                                if [ "$credential_handler" = "None" ] || \
+                                   [[ ! "$algorithm" =~ ^(SHA-256|SHA-512)$ ]] || \
+                                   [ "$iterations" -lt 16 ] || [ "$salt_length" -lt 16 ]; then
+                                    compliance_status="Non-compliant"
+                                    issues+=("PBKDF2 requires compatible handler.")
+                                else
+                                    compliance_status="Compliant"
+                                fi
+                            else
+                                if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
+                                   [ "$algorithm" = "PBKDF2WithHmacSHA512" ] && \
+                                   [ "$iterations" -ge 10000 ] && [ "$salt_length" -ge 16 ]; then
+                                    compliance_status="Compliant"
+                                else
+                                    compliance_status="Non-compliant"
+                                    issues+=("PBKDF2 requires SecretKeyCredentialHandler.")
+                                fi
+                            fi
+                        else
+                            compliance_status="Non-compliant"
+                            issues+=("Unknown password type: $password_type.")
+                        fi
+
+                        write_log "    $username | $password_type | $compliance_status" 4
+                        for issue in "${issues[@]}"; do
+                            write_log "        - $issue" 8
+                        done
+
+                        audit_results+=("$compliance_status")
+                    fi
+                done <<< "$user_lines"
+            else
+                write_log "    No users found in $users_xml_path" 4
+                config_issues=1
+            fi
+        fi
+    fi
+
+    # Determine overall status
+    local overall_secure=1
+    if [ "$config_issues" -eq 1 ]; then
+        overall_secure=0
+    fi
+    for result in "${audit_results[@]}"; do
+        if [ "$result" = "Non-compliant" ]; then
+            overall_secure=0
             break
         fi
     done
 
-    if [ -n "$service_name" ]; then
-        # Use systemd
-        case $action in
-            "restart")
-                systemctl stop $service_name
-                sleep 5
-                systemctl start $service_name
-                ;;
-            "stop")
-                systemctl stop $service_name
-                ;;
-            "start")
-                systemctl start $service_name
-                ;;
-        esac
-    else
-        # Use catalina.sh
-        local catalina_script="$tomcat_home/bin/catalina.sh"
-        if [ ! -x "$catalina_script" ]; then
-            echo "Error: catalina.sh not found or not executable"
-        return 1
-    fi
+    write_log "==========================="
+    write_log "Overall Status: $( [ "$overall_secure" == 1 ] && echo "Secure" || echo "Insecure" )"
+    write_log "Audit completed"
 
-        case $action in
-            "restart")
-                "$catalina_script" stop
-                sleep 5
-                "$catalina_script" start
-                ;;
-            "stop")
-                "$catalina_script" stop
-                ;;
-            "start")
-                "$catalina_script" start
-                ;;
-        esac
+    # Write single CSV line
+    local timestamp="$exec_time"
+    local combined_message=$(IFS="; "; echo "${log_messages[*]}")
+    local log_entry="$timestamp,\"$combined_message)\""
+    if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
+        printf "Error: Cannot write to %s\n" "$LOG_FILE" >&2
+        logger -t TomcatAudit "Error: Cannot write to $LOG_FILE."
     fi
-    
-    # Wait for service to be ready
-    local start_time=$(date +%s)
-    while [ $(($(date +%s) - start_time)) -lt $timeout ]; do
-        if nc -z localhost 8080 2>/dev/null; then
-            return 0
-        fi
-        sleep 1
-    done
-    
-    echo "Error: Service failed to start within timeout"
-    return 1
 }
 
-# Function to check configuration compliance
-check_config_compliance() {
-    local version=$1
-    local credential_handler=$2
-    local algorithm=$3
-    local iterations=$4
-    local salt_length=$5
-    
-    case $version in
-        "7.0")
-            if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
-               [ "$algorithm" = "SHA-256" ]; then
-                echo "Compliant for Tomcat 7.0"
-                return 0
-            fi
-            ;;
-        "8.5")
-            if [ "$credential_handler" = "org.apache.catalina.realm.MessageDigestCredentialHandler" ] && \
-               [ "$algorithm" = "SHA-512" ] && \
-               [ "$iterations" -ge 10000 ] && \
-               [ "$salt_length" -ge 16 ]; then
-                echo "Compliant for Tomcat 8.5"
-                return 0
-            fi
-            ;;
-        "9.0"|"10.0"|"10.1")
-            if [ "$credential_handler" = "org.apache.catalina.realm.SecretKeyCredentialHandler" ] && \
-               [ "$algorithm" = "PBKDF2WithHmacSHA512" ] && \
-               [ "$iterations" -ge 10000 ] && \
-               [ "$salt_length" -ge 16 ]; then
-                echo "Compliant for Tomcat $version"
-                return 0
-            fi
-            ;;
-    esac
-    
-    echo "Non-compliant"
-    return 1
-}
-
-# Main audit function
-print_compliance_report() {
-    local timestamp_fmt=$(date '+%I:%M %p %Z, %A, %B %d, %Y')
-    local hostname=$(hostname)
-    local conf_path="$1"
-    local tomcat_version="$2"
-    local credential_handler="$3"
-    local algorithm="$4"
-    local iterations="$5"
-    local salt_length="$6"
-    local config_status="$7"
-    local users_xml_path="$8"
-    local overall_secure="$9"
-
-    echo "$timestamp_fmt"
-    echo "$hostname"
-    echo "==========================="
-    echo "Config Path: $conf_path"
-    echo "Tomcat Version: $tomcat_version"
-    echo "Auditing server.xml"
-    echo "Server Configuration:"
-    echo "  Status: $config_status"
-    echo "  Credential Handler: $credential_handler"
-    echo "  Algorithm: $algorithm"
-    echo "  Iterations: $iterations"
-    echo "  Salt Length: $salt_length"
-    echo "Auditing tomcat-users.xml"
-    echo "User Audit Results:"
-    printf '%-10s | %-15s | %-10s\n' "Username" "Password Type" "Compliance"
-    printf '%-10s | %-15s | %-10s\n' "----------" "---------------" "-----------"
-    local user_found=0
-    while IFS= read -r line; do
-        if [[ $line =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
-            user_found=1
-            local username="${BASH_REMATCH[1]}"
-            local password="${BASH_REMATCH[2]}"
-            local ptype="Plaintext"
-            local compliance="Non-compliant"
-            if validate_hash_format "$password" "$tomcat_version"; then
-                if [[ "$password" == *:* ]]; then
-                    ptype="Salted_PBKDF2"
-                elif [[ "$password" =~ ^[0-9a-fA-F]{128}$ ]]; then
-                    ptype="Salted_SHA512"
-                elif [[ "$password" =~ ^[0-9a-fA-F]{64}$ ]]; then
-                    ptype="SHA256"
-                fi
-                compliance="Compliant"
-            fi
-            printf '%-10s | %-15s | %-10s\n' "$username" "$ptype" "$compliance"
-        fi
-    done < "$users_xml_path"
-    if [ $user_found -eq 0 ]; then
-        echo "    No users found"
-    fi
-    echo "==========================="
-    if [ "$overall_secure" = "1" ]; then
-        echo "Overall Status: Secure"
-    else
-        echo "Overall Status: Insecure"
-    fi
-    echo "Audit completed. Log: $LOG_FILE"
-}
-
-audit_tomcat_config() {
-    # Check root privileges
-    if [ "$(id -u)" -ne 0 ]; then
-        echo "Error: This script must be run as root or with sudo"
-        exit 1
-    fi
-
-    # Create log directory if it doesn't exist
-    mkdir -p "$LOG_DIR"
-    touch "$LOG_FILE_PATH"
-    chmod 600 "$LOG_FILE_PATH"
-    
-    # Initialize log file
-    if [ ! -f "$LOG_FILE" ]; then
-        echo "Timestamp,Message" > "$LOG_FILE"
-    fi
-
-    # Get Tomcat configuration path
-    local conf_path
-    if [ -n "$CATALINA_HOME" ]; then
-        conf_path="$CATALINA_HOME/conf"
-    elif [ -n "$CATALINA_BASE" ]; then
-        conf_path="$CATALINA_BASE/conf"
-    else
-        for path in /opt/tomcat*/conf /usr/local/tomcat*/conf /var/lib/tomcat*/conf /usr/share/tomcat*/conf; do
-            if [ -d "$path" ] && [ -f "$path/server.xml" ]; then
-                conf_path=$path
-                break
-            fi
-        done
-    fi
-    
-    if [ -z "$conf_path" ]; then
-        echo "Error: Could not locate Tomcat configuration directory"
-        exit 1
-    fi
-    
-    local tomcat_home=$(dirname "$conf_path")
-    echo "Tomcat Home: $tomcat_home"
-    echo "Config Path: $conf_path"
-
-    # Detect Tomcat version
-    local tomcat_version=$(detect_tomcat_version "$tomcat_home")
-    echo "Tomcat Version: $tomcat_version"
-    
-    # Process users
-    local users_xml_path="$conf_path/tomcat-users.xml"
-    echo "Reading $users_xml_path for users with plaintext passwords"
-    
-    if ! secure_parse_xml "$users_xml_path"; then
-        echo "Error: Failed to parse $users_xml_path"
-        exit 1
-    fi
-    
-    # Update users with plaintext passwords
-    local updated=0
-    while IFS= read -r line; do
-        if [[ $line =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
-            local username="${BASH_REMATCH[1]}"
-            local password="${BASH_REMATCH[2]}"
-            
-            if ! validate_hash_format "$password" "$tomcat_version"; then
-                echo "Processing user: $username"
-                local hash_value=$(generate_password_hash "$tomcat_home/bin" "$password" "$tomcat_version")
-                
-                if [ -z "$hash_value" ]; then
-                    echo "Error: Failed to generate hash for user $username"
-                    exit 1
-                fi
-                
-                # Update password in XML
-                sed -i "s/password=\"$password\"/password=\"$hash_value\"/" "$users_xml_path"
-                updated=1
-            fi
-        fi
-    done < "$users_xml_path"
-    
-    if [ $updated -eq 1 ]; then
-        if ! secure_write_xml "$users_xml_path"; then
-            echo "Error: Failed to update $users_xml_path"
-            exit 1
-        fi
-    else
-        echo "No plaintext passwords to update"
-    fi
-    
-    # Update server.xml
-    local server_xml_path="$conf_path/server.xml"
-    if ! secure_parse_xml "$server_xml_path"; then
-        echo "Error: Failed to parse $server_xml_path"
-        exit 1
-    fi
-    
-    # Update CredentialHandler configuration
-    local realm_xpath="//Realm[@className='org.apache.catalina.realm.UserDatabaseRealm']"
-    local realm_exists=$(xmllint --xpath "$realm_xpath" "$server_xml_path" 2>/dev/null)
-    
-    if [ -z "$realm_exists" ]; then
-        # Add Realm element
-        local engine_xpath="//Engine"
-        local engine_exists=$(xmllint --xpath "$engine_xpath" "$server_xml_path" 2>/dev/null)
-        
-        if [ -z "$engine_exists" ]; then
-            echo "Error: No Engine element found in server.xml"
-            exit 1
-        fi
-        
-        # Add Realm element after Engine
-        sed -i "/<Engine/a \    <Realm className=\"org.apache.catalina.realm.UserDatabaseRealm\" resourceName=\"UserDatabase\"/>" "$server_xml_path"
-    fi
-    
-    # Remove existing CredentialHandler
-    sed -i "/<CredentialHandler/d" "$server_xml_path"
-    
-    # Add new CredentialHandler
-    local ch_config
-    case $tomcat_version in
-        "7.0")
-            ch_config="<CredentialHandler className=\"org.apache.catalina.realm.MessageDigestCredentialHandler\" algorithm=\"SHA-256\"/>"
-            ;;
-        "8.5")
-            ch_config="<CredentialHandler className=\"org.apache.catalina.realm.MessageDigestCredentialHandler\" algorithm=\"SHA-512\" iterations=\"10000\" saltLength=\"16\"/>"
-            ;;
-        "9.0"|"10.0"|"10.1")
-            ch_config="<CredentialHandler className=\"org.apache.catalina.realm.SecretKeyCredentialHandler\" algorithm=\"PBKDF2WithHmacSHA512\" iterations=\"10000\" saltLength=\"16\" keyLength=\"256\"/>"
-            ;;
-    esac
-    
-    sed -i "/<Realm/a \    $ch_config" "$server_xml_path"
-    
-    if ! secure_write_xml "$server_xml_path"; then
-        echo "Error: Failed to update $server_xml_path"
+# Parse command-line arguments
+if [ "$#" -gt 1 ]; then
+    echo "Usage: $0 [--custom-conf=/path/to/conf]" >&2
     exit 1
 fi
 
-    # Restart Tomcat
-    echo "Restarting Tomcat to apply changes"
-    if ! manage_tomcat_service "$tomcat_home" "restart"; then
-        echo "Error: Failed to restart Tomcat service"
+custom_conf_path=""
+if [ "$#" -eq 1 ]; then
+    if [[ "$1" =~ ^--custom-conf=(.*)$ ]]; then
+        custom_conf_path="${BASH_REMATCH[1]}"
+    else
+        echo "Usage: $0 [--custom-conf=/path/to/conf]" >&2
         exit 1
     fi
-    
-    # Print timestamp and hostname
-    local timestamp_fmt=$(date '+%I:%M %p %Z, %A, %B %d, %Y')
-    echo "$timestamp_fmt"
-    echo "$HOSTNAME"
-    echo "==========================="
-    echo "Config Path: $conf_path"
-    echo "Tomcat Version: $tomcat_version"
-    echo "Auditing server.xml"
-    echo "Server Configuration:"
+fi
 
-    # Parse CredentialHandler details
-    local credential_handler algorithm iterations salt_length
-    credential_handler=$(xmllint --xpath 'string(//Realm/CredentialHandler/@className)' "$server_xml_path" 2>/dev/null)
-    algorithm=$(xmllint --xpath 'string(//Realm/CredentialHandler/@algorithm)' "$server_xml_path" 2>/dev/null)
-    iterations=$(xmllint --xpath 'string(//Realm/CredentialHandler/@iterations)' "$server_xml_path" 2>/dev/null)
-    salt_length=$(xmllint --xpath 'string(//Realm/CredentialHandler/@saltLength)' "$server_xml_path" 2>/dev/null)
-    local ch_status="Non-compliant"
-    if check_config_compliance "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length" | grep -q 'Compliant'; then
-        ch_status="Compliant for Tomcat $tomcat_version"
-    fi
-    echo "  Status: $ch_status"
-    echo "  Credential Handler: $credential_handler"
-    echo "  Algorithm: $algorithm"
-    echo "  Iterations: $iterations"
-    echo "  Salt Length: $salt_length"
-
-    echo "Auditing tomcat-users.xml"
-    echo "User Audit Results:"
-    printf '%-10s | %-15s | %-10s\n' "Username" "Password Type" "Compliance"
-    printf '%-10s | %-15s | %-10s\n' "----------" "---------------" "-----------"
-    # Print user audit table
-    local user_found=0
-    while IFS= read -r line; do
-        if [[ $line =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
-            user_found=1
-            local username="${BASH_REMATCH[1]}"
-            local password="${BASH_REMATCH[2]}"
-            local ptype="Plaintext"
-            local compliance="Non-compliant"
-            if validate_hash_format "$password" "$tomcat_version"; then
-                if [[ "$password" == *:* ]]; then
-                    ptype="Salted_PBKDF2"
-                elif [[ "$password" =~ ^[0-9a-fA-F]{128}$ ]]; then
-                    ptype="Salted_SHA512"
-                elif [[ "$password" =~ ^[0-9a-fA-F]{64}$ ]]; then
-                    ptype="SHA256"
-                fi
-                compliance="Compliant"
-            fi
-            printf '%-10s | %-15s | %-10s\n' "$username" "$ptype" "$compliance"
-        fi
-    done < "$users_xml_path"
-    if [ $user_found -eq 0 ]; then
-        echo "    No users found"
-    fi
-    echo "==========================="
-    echo "Overall Status: Secure"
-    echo "Audit completed. Log: $LOG_FILE"
-    
-    # Log results
-    local log_message="Tomcat Home: $tomcat_home; Config Path: $conf_path; Version: $tomcat_version; Status: $ch_status"
-    echo "$TIMESTAMP,\"$log_message\"" >> "$LOG_FILE"
-
-    # After all checks and parsing, call print_compliance_report with the right arguments
-    print_compliance_report "$conf_path" "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length" "$ch_status" "$users_xml_path" "1"
-}
-
-# Execute main function
-audit_tomcat_config "$@"
+# Execute audit with optional custom path
+audit_tomcat_config "$custom_conf_path"
