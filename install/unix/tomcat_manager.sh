@@ -584,127 +584,123 @@ update_user() {
 # Main script
 write_log "Starting Tomcat installation"
 
-# Test multiple Tomcat versions
 success=0
-for test_version in 7.0 8.5 9.0 10.0 10.1; do
-    write_log "\n[TEST] Installing Tomcat version $test_version" "INFO"
-    VERSION="$test_version"
-    # Setup Java first
-    if ! setup_java; then
-        write_log "Java setup failed for version $test_version. Skipping." "ERROR"
-        continue
-    fi
-    if ! java -version >/dev/null 2>&1; then
-        write_log "Java is not working for version $test_version. Skipping." "ERROR"
-        continue
-    fi
-    if ! validate_username "$USERNAME"; then
-        write_log "Invalid username format for version $test_version" "ERROR"
-        continue
-    fi
-    if ! validate_password "$PASSWORD"; then
-        write_log "Password must be at least 8 characters long for version $test_version" "ERROR"
-        continue
-    fi
-    if ! validate_roles "$ROLES"; then
-        write_log "Invalid roles specified for version $test_version" "ERROR"
-        continue
-    fi
-    if [ ! -d "$INSTALL_PATH-$test_version" ]; then
-        mkdir -p "$INSTALL_PATH-$test_version"
-        write_log "Created installation directory: $INSTALL_PATH-$test_version"
-    fi
-    major_version="${test_version%%.*}"
-    # Determine the latest available minor version for the major version
-    latest_minor=$(curl -s --max-time 10 "https://dlcdn.apache.org/tomcat/tomcat-${major_version}/" | grep -oE "v${test_version}\.[0-9]+" | sort -V | tail -n 1 | sed 's/v//')
-    if [ -z "$latest_minor" ]; then
-        write_log "Could not determine latest minor version for Tomcat $test_version. Using fallback version." "WARNING"
-        case "$test_version" in
-            7.0)
-                latest_minor="7.0.109"
-                download_url="https://archive.apache.org/dist/tomcat/tomcat-7/v7.0.109/bin/apache-tomcat-7.0.109.tar.gz"
-                ;;
-            8.5)
-                latest_minor="8.5.99"
-                download_url="https://archive.apache.org/dist/tomcat/tomcat-8/v8.5.99/bin/apache-tomcat-8.5.99.tar.gz"
-                ;;
-            9.0)
-                latest_minor="9.0.106"
-                download_url="https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.106/bin/apache-tomcat-9.0.106.tar.gz"
-                ;;
-            10.0)
-                latest_minor="10.1.42"
-                download_url="https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.42/bin/apache-tomcat-10.1.42.tar.gz"
-                ;;
-            10.1)
-                latest_minor="10.1.42"
-                download_url="https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.42/bin/apache-tomcat-10.1.42.tar.gz"
-                ;;
-            *)
-                write_log "No fallback version available for Tomcat $test_version. Skipping." "ERROR"
-                continue
-                ;;
-        esac
-    else
-        download_url="https://dlcdn.apache.org/tomcat/tomcat-${major_version}/v${latest_minor}/bin/apache-tomcat-${latest_minor}.tar.gz"
-    fi
-    write_log "Latest available minor version for Tomcat $test_version is $latest_minor" "INFO"
-    zip_file="/tmp/apache-tomcat-${latest_minor}.tar.gz"
-    # Check if the URL is valid (HTTP 200)
-    http_status=$(curl -s -o /dev/null -w "%{http_code}" "$download_url")
-    if [ "$http_status" != "200" ]; then
-        write_log "Tomcat $latest_minor not available at $download_url (HTTP $http_status). Skipping." "ERROR"
-        rm -f "$zip_file"
-        continue
-    fi
-    # Download if not already valid
-    if [ -f "$zip_file" ] && tar tzf "$zip_file" > /dev/null 2>&1; then
-        write_log "Using existing Tomcat archive: $zip_file"
-    else
-        write_log "Downloading Tomcat $latest_minor"
-        rm -f "$zip_file"
-        curl -L "$download_url" -o "$zip_file"
-        if [ $? -ne 0 ]; then
-            write_log "Failed to download Tomcat archive for version $latest_minor" "ERROR"
-            rm -f "$zip_file"
-            continue
-        fi
-        # Validate archive
-        if ! tar tzf "$zip_file" > /dev/null 2>&1; then
-            write_log "Downloaded file for Tomcat $latest_minor is not a valid archive. Skipping." "ERROR"
-            rm -f "$zip_file"
-            continue
-        fi
-    fi
-    if [ -d "$INSTALL_PATH-$test_version" ] && [ ! -w "$INSTALL_PATH-$test_version" ]; then
-        write_log "No write permission to $INSTALL_PATH-$test_version. Skipping." "ERROR"
-        continue
-    fi
-    write_log "Extracting Tomcat to $INSTALL_PATH-$test_version"
-    rm -rf "$INSTALL_PATH-$test_version"
-    tar xzf "$zip_file" -C "$(dirname "$INSTALL_PATH-$test_version")"
-    mv "$(dirname "$INSTALL_PATH-$test_version")/apache-tomcat-$latest_minor" "$INSTALL_PATH-$test_version"
+test_version="$VERSION"
+# Setup Java first
+if ! setup_java; then
+    write_log "Java setup failed for version $test_version. Skipping." "ERROR"
+    exit 1
+fi
+if ! java -version >/dev/null 2>&1; then
+    write_log "Java is not working for version $test_version. Skipping." "ERROR"
+    exit 1
+fi
+if ! validate_username "$USERNAME"; then
+    write_log "Invalid username format for version $test_version" "ERROR"
+    exit 1
+fi
+if ! validate_password "$PASSWORD"; then
+    write_log "Password must be at least 8 characters long for version $test_version" "ERROR"
+    exit 1
+fi
+if ! validate_roles "$ROLES"; then
+    write_log "Invalid roles specified for version $test_version" "ERROR"
+    exit 1
+fi
+if [ ! -d "$INSTALL_PATH-$test_version" ]; then
+    mkdir -p "$INSTALL_PATH-$test_version"
+    write_log "Created installation directory: $INSTALL_PATH-$test_version"
+fi
+major_version="${test_version%%.*}"
+# Determine the latest available minor version for the major version
+latest_minor=$(curl -s --max-time 10 "https://dlcdn.apache.org/tomcat/tomcat-${major_version}/" | grep -oE "v${test_version}\.[0-9]+" | sort -V | tail -n 1 | sed 's/v//')
+if [ -z "$latest_minor" ]; then
+    write_log "Could not determine latest minor version for Tomcat $test_version. Using fallback version." "WARNING"
+    case "$test_version" in
+        7.0)
+            latest_minor="7.0.109"
+            download_url="https://archive.apache.org/dist/tomcat/tomcat-7/v7.0.109/bin/apache-tomcat-7.0.109.tar.gz"
+            ;;
+        8.5)
+            latest_minor="8.5.99"
+            download_url="https://archive.apache.org/dist/tomcat/tomcat-8/v8.5.99/bin/apache-tomcat-8.5.99.tar.gz"
+            ;;
+        9.0)
+            latest_minor="9.0.106"
+            download_url="https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.106/bin/apache-tomcat-9.0.106.tar.gz"
+            ;;
+        10.0)
+            latest_minor="10.1.42"
+            download_url="https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.42/bin/apache-tomcat-10.1.42.tar.gz"
+            ;;
+        10.1)
+            latest_minor="10.1.42"
+            download_url="https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.42/bin/apache-tomcat-10.1.42.tar.gz"
+            ;;
+        *)
+            write_log "No fallback version available for Tomcat $test_version. Skipping." "ERROR"
+            exit 1
+            ;;
+    esac
+else
+    download_url="https://dlcdn.apache.org/tomcat/tomcat-${major_version}/v${latest_minor}/bin/apache-tomcat-${latest_minor}.tar.gz"
+fi
+write_log "Latest available minor version for Tomcat $test_version is $latest_minor" "INFO"
+zip_file="/tmp/apache-tomcat-${latest_minor}.tar.gz"
+# Check if the URL is valid (HTTP 200)
+http_status=$(curl -s -o /dev/null -w "%{http_code}" "$download_url")
+if [ "$http_status" != "200" ]; then
+    write_log "Tomcat $latest_minor not available at $download_url (HTTP $http_status). Skipping." "ERROR"
     rm -f "$zip_file"
-    hash=$(generate_hash "$INSTALL_PATH-$test_version/bin" "$PASSWORD" "$test_version")
-    if [ -z "$hash" ]; then
-        write_log "Failed to generate password hash for version $test_version" "ERROR"
-        continue
+    exit 1
+fi
+# Download if not already valid
+if [ -f "$zip_file" ] && tar tzf "$zip_file" > /dev/null 2>&1; then
+    write_log "Using existing Tomcat archive: $zip_file"
+else
+    write_log "Downloading Tomcat $latest_minor"
+    rm -f "$zip_file"
+    curl -L "$download_url" -o "$zip_file"
+    if [ $? -ne 0 ]; then
+        write_log "Failed to download Tomcat archive for version $latest_minor" "ERROR"
+        rm -f "$zip_file"
+        exit 1
     fi
-    users_xml="$INSTALL_PATH-$test_version/conf/tomcat-users.xml"
-    if update_user "$users_xml" "$USERNAME" "$hash" "$ROLES"; then
-        write_log "Successfully configured user $USERNAME for version $test_version"
-        success=1
-    else
-        write_log "Failed to configure user for version $test_version" "ERROR"
-        continue
+    # Validate archive
+    if ! tar tzf "$zip_file" > /dev/null 2>&1; then
+        write_log "Downloaded file for Tomcat $latest_minor is not a valid archive. Skipping." "ERROR"
+        rm -f "$zip_file"
+        exit 1
     fi
-    write_log "Tomcat $test_version installation completed successfully" "INFO"
-done
+fi
+if [ -d "$INSTALL_PATH-$test_version" ] && [ ! -w "$INSTALL_PATH-$test_version" ]; then
+    write_log "No write permission to $INSTALL_PATH-$test_version. Skipping." "ERROR"
+    exit 1
+fi
+write_log "Extracting Tomcat to $INSTALL_PATH-$test_version"
+rm -rf "$INSTALL_PATH-$test_version"
+tar xzf "$zip_file" -C "$(dirname "$INSTALL_PATH-$test_version")"
+mv "$(dirname "$INSTALL_PATH-$test_version")/apache-tomcat-$latest_minor" "$INSTALL_PATH-$test_version"
+rm -f "$zip_file"
+hash=$(generate_hash "$INSTALL_PATH-$test_version/bin" "$PASSWORD" "$test_version")
+if [ -z "$hash" ]; then
+    write_log "Failed to generate password hash for version $test_version" "ERROR"
+    exit 1
+fi
+users_xml="$INSTALL_PATH-$test_version/conf/tomcat-users.xml"
+if update_user "$users_xml" "$USERNAME" "$hash" "$ROLES"; then
+    write_log "Successfully configured user $USERNAME for version $test_version"
+    success=1
+else
+    write_log "Failed to configure user for version $test_version" "ERROR"
+    exit 1
+fi
+write_log "Tomcat $test_version installation completed successfully" "INFO"
 
 if [ "$success" = "1" ]; then
-    write_log "At least one Tomcat version installed successfully." "INFO"
-exit 0
+    write_log "Tomcat version $test_version installed successfully." "INFO"
+    exit 0
 else
-    write_log "All Tomcat version installations failed." "ERROR"
+    write_log "Tomcat version $test_version installation failed." "ERROR"
     exit 1
 fi

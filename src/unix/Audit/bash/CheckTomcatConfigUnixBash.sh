@@ -309,7 +309,7 @@ main() {
     elif [ -n "$CATALINA_BASE" ]; then
         conf_path="$CATALINA_BASE/conf"
     else
-        for path in "/opt/tomcat/conf" "/usr/local/tomcat/conf" "/var/lib/tomcat/conf" "/usr/share/tomcat/conf"; do
+        for path in /opt/tomcat*/conf /usr/local/tomcat*/conf /var/lib/tomcat*/conf /usr/share/tomcat*/conf; do
             if [ -d "$path" ] && [ -f "$path/server.xml" ]; then
                 conf_path=$path
                 break
