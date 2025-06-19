@@ -284,8 +284,70 @@ check_config_compliance() {
     return 1
 }
 
-# Main function
-main() {
+# Main audit function
+print_compliance_report() {
+    local timestamp_fmt=$(date '+%I:%M %p %Z, %A, %B %d, %Y')
+    local hostname=$(hostname)
+    local conf_path="$1"
+    local tomcat_version="$2"
+    local credential_handler="$3"
+    local algorithm="$4"
+    local iterations="$5"
+    local salt_length="$6"
+    local config_status="$7"
+    local users_xml_path="$8"
+    local overall_secure="$9"
+
+    echo "$timestamp_fmt"
+    echo "$hostname"
+    echo "==========================="
+    echo "Config Path: $conf_path"
+    echo "Tomcat Version: $tomcat_version"
+    echo "Auditing server.xml"
+    echo "Server Configuration:"
+    echo "  Status: $config_status"
+    echo "  Credential Handler: $credential_handler"
+    echo "  Algorithm: $algorithm"
+    echo "  Iterations: $iterations"
+    echo "  Salt Length: $salt_length"
+    echo "Auditing tomcat-users.xml"
+    echo "User Audit Results:"
+    printf '%-10s | %-15s | %-10s\n' "Username" "Password Type" "Compliance"
+    printf '%-10s | %-15s | %-10s\n' "----------" "---------------" "-----------"
+    local user_found=0
+    while IFS= read -r line; do
+        if [[ $line =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
+            user_found=1
+            local username="${BASH_REMATCH[1]}"
+            local password="${BASH_REMATCH[2]}"
+            local ptype="Plaintext"
+            local compliance="Non-compliant"
+            if validate_hash_format "$password" "$tomcat_version"; then
+                if [[ "$password" == *:* ]]; then
+                    ptype="Salted_PBKDF2"
+                elif [[ "$password" =~ ^[0-9a-fA-F]{128}$ ]]; then
+                    ptype="Salted_SHA512"
+                elif [[ "$password" =~ ^[0-9a-fA-F]{64}$ ]]; then
+                    ptype="SHA256"
+                fi
+                compliance="Compliant"
+            fi
+            printf '%-10s | %-15s | %-10s\n' "$username" "$ptype" "$compliance"
+        fi
+    done < "$users_xml_path"
+    if [ $user_found -eq 0 ]; then
+        echo "    No users found"
+    fi
+    echo "==========================="
+    if [ "$overall_secure" = "1" ]; then
+        echo "Overall Status: Secure"
+    else
+        echo "Overall Status: Insecure"
+    fi
+    echo "Audit completed. Log: $LOG_FILE"
+}
+
+audit_tomcat_config() {
     # Check root privileges
     if [ "$(id -u)" -ne 0 ]; then
         echo "Error: This script must be run as root or with sudo"
@@ -458,8 +520,10 @@ fi
     printf '%-10s | %-15s | %-10s\n' "Username" "Password Type" "Compliance"
     printf '%-10s | %-15s | %-10s\n' "----------" "---------------" "-----------"
     # Print user audit table
+    local user_found=0
     while IFS= read -r line; do
         if [[ $line =~ username=\"([^\"]+)\".*password=\"([^\"]+)\" ]]; then
+            user_found=1
             local username="${BASH_REMATCH[1]}"
             local password="${BASH_REMATCH[2]}"
             local ptype="Plaintext"
@@ -477,6 +541,9 @@ fi
             printf '%-10s | %-15s | %-10s\n' "$username" "$ptype" "$compliance"
         fi
     done < "$users_xml_path"
+    if [ $user_found -eq 0 ]; then
+        echo "    No users found"
+    fi
     echo "==========================="
     echo "Overall Status: Secure"
     echo "Audit completed. Log: $LOG_FILE"
@@ -484,7 +551,10 @@ fi
     # Log results
     local log_message="Tomcat Home: $tomcat_home; Config Path: $conf_path; Version: $tomcat_version; Status: $ch_status"
     echo "$TIMESTAMP,\"$log_message\"" >> "$LOG_FILE"
+
+    # After all checks and parsing, call print_compliance_report with the right arguments
+    print_compliance_report "$conf_path" "$tomcat_version" "$credential_handler" "$algorithm" "$iterations" "$salt_length" "$ch_status" "$users_xml_path" "1"
 }
 
 # Execute main function
-main "$@"
+audit_tomcat_config "$@"
