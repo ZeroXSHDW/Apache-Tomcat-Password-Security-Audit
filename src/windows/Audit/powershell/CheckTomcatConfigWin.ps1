@@ -160,6 +160,16 @@ Write-Host "Config Path: $tomcatConfPath"
 $tomcatHome = Split-Path $tomcatConfPath
 Write-Host "Tomcat Home: $tomcatHome"
 
+# Check for Tomcat processes running as NT AUTHORITY\SYSTEM
+$tomcatProcs = Get-WmiObject Win32_Process -Filter "Name = 'java.exe'" | Where-Object { $_.CommandLine -match 'org.apache.catalina.startup.Bootstrap' }
+foreach ($proc in $tomcatProcs) {
+    $ownerInfo = $proc.GetOwner()
+    $owner = "$($ownerInfo.Domain)\\$($ownerInfo.User)"
+    if ($owner -eq 'NT AUTHORITY\\SYSTEM') {
+        Write-Host "WARNING: Tomcat process (PID $($proc.ProcessId)) is running as NT AUTHORITY\\SYSTEM. This is a security risk."
+    }
+}
+
 Write-Host "Validating Tomcat installation at $tomcatHome"
 $releaseNotes = Join-Path $tomcatHome "RELEASE-NOTES"
 $versionScript = Join-Path $tomcatHome "bin\version.sh"

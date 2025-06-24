@@ -163,7 +163,7 @@ try {
 
                 $tomcatInfo = Get-TomcatConfigPath
                 if (-not $tomcatInfo) {
-                    Write-Log "ERROR - No Tomcat configuration directory found"
+                    Write-Log "ERROR - No Tomcat configuration directory found" -server $env:COMPUTERNAME
                     return $logMessages
                 }
                 $tomcatConfPath = $tomcatInfo.Path
@@ -322,6 +322,17 @@ try {
                 Write-Log ("=" * 27)
                 Write-Log "Overall Status: $(if ($isSecure) { 'Secure' } else { 'Insecure' })"
                 Write-Log "Audit completed. Log: $logFile"
+
+                # Check for Tomcat processes running as NT AUTHORITY\SYSTEM
+                $tomcatProcs = Get-WmiObject Win32_Process -Filter "Name = 'java.exe'" | Where-Object { $_.CommandLine -match 'org.apache.catalina.startup.Bootstrap' }
+                foreach ($proc in $tomcatProcs) {
+                    $ownerInfo = $proc.GetOwner()
+                    $owner = "$($ownerInfo.Domain)\\$($ownerInfo.User)"
+                    if ($owner -eq 'NT AUTHORITY\\SYSTEM') {
+                        Write-Log "WARNING: Tomcat process (PID $($proc.ProcessId)) is running as NT AUTHORITY\\SYSTEM. This is a security risk." -server $env:COMPUTERNAME
+                    }
+                }
+
                 return $logMessages
             } -ArgumentList $TomcatConfPath
 

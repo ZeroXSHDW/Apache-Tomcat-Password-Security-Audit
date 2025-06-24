@@ -158,11 +158,14 @@ Searching common Tomcat configuration paths...
 Found Tomcat configuration at: C:\Program Files\Apache Software Foundation\Tomcat\conf
 Config Path: C:\Program Files\Apache Software Foundation\Tomcat\conf
 Tomcat Home: C:\Program Files\Apache Software Foundation\Tomcat
+WARNING: Tomcat process (PID 1234) is running as NT AUTHORITY\SYSTEM. This is a security risk.
 Validating Tomcat installation at C:\Program Files\Apache Software Foundation\Tomcat
 Tomcat installation validation passed
 Tomcat Version: 10.0
 Auditing server.xml
 Server Configuration:
+    - Recommendation: Use PBKDF2WithHmacSHA512 or SHA-256 with at least 10,000 iterations and 16+ salt length.
+    - Example: <CredentialHandler className='org.apache.catalina.realm.SecretKeyCredentialHandler' algorithm='PBKDF2WithHmacSHA512' iterations='10000' saltLength='16'/>
   Credential Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
   Algorithm: PBKDF2WithHmacSHA512
   Iterations: 10000
@@ -172,10 +175,10 @@ Auditing tomcat-users.xml
     User Audit Results:
     Username | Password Type | Compliance
     ---------|---------------|-----------
-    testuser | Salted_PBKDF2 | Compliant
+    testuser | Hashed_SHA256 | Compliant
 ===========================
 Overall Status: Secure
-Audit completed. Log: C:\Users\<User>\AppData\Local\Temp\TestTomcatConfig.csv
+Audit completed. Log: C:\Users\<User>\AppData\Local\Temp\TomcatManager.csv
 ```
 
 #### Local Patch
@@ -213,36 +216,40 @@ Audit completed
 #### Remote Audit
 ```powershell
 $cred = Get-Credential
-.\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName Windows-Server -Credential $cred
+.\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName WIN-SERVER -Credential $cred
 ```
-- **Output**: Logs to `C:\Temp\TomcatConfigCheck.csv`.
+- **Output**: Logs to `C:\Temp\TomcatConfigCheck.csv` on the client.
 - **Example Output**:
 ```
 [Client] Starting script execution at 2025-06-18 13:35:00.
-[Windows-Server] ##############################################################WIN-SERVER###############################################################
-[Windows-Server] Execution Time: 2025-06-18 13:35:00
-[Windows-Server] HOSTNAME: WIN-SERVER
-[Windows-Server] ===========================
-[Windows-Server] Searching common Tomcat configuration paths...
-[Windows-Server] Found Tomcat configuration at: C:\Program Files\Apache Software Foundation\Tomcat\conf
-[Windows-Server] Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat\conf
-[Windows-Server] Tomcat Home: C:\Program Files\Apache Software Foundation\Tomcat
-[Windows-Server] Tomcat Version: 10.0
-[Windows-Server] Auditing server.xml
-[Windows-Server] Server Configuration:
-[Windows-Server]   Credential Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
-[Windows-Server]   Algorithm: PBKDF2WithHmacSHA512
-[Windows-Server]   Iterations: 10000
-[Windows-Server]   Salt Length: 16
-[Windows-Server]   Status: Compliant
-[Windows-Server] Auditing tomcat-users.xml
-[Windows-Server]     User Audit Results:
-[Windows-Server]     Username | Password Type | Compliance
-[Windows-Server]     ---------|---------------|-----------
-[Windows-Server]     testuser | Salted_PBKDF2 | Compliant
-[Windows-Server] ===========================
-[Windows-Server] Overall Status: Secure
-[Windows-Server] Audit completed. Log: C:\Temp\TomcatConfigCheck.csv
+[WIN-SERVER] Checking Apache Tomcat configuration security on WIN-SERVER...
+[WIN-SERVER] ##############################################################WIN-SERVER###############################################################
+[WIN-SERVER] Execution Time: 2025-06-18 13:35:00
+[WIN-SERVER] HOSTNAME: WIN-SERVER
+[WIN-SERVER] ===========================
+[WIN-SERVER] Searching common Tomcat configuration paths...
+[WIN-SERVER] Found Tomcat configuration at: C:\Program Files\Apache Software Foundation\Tomcat\conf
+[WIN-SERVER] Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat\conf
+[WIN-SERVER] Tomcat Home: C:\Program Files\Apache Software Foundation\Tomcat
+[WIN-SERVER] Tomcat Version: 10.0
+[WIN-SERVER] Auditing server.xml
+[WIN-SERVER] Server Configuration:
+[WIN-SERVER]     - Recommendation: Use PBKDF2WithHmacSHA512 or SHA-256 with at least 10,000 iterations and 16+ salt length.
+[WIN-SERVER]     - Example: <CredentialHandler className='org.apache.catalina.realm.SecretKeyCredentialHandler' algorithm='PBKDF2WithHmacSHA512' iterations='10000' saltLength='16'/>
+[WIN-SERVER]   Credential Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
+[WIN-SERVER]   Algorithm: PBKDF2WithHmacSHA512
+[WIN-SERVER]   Iterations: 10000
+[WIN-SERVER]   Salt Length: 16
+[WIN-SERVER]   Status: Compliant
+[WIN-SERVER] Auditing tomcat-users.xml
+[WIN-SERVER]     User Audit Results:
+[WIN-SERVER]     Username | Password Type | Compliance
+[WIN-SERVER]     ---------|---------------|-----------
+[WIN-SERVER]     testuser | Hashed_SHA256 | Compliant
+[WIN-SERVER] ===========================
+[WIN-SERVER] Overall Status: Secure
+[WIN-SERVER] Audit completed. Log: C:\Temp\TomcatConfigCheck.csv
+[WIN-SERVER] WARNING: Tomcat process (PID 1234) is running as NT AUTHORITY\SYSTEM. This is a security risk.
 ```
 - **Log File Content (TomcatConfigCheck.csv)**:
 ```
