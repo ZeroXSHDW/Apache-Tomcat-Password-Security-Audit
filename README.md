@@ -79,7 +79,10 @@ server01
 ===========================
 Config Path: /opt/tomcat/conf
 Checking for running Tomcat processes...
-No running Tomcat processes found for root check.
+Found running Tomcat process (PID: 1234)
+  - Check process details with: ps -ef | grep 1234
+  - Found CATALINA_HOME from process: /opt/tomcat/conf
+  - Tomcat may be running from an alternate installation
 server.xml is owned by root
 server.xml permissions are secure (0o640)
 tomcat-users.xml is owned by root
@@ -215,13 +218,31 @@ $cred = Get-Credential
 - **Output**: Logs to `C:\Temp\TomcatConfigCheck.csv`.
 - **Example Output**:
 ```
-[Client] Starting script execution at 2025-06-18 13:35:00
-[Windows-Server] Checking Apache Tomcat configuration security on Windows-Server...
-[Windows-Server] Tomcat configuration directory located at C:\Program Files\Apache Software Foundation\Tomcat\conf
+[Client] Starting script execution at 2025-06-18 13:35:00.
+[Windows-Server] ##############################################################WIN-SERVER###############################################################
+[Windows-Server] Execution Time: 2025-06-18 13:35:00
+[Windows-Server] HOSTNAME: WIN-SERVER
+[Windows-Server] ===========================
+[Windows-Server] Searching common Tomcat configuration paths...
+[Windows-Server] Found Tomcat configuration at: C:\Program Files\Apache Software Foundation\Tomcat\conf
 [Windows-Server] Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat\conf
-[Windows-Server] User 'testuser': Compliant
-[Windows-Server] Overall Configuration: Secure
-[Windows-Server] Audit completed
+[Windows-Server] Tomcat Home: C:\Program Files\Apache Software Foundation\Tomcat
+[Windows-Server] Tomcat Version: 10.0
+[Windows-Server] Auditing server.xml
+[Windows-Server] Server Configuration:
+[Windows-Server]   Credential Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
+[Windows-Server]   Algorithm: PBKDF2WithHmacSHA512
+[Windows-Server]   Iterations: 10000
+[Windows-Server]   Salt Length: 16
+[Windows-Server]   Status: Compliant
+[Windows-Server] Auditing tomcat-users.xml
+[Windows-Server]     User Audit Results:
+[Windows-Server]     Username | Password Type | Compliance
+[Windows-Server]     ---------|---------------|-----------
+[Windows-Server]     testuser | Salted_PBKDF2 | Compliant
+[Windows-Server] ===========================
+[Windows-Server] Overall Status: Secure
+[Windows-Server] Audit completed. Log: C:\Temp\TomcatConfigCheck.csv
 ```
 - **Log File Content (TomcatConfigCheck.csv)**:
 ```
