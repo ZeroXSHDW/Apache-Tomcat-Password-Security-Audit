@@ -15,6 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 import shutil
+import stat
 
 class TomcatConfigManager:
     """Manages Tomcat configuration across different platforms."""
@@ -654,6 +655,67 @@ def audit_users_xml(users_xml_path, credential_handler, handler_algorithm, itera
         write_log(f"Error reading {users_xml_path}: {str(e)}")
     return results
 
+def check_tomcat_running_as_root():
+    """Check if any Tomcat process is running as root, and if lsof is available, check open files owned by root."""
+    try:
+        # Find Tomcat PIDs
+        result = subprocess.run(["pgrep", "-f", "org.apache.catalina.startup.Bootstrap"], capture_output=True, text=True)
+        tomcat_pids = result.stdout.strip().split() if result.returncode == 0 else []
+        found_root = False
+        if tomcat_pids:
+            for pid in tomcat_pids:
+                # Check process user
+                try:
+                    proc_user = subprocess.check_output(["ps", "-o", "user=", "-p", pid], text=True).strip()
+                    if proc_user == "root":
+                        write_log(f"WARNING: Tomcat process (PID {pid}) is running as root! [ps method]", 2)
+                        write_log("  - It is a security risk to run Tomcat as root. Use a dedicated non-root user.", 2)
+                        found_root = True
+                except Exception:
+                    continue
+            # lsof check
+            if shutil.which("lsof"):
+                for pid in tomcat_pids:
+                    try:
+                        lsof_out = subprocess.check_output(["lsof", "-p", pid], text=True)
+                        for line in lsof_out.splitlines():
+                            parts = line.split()
+                            if len(parts) > 2 and parts[2] == "root":
+                                write_log(f"WARNING: Tomcat process (PID {pid}) has open files owned by root! [lsof method]", 2)
+                                write_log("  - This may indicate Tomcat is running as root or has escalated privileges.", 2)
+                                found_root = True
+                                break
+                    except Exception:
+                        continue
+            if not found_root:
+                write_log("Tomcat process is not running as root (checked by both ps and lsof).", 2)
+        else:
+            write_log("No running Tomcat processes found for root check.", 2)
+    except Exception as e:
+        write_log(f"Error checking Tomcat root status: {e}", 2)
+
+def check_file_ownership_and_permissions(file_path):
+    """Check if file is owned by root and has secure permissions."""
+    if os.path.isfile(file_path):
+        st = os.stat(file_path)
+        owner = st.st_uid
+        perms = stat.S_IMODE(st.st_mode)
+        try:
+            import pwd
+            owner_name = pwd.getpwuid(owner).pw_name
+        except Exception:
+            owner_name = str(owner)
+        if owner_name != "root":
+            write_log(f"WARNING: {file_path} is not owned by root (owner: {owner_name})", 2)
+        else:
+            write_log(f"{file_path} is owned by root", 2)
+        if perms > 0o640:
+            write_log(f"WARNING: {file_path} has insecure permissions ({oct(perms)})", 2)
+        else:
+            write_log(f"{file_path} permissions are secure ({oct(perms)})", 2)
+    else:
+        write_log(f"WARNING: {file_path} does not exist", 2)
+
 # Main audit function
 def audit_tomcat_config():
     # Check for sudo/root privileges
@@ -681,6 +743,13 @@ def audit_tomcat_config():
         write_log("ERROR - No Tomcat configuration directory found")
         return
     write_log(f"Config Path: {conf_path}")
+
+    # Check if Tomcat is running as root
+    check_tomcat_running_as_root()
+
+    # Always check file ownership and permissions for root detection
+    check_file_ownership_and_permissions(os.path.join(conf_path, "server.xml"))
+    check_file_ownership_and_permissions(os.path.join(conf_path, "tomcat-users.xml"))
 
     tomcat_version = detect_tomcat_version(os.path.dirname(conf_path))
     write_log(f"Tomcat Version: {tomcat_version}")

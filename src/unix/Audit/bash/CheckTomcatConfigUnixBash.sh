@@ -420,6 +420,29 @@ validate_tomcat_installation() {
     return 0
 }
 
+# Function to check file ownership and permissions for root detection
+check_file_ownership_and_permissions() {
+    local file="$1"
+    if [ -f "$file" ]; then
+        local owner
+        local perms
+        owner=$(stat -c '%U' "$file" 2>/dev/null)
+        perms=$(stat -c '%a' "$file" 2>/dev/null)
+        if [ "$owner" != "root" ]; then
+            write_log "WARNING: $file is not owned by root (owner: $owner)" 2
+        else
+            write_log "$file is owned by root" 2
+        fi
+        if [ "$perms" -gt 640 ]; then
+            write_log "WARNING: $file has insecure permissions ($perms)" 2
+        else
+            write_log "$file permissions are secure ($perms)" 2
+        fi
+    else
+        write_log "WARNING: $file does not exist" 2
+    fi
+}
+
 # Function to check if Tomcat is running as root (two methods)
 check_tomcat_running_as_root() {
     local tomcat_pids
@@ -495,6 +518,10 @@ audit_tomcat_config() {
 
     # Check if Tomcat is running as root
     check_tomcat_running_as_root
+
+    # Always check file ownership and permissions for root detection
+    check_file_ownership_and_permissions "$conf_path/server.xml"
+    check_file_ownership_and_permissions "$conf_path/tomcat-users.xml"
 
     # Derive Tomcat home directory
     local tomcat_home
