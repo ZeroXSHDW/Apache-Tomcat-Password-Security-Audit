@@ -245,12 +245,12 @@ detect_tomcat_version() {
         write_log "catalina.jar not found at $catalina_jar"
     fi
 
-    # Fallback: Assume 7.0 with warning
+    # Fallback: Error if version is unknown
     if [ "$version" = "unknown" ]; then
-        version="7.0"
-        write_log "WARNING: Could not determine Tomcat version at $tomcat_home, defaulting to 7.0"
+        write_log "ERROR: Could not determine Tomcat version at $tomcat_home. Aborting audit." 2
         write_log "  - Ensure RELEASE-NOTES, catalina.jar, version.sh, or a Tomcat package is present" 2
-        write_log "  - Manual verification recommended" 2
+        write_log "  - Manual verification required" 2
+        return 1
     fi
 
     echo "$version"
@@ -725,7 +725,7 @@ audit_tomcat_config() {
     # Write single CSV line
     local timestamp="$exec_time"
     local combined_message=$(IFS="; "; echo "${log_messages[*]}")
-    local log_entry="$timestamp,\"$combined_message)\""
+    local log_entry="$timestamp,\"$combined_message\""
     if ! echo "$log_entry" >> "$LOG_FILE" 2>/dev/null; then
         printf "Error: Cannot write to %s\n" "$LOG_FILE" >&2
         logger -t TomcatAudit "Error: Cannot write to $LOG_FILE."
