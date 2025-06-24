@@ -11,7 +11,7 @@
 - **Manual Auditing**: Analyze existing configurations, reporting password types, credential handlers, and compliance status with actionable recommendations.
 - **Automated Patching**: Convert plaintext passwords to compliant hashes, update configuration files, and restart Tomcat services.
 - **Remote Auditing**: Support for auditing Tomcat configurations on remote Windows servers using PowerShell remoting.
-- **Cross-Platform Support**: Bash and Python-based scripts for Unix (Linux/macOS) and PowerShell scripts for Windows.
+- **Cross-Platform Support**: Bash scripts for Unix (Linux/macOS) and PowerShell scripts for Windows.
 - **Backup and Restore**: Automatically back up and restore configuration files during auditing and patching to prevent data loss.
 - **Detailed Logging**: Logs audit and patch results to platform-specific locations for traceability.
 - **Compliance Reporting**: Identifies secure/insecure configurations and provides guidance for achieving compliance.
@@ -37,7 +37,7 @@
 
 ### Prerequisites
 - **Unix (Linux/macOS)**:
-  - Bash or Python 3.6+.
+  - Bash shell.
   - Tomcat installed (e.g., `/opt/tomcat`).
   - Sudo permissions for auditing and patching.
 - **Windows**:
@@ -96,37 +96,7 @@ Overall Status: Secure
 Audit completed. Log: /tmp/TomcatManager.csv
 ```
 
-### 2. Unix: Audit Local Configuration (Python)
-Run the Unix Python auditing script to check compliance:
-```bash
-sudo ./src/unix/Audit/python/CheckTomcatConfigUnixPython.py
-```
-- **Output**: Logs to `/tmp/TomcatManager.csv`.
-- **Example Output**:
-```
-07:05 PM IST, Tuesday, May 20, 2025
-server01
-===========================
-Config Path: /opt/tomcat/conf
-Tomcat Version: 9.0
-Auditing server.xml
-Server Configuration:
-  Status: Compliant for Tomcat 9.0
-  Credential Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
-  Algorithm: PBKDF2WithHmacSHA512
-  Iterations: 10000
-  Salt Length: 16
-Auditing tomcat-users.xml
-User Audit Results:
-Username | Password Type | Compliance
----------|---------------|-----------
-    testuser | Salted_PBKDF2 | Compliant
-===========================
-Overall Status: Secure
-Audit completed. Log: /tmp/TomcatManager.csv
-```
-
-### 3. Unix: Patch Local Configuration (Bash)
+### 2. Unix: Patch Local Configuration (Bash)
 Run the Unix Bash patching script to convert plaintext passwords to compliant hashes and update configurations:
 ```bash
 sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
@@ -160,20 +130,9 @@ Audit completed
 sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh --custom-conf=/opt/tomcat/conf
 ```
 
-### 4. Unix: Patch Local Configuration (Python)
-Run the Unix Python patching script to convert plaintext passwords to compliant hashes and update configurations:
-```bash
-sudo ./src/unix/Patch/python/UpdateTomcatUserUnixPython.py
-```
-- **Output**: Logs to `/tmp/TomcatManager.csv`.
-- **Example Output**: Same as the Bash patching script above.
-- **Optional Custom Path**:
-```bash
-sudo ./src/unix/Patch/python/UpdateTomcatUserUnixPython.py --custom-conf=/opt/tomcat/conf
-```
+### 3. Windows: Audit, Patch, and Remote Audit
 
-### 5. Windows: Audit Local Configuration
-Run the Windows auditing script to check compliance:
+#### Local Audit
 ```powershell
 .\src\windows\Audit\powershell\CheckTomcatConfigWin.ps1
 ```
@@ -193,8 +152,7 @@ Timestamp,Message
 2025-06-18 13:35:00,Checking Apache Tomcat configuration security...;Tomcat configuration directory located at C:\Program Files\Apache Software Foundation\Tomcat\conf;Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat\conf;User 'testuser': Compliant;Overall Configuration: Secure;Audit completed
 ```
 
-### 6. Windows: Patch Local Configuration
-Run the Windows patching script to convert plaintext passwords to compliant hashes and update configurations:
+#### Local Patch
 ```powershell
 .\src\windows\Patch\powershell\UpdateTomcatUserWin.ps1
 ```
@@ -226,8 +184,7 @@ Audit completed
 .\src\windows\Patch\powershell\UpdateTomcatUserWin.ps1 -TomcatConfPath "C:\Program Files\Apache Software Foundation\Tomcat\conf"
 ```
 
-### 7. Windows: Audit Remote Configuration
-Run the remote auditing script to check compliance on remote Windows servers:
+#### Remote Audit
 ```powershell
 $cred = Get-Credential
 .\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName Windows-Server -Credential $cred
@@ -277,11 +234,7 @@ Uninstall Tomcat:
 ```bash
 sudo ./install/unix/tomcat_manager.sh uninstall
 ```
-Install dependencies:
-```bash
-sudo apt install python3 openjdk-11-jdk  # Ubuntu/Debian/Kali
-sudo yum install python3 java-11-openjdk-devel  # CentOS/RHEL
-```
+# Dependencies are handled by the install script.
 
 #### Windows
 Install Tomcat:
@@ -292,12 +245,7 @@ Uninstall Tomcat:
 ```powershell
 .\install\windows\TomcatManager.ps1 uninstall
 ```
-Install Java (if needed):
-- Download Java 11 from `https://adoptium.net/`.
-- Set `JAVA_HOME`:
-```powershell
-[Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\Program Files\Java\jdk-11", "Machine")
-```
+# Dependencies are handled by the install script.
 
 ### Run Tests
 #### Unix
@@ -348,15 +296,11 @@ Apache-Tomcat-Password-Security-Audit/
 ├── src/                      # Source code
 │   ├── unix/                 # Unix-specific scripts
 │   │   ├── Audit/            # Auditing scripts
-│   │   │   ├── bash/        # Bash auditing scripts
-│   │   │   │   └── CheckTomcatConfigUnixBash.sh
-│   │   │   └── python/      # Python auditing scripts
-│   │   │       └── CheckTomcatConfigUnixPython.py
+│   │   │   └── bash/        # Bash auditing scripts
+│   │   │       └── CheckTomcatConfigUnixBash.sh
 │   │   └── Patch/            # Patching scripts
-│   │       ├── bash/        # Bash patching scripts
-│   │       │   └── UpdateTomcatUserUnix.sh
-│   │       └── python/      # Python patching scripts
-│   │           └── UpdateTomcatUserUnixPython.py
+│   │       └── bash/        # Bash patching scripts
+│   │           └── UpdateTomcatUserUnix.sh
 │   └── windows/              # Windows-specific scripts
 │       ├── Audit/            # Auditing scripts
 │       │   └── powershell/   # PowerShell auditing scripts
@@ -380,56 +324,6 @@ Apache-Tomcat-Password-Security-Audit/
     └── windows/              # Windows installation and management
         └── TomcatManager.ps1
 ```
-
-## Troubleshooting
-- **Tomcat Not Found**:
-  - Verify installation path (e.g., `/opt/tomcat` or `C:\Program Files\Apache Software Foundation\Tomcat`).
-  - Ensure `server.xml`, `tomcat-users.xml`, and `digest.sh`/`digest.bat` exist in the `conf` and `bin` directories.
-- **Unix Permissions**:
-  - Run with `sudo`.
-  - Check write access to `/tmp` and Tomcat's `conf` directory:
-    ```bash
-    sudo chmod 644 /opt/tomcat/conf/*
-    ```
-- **Windows Permissions**:
-  - Run PowerShell as Administrator.
-  - Ensure write access to `$env:LOCALAPPDATA\Temp` and `C:\Temp`:
-    ```powershell
-    icacls "C:\Program Files\Apache Software Foundation\Tomcat\conf" /grant Administrators:F
-    ```
-- **Remote Auditing**:
-  - Enable PowerShell remoting:
-    ```powershell
-    Enable-PSRemoting -Force
-    Set-Item -Path WSMan:\localhost\Client\TrustedHosts -Value "Server-IP" -Concatenate -Force
-    ```
-  - Test connectivity:
-    ```powershell
-    Test-WSMan Server-IP
-    ```
-- **Java Issues**:
-  - Verify Java version and `JAVA_HOME`:
-    ```bash
-    java -version
-    echo $JAVA_HOME
-    ```
-    ```powershell
-    java -version
-    $env:JAVA_HOME
-    ```
-  - Set `JAVA_HOME` if needed:
-    ```bash
-    export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
-    ```
-    ```powershell
-    [Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\Program Files\Java\jdk-11", "Machine")
-    ```
-- **Log Security**:
-  - Ensure log files (`/tmp/TomcatManager.csv`, `$env:LOCALAPPDATA\Temp\TomcatManager.csv`) and backups are secured:
-    ```bash
-    sudo chmod 600 /tmp/TomcatManager.csv
-    ```
-  - Move logs to a secure location if needed (e.g., `/var/log/tomcat-audit` or `C:\ProgramData\TomcatAudit`).
 
 ## License
 Licensed under the Apache 2.0 License. See `docs/LICENSE` for details.
