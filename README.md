@@ -222,31 +222,6 @@ $cred = Get-Credential
 
 The testing framework validates the auditing and patching scripts by simulating various Tomcat configurations and password types to ensure they correctly identify and resolve compliance issues. It includes installation scripts to set up test environments.
 
-### Installation for Testing
-Use these commands to install Tomcat for testing the auditing and patching scripts. These are optional and only needed for validation.
-
-#### Unix
-Install Tomcat:
-```bash
-sudo ./install/unix/tomcat_manager.sh install 9    # Install Tomcat 9.0
-```
-Uninstall Tomcat:
-```bash
-sudo ./install/unix/tomcat_manager.sh uninstall
-```
-# Dependencies are handled by the install script.
-
-#### Windows
-Install Tomcat:
-```powershell
-.\install\windows\TomcatManager.ps1 install 9    # Install Tomcat 9.0
-```
-Uninstall Tomcat:
-```powershell
-.\install\windows\TomcatManager.ps1 uninstall
-```
-# Dependencies are handled by the install script.
-
 ### Run Tests
 #### Unix
 ```bash
