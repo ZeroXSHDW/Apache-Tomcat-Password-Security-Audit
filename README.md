@@ -150,7 +150,7 @@ sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh --custom-conf=/opt/tomcat/con
 - **Example Output**:
 ```
 Checking Apache Tomcat configuration security...
-##############################################################WIN-SERVER###############################################################
+############################################################WIN-SERVER###########################################################
 Execution Time: 2025-06-18 13:35:00
 HOSTNAME: WIN-SERVER
 ===========================
@@ -158,10 +158,11 @@ Searching common Tomcat configuration paths...
 Found Tomcat configuration at: C:\Program Files\Apache Software Foundation\Tomcat\conf
 Config Path: C:\Program Files\Apache Software Foundation\Tomcat\conf
 Tomcat Home: C:\Program Files\Apache Software Foundation\Tomcat
-WARNING: Tomcat process (PID 1234) is running as NT AUTHORITY\SYSTEM. This is a security risk.
+Detected Tomcat version from RELEASE-NOTES: 10.0.27
+No Tomcat process found running as NT AUTHORITY\SYSTEM.
 Validating Tomcat installation at C:\Program Files\Apache Software Foundation\Tomcat
 Tomcat installation validation passed
-Tomcat Version: 10.0
+Tomcat Version: 10.0.27
 Auditing server.xml
 Server Configuration:
     - Recommendation: Use PBKDF2WithHmacSHA512 or SHA-256 with at least 10,000 iterations and 16+ salt length.
@@ -223,15 +224,19 @@ $cred = Get-Credential
 ```
 [Client] Starting script execution at 2025-06-18 13:35:00.
 [WIN-SERVER] Checking Apache Tomcat configuration security on WIN-SERVER...
-[WIN-SERVER] ##############################################################WIN-SERVER###############################################################
+[WIN-SERVER] ############################################################WIN-SERVER###########################################################
 [WIN-SERVER] Execution Time: 2025-06-18 13:35:00
 [WIN-SERVER] HOSTNAME: WIN-SERVER
 [WIN-SERVER] ===========================
 [WIN-SERVER] Searching common Tomcat configuration paths...
 [WIN-SERVER] Found Tomcat configuration at: C:\Program Files\Apache Software Foundation\Tomcat\conf
+[WIN-SERVER] Config Path: C:\Program Files\Apache Software Foundation\Tomcat\conf
 [WIN-SERVER] Tomcat Home: C:\Program Files\Apache Software Foundation\Tomcat
-[WIN-SERVER] WARNING: Tomcat process (PID 1234) is running as NT AUTHORITY\SYSTEM. This is a security risk.
-[WIN-SERVER] Tomcat Version: 10.0
+[WIN-SERVER] Detected Tomcat version from RELEASE-NOTES: 10.0.27
+[WIN-SERVER] No Tomcat process found running as NT AUTHORITY\SYSTEM.
+[WIN-SERVER] Validating Tomcat installation at C:\Program Files\Apache Software Foundation\Tomcat
+[WIN-SERVER] Tomcat installation validation passed
+[WIN-SERVER] Tomcat Version: 10.0.27
 [WIN-SERVER] Auditing server.xml
 [WIN-SERVER] Server Configuration:
 [WIN-SERVER]     - Recommendation: Use PBKDF2WithHmacSHA512 or SHA-256 with at least 10,000 iterations and 16+ salt length.

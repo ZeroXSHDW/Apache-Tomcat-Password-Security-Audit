@@ -160,14 +160,29 @@ Write-Host "Config Path: $tomcatConfPath"
 $tomcatHome = Split-Path $tomcatConfPath
 Write-Host "Tomcat Home: $tomcatHome"
 
+# After setting $tomcatHome, improve version detection
+$releaseNotes = Join-Path $tomcatHome "RELEASE-NOTES"
+if (Test-Path $releaseNotes) {
+    $notesContent = Get-Content $releaseNotes -Raw
+    if ($notesContent -match "Apache Tomcat Version ([0-9.]+)") {
+        $tomcatVersion = $matches[1]
+        Write-Host "Detected Tomcat version from RELEASE-NOTES: $tomcatVersion"
+    }
+}
+
 # Check for Tomcat processes running as NT AUTHORITY\SYSTEM
+$systemFound = $false
 $tomcatProcs = Get-WmiObject Win32_Process -Filter "Name = 'java.exe'" | Where-Object { $_.CommandLine -match 'org.apache.catalina.startup.Bootstrap' }
 foreach ($proc in $tomcatProcs) {
     $ownerInfo = $proc.GetOwner()
     $owner = "$($ownerInfo.Domain)\\$($ownerInfo.User)"
     if ($owner -eq 'NT AUTHORITY\\SYSTEM') {
         Write-Host "WARNING: Tomcat process (PID $($proc.ProcessId)) is running as NT AUTHORITY\\SYSTEM. This is a security risk."
+        $systemFound = $true
     }
+}
+if (-not $systemFound) {
+    Write-Host "No Tomcat process found running as NT AUTHORITY\\SYSTEM."
 }
 
 Write-Host "Validating Tomcat installation at $tomcatHome"
@@ -194,10 +209,10 @@ Write-Host "version.sh not found or not executable at $versionScript"
 Write-Host "Checking systemd service file for version..."
 Write-Host "No version found in systemd service file"
 if ($tomcatVersion -eq "Unknown") {
-    Write-Host "WARNING: Could not determine Tomcat version at $tomcatHome, defaulting to 7.0"
+    Write-Host "WARNING: Could not determine Tomcat version at $tomcatHome. Manual verification required."
     Write-Host "    - Ensure RELEASE-NOTES, catalina.jar, version.sh, or a Tomcat package is present"
     Write-Host "    - Manual verification recommended"
-    $tomcatVersion = "7.0"
+    # Do not assign 7.0 as the version
 }
 Write-Host "Tomcat Version: $tomcatVersion"
 Write-Host "Auditing server.xml"
@@ -214,8 +229,8 @@ $serverXmlPath = Join-Path $tomcatConfPath "server.xml"
 $usersXmlPath = Join-Path $tomcatConfPath "tomcat-users.xml"
 
 # Set permissions for reading files
-Set-FileReadPermissions -Path $serverXmlPath
-Set-FileReadPermissions -Path $usersXmlPath
+Set-FileReadPermissions -Path $serverXmlPath | Out-Null
+Set-FileReadPermissions -Path $usersXmlPath | Out-Null
 
 $serverXml = [xml](Get-Content $serverXmlPath -Encoding UTF8)
 $usersXml = [xml](Get-Content $usersXmlPath -Encoding UTF8)

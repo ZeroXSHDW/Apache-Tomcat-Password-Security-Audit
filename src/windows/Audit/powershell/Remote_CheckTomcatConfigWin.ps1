@@ -324,14 +324,36 @@ try {
                 Write-Log "Audit completed. Log: $logFile"
 
                 # Check for Tomcat processes running as NT AUTHORITY\SYSTEM
+                $systemFound = $false
                 $tomcatProcs = Get-WmiObject Win32_Process -Filter "Name = 'java.exe'" | Where-Object { $_.CommandLine -match 'org.apache.catalina.startup.Bootstrap' }
                 foreach ($proc in $tomcatProcs) {
                     $ownerInfo = $proc.GetOwner()
                     $owner = "$($ownerInfo.Domain)\\$($ownerInfo.User)"
                     if ($owner -eq 'NT AUTHORITY\\SYSTEM') {
                         Write-Log "WARNING: Tomcat process (PID $($proc.ProcessId)) is running as NT AUTHORITY\\SYSTEM. This is a security risk." -server $env:COMPUTERNAME
+                        $systemFound = $true
                     }
                 }
+                if (-not $systemFound) {
+                    Write-Log "No Tomcat process found running as NT AUTHORITY\\SYSTEM." -server $env:COMPUTERNAME
+                }
+
+                # After setting $tomcatHome, improve version detection
+                $releaseNotes = Join-Path $tomcatHome "RELEASE-NOTES"
+                if (Test-Path $releaseNotes) {
+                    $notesContent = Get-Content $releaseNotes -Raw
+                    if ($notesContent -match "Apache Tomcat Version ([0-9.]+)") {
+                        $tomcatVersion = $matches[1]
+                        Write-Log "Detected Tomcat version from RELEASE-NOTES: $tomcatVersion" -server $env:COMPUTERNAME
+                    }
+                }
+                if ($tomcatVersion -eq "Unknown") {
+                    Write-Log "WARNING: Could not determine Tomcat version at $tomcatHome. Manual verification required." -server $env:COMPUTERNAME
+                    Write-Log "    - Ensure RELEASE-NOTES, catalina.jar, version.sh, or a Tomcat package is present" -server $env:COMPUTERNAME
+                    Write-Log "    - Manual verification recommended" -server $env:COMPUTERNAME
+                    # Do not assign 7.0 as the version
+                }
+                Write-Log "Tomcat Version: $tomcatVersion" -server $env:COMPUTERNAME
 
                 return $logMessages
             } -ArgumentList $TomcatConfPath
