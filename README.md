@@ -229,8 +229,8 @@ $cred = Get-Credential
 [WIN-SERVER] ===========================
 [WIN-SERVER] Searching common Tomcat configuration paths...
 [WIN-SERVER] Found Tomcat configuration at: C:\Program Files\Apache Software Foundation\Tomcat\conf
-[WIN-SERVER] Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat\conf
 [WIN-SERVER] Tomcat Home: C:\Program Files\Apache Software Foundation\Tomcat
+[WIN-SERVER] WARNING: Tomcat process (PID 1234) is running as NT AUTHORITY\SYSTEM. This is a security risk.
 [WIN-SERVER] Tomcat Version: 10.0
 [WIN-SERVER] Auditing server.xml
 [WIN-SERVER] Server Configuration:
@@ -249,7 +249,6 @@ $cred = Get-Credential
 [WIN-SERVER] ===========================
 [WIN-SERVER] Overall Status: Secure
 [WIN-SERVER] Audit completed. Log: C:\Temp\TomcatConfigCheck.csv
-[WIN-SERVER] WARNING: Tomcat process (PID 1234) is running as NT AUTHORITY\SYSTEM. This is a security risk.
 ```
 - **Log File Content (TomcatConfigCheck.csv)**:
 ```
