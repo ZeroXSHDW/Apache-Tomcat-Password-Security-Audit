@@ -78,6 +78,13 @@ sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
 server01
 ===========================
 Config Path: /opt/tomcat/conf
+Checking for running Tomcat processes...
+No running Tomcat processes found for root check.
+server.xml is owned by root
+server.xml permissions are secure (0o640)
+tomcat-users.xml is owned by root
+tomcat-users.xml permissions are secure (0o640)
+Tomcat Home: /opt/tomcat
 Tomcat Version: 9.0
 Auditing server.xml
 Server Configuration:
@@ -140,16 +147,32 @@ sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh --custom-conf=/opt/tomcat/con
 - **Example Output**:
 ```
 Checking Apache Tomcat configuration security...
-Tomcat configuration directory located at C:\Program Files\Apache Software Foundation\Tomcat\conf
-Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat\conf
-User 'testuser': Compliant
-Overall Configuration: Secure
-Audit completed
-```
-- **Log File Content (TomcatManager.csv)**:
-```
-Timestamp,Message
-2025-06-18 13:35:00,Checking Apache Tomcat configuration security...;Tomcat configuration directory located at C:\Program Files\Apache Software Foundation\Tomcat\conf;Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat\conf;User 'testuser': Compliant;Overall Configuration: Secure;Audit completed
+##############################################################WIN-SERVER###############################################################
+Execution Time: 2025-06-18 13:35:00
+HOSTNAME: WIN-SERVER
+===========================
+Searching common Tomcat configuration paths...
+Found Tomcat configuration at: C:\Program Files\Apache Software Foundation\Tomcat\conf
+Config Path: C:\Program Files\Apache Software Foundation\Tomcat\conf
+Tomcat Home: C:\Program Files\Apache Software Foundation\Tomcat
+Validating Tomcat installation at C:\Program Files\Apache Software Foundation\Tomcat
+Tomcat installation validation passed
+Tomcat Version: 10.0
+Auditing server.xml
+Server Configuration:
+  Credential Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
+  Algorithm: PBKDF2WithHmacSHA512
+  Iterations: 10000
+  Salt Length: 16
+  Status: Compliant
+Auditing tomcat-users.xml
+    User Audit Results:
+    Username | Password Type | Compliance
+    ---------|---------------|-----------
+    testuser | Salted_PBKDF2 | Compliant
+===========================
+Overall Status: Secure
+Audit completed. Log: C:\Users\<User>\AppData\Local\Temp\TestTomcatConfig.csv
 ```
 
 #### Local Patch
