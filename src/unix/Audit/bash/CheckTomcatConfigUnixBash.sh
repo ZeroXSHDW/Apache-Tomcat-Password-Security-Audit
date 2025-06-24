@@ -420,6 +420,40 @@ validate_tomcat_installation() {
     return 0
 }
 
+# Function to check if Tomcat is running as root (two methods)
+check_tomcat_running_as_root() {
+    local tomcat_pids
+    tomcat_pids=$(pgrep -f "org.apache.catalina.startup.Bootstrap" 2>/dev/null)
+    local found_root=0
+    # Method 1: ps user check
+    if [ -n "$tomcat_pids" ]; then
+        for pid in $tomcat_pids; do
+            local proc_user
+            proc_user=$(ps -o user= -p "$pid" 2>/dev/null | awk '{print $1}')
+            if [ "$proc_user" = "root" ]; then
+                write_log "WARNING: Tomcat process (PID $pid) is running as root! [ps method]" 2
+                write_log "  - It is a security risk to run Tomcat as root. Use a dedicated non-root user." 2
+                found_root=1
+            fi
+        done
+    fi
+    # Method 2: lsof check (process open files owned by root)
+    if command -v lsof >/dev/null 2>&1 && [ -n "$tomcat_pids" ]; then
+        for pid in $tomcat_pids; do
+            if lsof -p "$pid" 2>/dev/null | awk '{print $3}' | grep -qw root; then
+                write_log "WARNING: Tomcat process (PID $pid) has open files owned by root! [lsof method]" 2
+                write_log "  - This may indicate Tomcat is running as root or has escalated privileges." 2
+                found_root=1
+            fi
+        done
+    fi
+    if [ -z "$tomcat_pids" ]; then
+        write_log "No running Tomcat processes found for root check." 2
+    elif [ $found_root -eq 0 ]; then
+        write_log "Tomcat process is not running as root (checked by both ps and lsof)." 2
+    fi
+}
+
 # Main audit function
 audit_tomcat_config() {
     local custom_conf_path="$1"
@@ -458,6 +492,9 @@ audit_tomcat_config() {
         exit 1
     fi
     write_log "Config Path: $conf_path"
+
+    # Check if Tomcat is running as root
+    check_tomcat_running_as_root
 
     # Derive Tomcat home directory
     local tomcat_home
