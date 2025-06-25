@@ -22,7 +22,7 @@ error_exit() {
     exit 1
 }
 
-# --- 1. Locate Tomcat bin directory ---
+# --- 1. Locate Tomcat bin and conf directories ---
 find_tomcat_bin_and_conf() {
     local search_parents=(/opt /usr/local /var/lib /usr/share /etc)
     for parent in "${search_parents[@]}"; do
