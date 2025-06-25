@@ -293,8 +293,18 @@ update_server_xml() {
     if grep -q '<CredentialHandler' "$server_xml"; then
         sed "/<CredentialHandler/c\    $handler" "$server_xml" > "${server_xml}.new" && mv "${server_xml}.new" "$server_xml"
     else
-        sed "/<Realm[^>]*UserDatabaseRealm[^>]*>/a \
+        if grep -q '<Realm[^>]*UserDatabaseRealm[^>]*/>' "$server_xml"; then
+            local realm_line
+            realm_line=$(grep '<Realm[^>]*UserDatabaseRealm[^>]*/>' "$server_xml")
+            local open_realm="<Realm className=\"org.apache.catalina.realm.UserDatabaseRealm\" resourceName=\"UserDatabase\">"
+            local close_realm="</Realm>"
+            awk -v rl="$realm_line" -v orl="$open_realm" -v ch="$handler" -v crl="$close_realm" '
+                {if ($0 ~ rl) {print orl; print "    " ch; print crl} else {print $0}}
+            ' "$server_xml" > "${server_xml}.new" && mv "${server_xml}.new" "$server_xml"
+        else
+            sed "/<Realm[^>]*UserDatabaseRealm[^>]*>/a \
     $handler" "$server_xml" > "${server_xml}.new" && mv "${server_xml}.new" "$server_xml"
+        fi
     fi
     after_block=$(awk '/<CredentialHandler/{flag=1} flag; /\/>/{flag=0}' "$server_xml" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
     [ -z "$after_block" ] && after_block="(none found)"
