@@ -1,52 +1,48 @@
 ┌──(user㉿kali)-[~/Downloads]
-└─$ sudo ./tomcat_manager.sh -p /opt/tomcat -v 9.0 -u admin -w securepass -r manager,admin                 
-[2025-06-25 11:14:50] [INFO] Starting Tomcat installation
-[2025-06-25 11:14:50] [WARNING] No valid Java installation found. Attempting to install...
-[2025-06-25 11:14:50] [INFO] Installing OpenJDK via apt-get...
-Get:1 http://kali.download/kali kali-rolling InRelease [41.5 kB]
-Get:2 http://kali.download/kali kali-rolling/main amd64 Packages [21.0 MB]
-Get:3 http://kali.download/kali kali-rolling/main amd64 Contents (deb) [51.4 MB]
-Get:4 http://kali.download/kali kali-rolling/contrib amd64 Packages [120 kB]                                                                              
-Get:5 http://kali.download/kali kali-rolling/contrib amd64 Contents (deb) [327 kB]                                                                        
-Get:6 http://kali.download/kali kali-rolling/non-free amd64 Packages [197 kB]                                                                             
-Get:7 http://kali.download/kali kali-rolling/non-free amd64 Contents (deb) [911 kB]                                                                       
-Get:8 http://kali.download/kali kali-rolling/non-free-firmware amd64 Packages [10.6 kB]                                                                   
-Fetched 74.0 MB in 42s (1772 kB/s)                                                                                                                        
+└─$ sudo ./tomcat_manager.sh -p /opt/tomcat -v 10.1 -u admin -w securepass -r manager,admin
+[2025-06-25 11:25:29] [INFO] Starting Tomcat installation
+[2025-06-25 11:25:29] [WARNING] No valid Java installation found. Attempting to install...
+[2025-06-25 11:25:29] [INFO] Installing OpenJDK via apt-get...
+Hit:1 http://http.kali.org/kali kali-rolling InRelease
 Reading package lists... Done
 Reading package lists... Done
 Building dependency tree... Done
 Reading state information... Done
 openjdk-11-jdk is already the newest version (11.0.25~5ea-1).
 0 upgraded, 0 newly installed, 0 to remove and 260 not upgraded.
-[2025-06-25 11:16:39] [INFO] Successfully installed and configured Java at /usr/lib/jvm/java-11-openjdk-amd64
+[2025-06-25 11:25:41] [INFO] Successfully installed and configured Java at /usr/lib/jvm/java-11-openjdk-amd64
 [DEBUG] Validating username: 'admin'
 [DEBUG] Username matches regex (via grep)
-[2025-06-25 11:16:40] [INFO] Created installation directory: /opt/tomcat-9.0
-[2025-06-25 11:16:41] [INFO] Latest available minor version for Tomcat 9.0 is 9.0.106
-[2025-06-25 11:16:43] [INFO] Downloading Tomcat 9.0.106
+[2025-06-25 11:25:42] [INFO] Created installation directory: /opt/tomcat-10.1
+[2025-06-25 11:25:43] [INFO] Latest available minor version for Tomcat 10.1 is 10.1.42
+[2025-06-25 11:25:45] [INFO] Downloading Tomcat 10.1.42
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
-100 12.4M  100 12.4M    0     0  4019k      0  0:00:03  0:00:03 --:--:-- 4021k
-[2025-06-25 11:16:48] [INFO] Extracting Tomcat to /opt/tomcat-9.0
-[2025-06-25 11:16:54] [INFO] Created backup: /opt/tomcat-9.0/conf/tomcat-users.xml.bak.20250625111654
-[2025-06-25 11:16:54] [INFO] Successfully configured user admin for version 9.0
-[2025-06-25 11:16:54] [INFO] Tomcat 9.0 installation completed successfully
-[2025-06-25 11:16:54] [INFO] Tomcat version 9.0 installed successfully.
+100 13.4M  100 13.4M    0     0  5272k      0  0:00:02  0:00:02 --:--:-- 5275k
+[2025-06-25 11:25:49] [INFO] Extracting Tomcat to /opt/tomcat-10.1
+[2025-06-25 11:25:58] [INFO] Created backup: /opt/tomcat-10.1/conf/tomcat-users.xml.bak.20250625112558
+[2025-06-25 11:25:58] [INFO] Successfully configured user admin for version 10.1
+[2025-06-25 11:25:58] [INFO] Tomcat 10.1 installation completed successfully
+[INFO] At least one user is present in tomcat-users.xml.
+[2025-06-25 11:25:58] [INFO] Tomcat version 10.1 installed successfully.
                                                                                                                                                            
 ┌──(user㉿kali)-[~/Downloads]
-└─$ sudo ./UpdateTomcatUserUnix.sh                                                                  
-2025-06-25 11:17:03,--- Tomcat User Patch Script Started ---
-2025-06-25 11:17:03,Found Tomcat bin: /opt/tomcat-9.0/bin
-2025-06-25 11:17:03,Found Tomcat conf: /opt/tomcat-9.0/conf
-2025-06-25 11:17:03,Tomcat bin directory: /opt/tomcat-9.0/bin
-2025-06-25 11:17:03,Tomcat conf directory: /opt/tomcat-9.0/conf
-2025-06-25 11:17:03,Checking RELEASE-NOTES for version...
-2025-06-25 11:17:03,Version found in RELEASE-NOTES: 9.0.106 (9.0)
-2025-06-25 11:17:03,Tomcat version: 9.0
+└─$ sudo chmod +x UpdateTomcatUserUnix.sh                                                                  
+                                                                                                                                                           
+┌──(user㉿kali)-[~/Downloads]
+└─$ sudo ./UpdateTomcatUserUnix.sh                                                        
+2025-06-25 11:26:14,--- Tomcat User Patch Script Started ---
+2025-06-25 11:26:14,Found Tomcat bin: /opt/tomcat-10.1/bin
+2025-06-25 11:26:14,Found Tomcat conf: /opt/tomcat-10.1/conf
+2025-06-25 11:26:14,Tomcat bin directory: /opt/tomcat-10.1/bin
+2025-06-25 11:26:14,Tomcat conf directory: /opt/tomcat-10.1/conf
+2025-06-25 11:26:14,Checking RELEASE-NOTES for version...
+2025-06-25 11:26:14,Version found in RELEASE-NOTES: 10.1.42 (10.1)
+2025-06-25 11:26:14,Tomcat version: 10.1
 Current Tomcat Users:
                                                                                                                                                            
 ┌──(user㉿kali)-[~/Downloads]
-└─$ sudo cat /opt/tomcat-9.0/conf/tomcat-users.xml
+└─$ sudo cat /opt/tomcat-10.1/conf/tomcat-users.xml                                  
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Licensed to the Apache Software Foundation (ASF) under one or more
@@ -85,7 +81,7 @@ Current Tomcat Users:
   will also need to set the passwords to something appropriate.
 -->
 <!--
-  <user username="admin" password="d74ee5c5fbc9cc755865abcc8163c303deccd491f645c83393949940df0cf9d2a2df7c500345cc177086c0cdee649002b3eb6ab4cae9e08ed289655ea5b9b1d0" roles="manager,admin"/>
+  <user username="admin" password="5535e379cba622fe04a8f03f1b64ca3da3d871a54e0c62a2f8dc13b2995183e8426e57796d35f8989c973122a56c2bff8e0539547ab8f3b742102017761949db" roles="manager,admin"/>
   <user username="robot" password="<must-be-changed>" roles="manager-script"/>
 -->
 <!--
@@ -105,7 +101,7 @@ Current Tomcat Users:
 </tomcat-users>
                                                                                                                                                            
 ┌──(user㉿kali)-[~/Downloads]
-└─$ sudo cat /opt/tomcat-9.0/conf/server.xml      
+└─$ sudo cat /opt/tomcat-10.1/conf/server.xml      
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Licensed to the Apache Software Foundation (ASF) under one or more
@@ -132,7 +128,7 @@ Current Tomcat Users:
   <!-- Security listener. Documentation at /docs/config/listeners.html
   <Listener className="org.apache.catalina.security.SecurityListener" />
   -->
-  <!-- APR connector and OpenSSL support using Tomcat Native -->
+  <!-- OpenSSL support using Tomcat Native -->
   <Listener className="org.apache.catalina.core.AprLifecycleListener" />
   <!-- OpenSSL support using FFM API from Java 22 -->
   <!-- <Listener className="org.apache.catalina.core.OpenSSLLifecycleListener" /> -->
@@ -171,9 +167,8 @@ Current Tomcat Users:
 
     <!-- A "Connector" represents an endpoint by which requests are received
          and responses are returned. Documentation at :
-         Java HTTP Connector: /docs/config/http.html
-         Java AJP  Connector: /docs/config/ajp.html
-         APR (HTTP/AJP) Connector: /docs/apr.html
+         HTTP Connector: /docs/config/http.html
+         AJP  Connector: /docs/config/ajp.html
          Define a non-SSL/TLS HTTP/1.1 Connector on port 8080
     -->
     <Connector port="8080" protocol="HTTP/1.1"
@@ -190,7 +185,7 @@ Current Tomcat Users:
                maxParameterCount="1000"
                />
     -->
-    <!-- Define an SSL/TLS HTTP/1.1 Connector on port 8443
+    <!-- Define an SSL/TLS HTTP/1.1 Connector on port 8443 with HTTP/2
          This connector uses the NIO implementation. The default
          SSLImplementation will depend on the presence of the APR/native
          library and the useOpenSSL attribute of the AprLifecycleListener.
@@ -202,29 +197,10 @@ Current Tomcat Users:
                maxThreads="150" SSLEnabled="true"
                maxParameterCount="1000"
                >
+        <UpgradeProtocol className="org.apache.coyote.http2.Http2Protocol" />
         <SSLHostConfig>
             <Certificate certificateKeystoreFile="conf/localhost-rsa.jks"
                          certificateKeystorePassword="changeit" type="RSA" />
-        </SSLHostConfig>
-    </Connector>
-    -->
-    <!-- Define an SSL/TLS HTTP/1.1 Connector on port 8443 with HTTP/2
-         This connector uses the APR/native implementation which always uses
-         OpenSSL for TLS.
-         Either JSSE or OpenSSL style configuration may be used. OpenSSL style
-         configuration is used below.
-    -->
-    <!--
-    <Connector port="8443" protocol="org.apache.coyote.http11.Http11AprProtocol"
-               maxThreads="150" SSLEnabled="true"
-               maxParameterCount="1000"
-               >
-        <UpgradeProtocol className="org.apache.coyote.http2.Http2Protocol" />
-        <SSLHostConfig>
-            <Certificate certificateKeyFile="conf/localhost-rsa-key.pem"
-                         certificateFile="conf/localhost-rsa-cert.pem"
-                         certificateChainFile="conf/localhost-rsa-chain.pem"
-                         type="RSA" />
         </SSLHostConfig>
     </Connector>
     -->
