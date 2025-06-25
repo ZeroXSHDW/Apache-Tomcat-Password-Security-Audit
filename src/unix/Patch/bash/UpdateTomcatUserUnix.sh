@@ -293,10 +293,14 @@ update_server_xml() {
     if grep -q '<CredentialHandler' "$server_xml"; then
         sed "/<CredentialHandler/c\    $handler" "$server_xml" > "${server_xml}.new" && mv "${server_xml}.new" "$server_xml"
     else
-        if grep -q '<Realm[^>]*UserDatabaseRealm[^>]*/>' "$server_xml"; then
-            local realm_line
-            realm_line=$(grep '<Realm[^>]*UserDatabaseRealm[^>]*/>' "$server_xml")
-            local open_realm="<Realm className=\"org.apache.catalina.realm.UserDatabaseRealm\" resourceName=\"UserDatabase\">"
+        # Find the self-closing UserDatabaseRealm line and preserve all attributes
+        local realm_line
+        realm_line=$(grep -E '<Realm[^>]*UserDatabaseRealm[^>]*/>' "$server_xml")
+        if [ -n "$realm_line" ]; then
+            # Extract attributes
+            local attrs
+            attrs=$(echo "$realm_line" | sed -E 's#<Realm (.*)/>#\1#')
+            local open_realm="<Realm $attrs>"
             local close_realm="</Realm>"
             awk -v rl="$realm_line" -v orl="$open_realm" -v ch="$handler" -v crl="$close_realm" '
                 {if ($0 ~ rl) {print orl; print "    " ch; print crl} else {print $0}}
