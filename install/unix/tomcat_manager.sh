@@ -700,7 +700,6 @@ write_log "Tomcat $test_version installation completed successfully" "INFO"
 # After creating tomcat-users.xml, ensure at least one uncommented user is present
 if ! grep -E '^[[:space:]]*<user ' "$users_xml"; then
     ADMIN_PASS=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
-    # Insert before </tomcat-users>
     sed -i "/<\/tomcat-users>/i \\  <user username=\"admin\" password=\"$ADMIN_PASS\" roles=\"manager-gui,admin-gui\"/>" "$users_xml"
     echo "[WARNING] No active users were present in tomcat-users.xml. Added default admin user: admin / $ADMIN_PASS"
 fi
