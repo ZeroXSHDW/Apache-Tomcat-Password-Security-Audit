@@ -272,6 +272,9 @@ update_all_users() {
 # --- 6. Update server.xml CredentialHandler ---
 update_server_xml() {
     local server_xml="$1"; local version="$2"
+    local before_block after_block
+    before_block=$(awk '/<CredentialHandler/{flag=1} flag; /\/>/{flag=0}' "$server_xml" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
+    [ -z "$before_block" ] && before_block="(none found)"
     local handler=""
     case "$version" in
         7.0)
@@ -287,38 +290,26 @@ update_server_xml() {
             handler='<CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-512" iterations="10000" saltLength="16"/>'
             ;;
     esac
-
-    local before_block after_block
-    before_block=$(awk '/<CredentialHandler/{flag=1} flag; /\/>/{flag=0}' "$server_xml" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
-    [ -z "$before_block" ] && before_block="(none found)"
-
-    local tmp="${server_xml}.new"
-    awk -v handler="$handler" '
-    BEGIN {in_realm=0}
-    {
-        if ($0 ~ /<Realm/ && $0 ~ /UserDatabaseRealm/) {
-            if ($0 ~ /\/>") {
-                sub(/\/>$/, ">", $0)
-                print $0
-                print "    " handler
-                print "</Realm>"
-                next
-            } else {
-                print $0
-                in_realm=1
-                next
-            }
-        }
-        if (in_realm == 1) {
-            print "    " handler
-            in_realm=0
-        }
-        print $0
-    }
-    END { }
-    ' "$server_xml" > "$tmp"
-    mv "$tmp" "$server_xml"
-
+    if grep -q '<CredentialHandler' "$server_xml"; then
+        sed "/<CredentialHandler/c\    $handler" "$server_xml" > "${server_xml}.new" && mv "${server_xml}.new" "$server_xml"
+    else
+        # Find the self-closing UserDatabaseRealm line and preserve all attributes
+        local realm_line
+        realm_line=$(grep -E '<Realm[^>]*UserDatabaseRealm[^>]*/>' "$server_xml")
+        if [ -n "$realm_line" ]; then
+            # Extract attributes (everything between <Realm and />)
+            local attrs
+            attrs=$(echo "$realm_line" | sed -E 's#<Realm (.*)/>#\1#')
+            local open_realm="<Realm $attrs>"
+            local close_realm="</Realm>"
+            awk -v rl="$realm_line" -v orl="$open_realm" -v ch="$handler" -v crl="$close_realm" '
+                {if ($0 ~ rl) {print orl; print "    " ch; print crl} else {print $0}}
+            ' "$server_xml" > "${server_xml}.new" && mv "${server_xml}.new" "$server_xml"
+        else
+            sed "/<Realm[^>]*UserDatabaseRealm[^>]*>/a \
+    $handler" "$server_xml" > "${server_xml}.new" && mv "${server_xml}.new" "$server_xml"
+        fi
+    fi
     after_block=$(awk '/<CredentialHandler/{flag=1} flag; /\/>/{flag=0}' "$server_xml" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
     [ -z "$after_block" ] && after_block="(none found)"
     echo "─────────────────────────────"
