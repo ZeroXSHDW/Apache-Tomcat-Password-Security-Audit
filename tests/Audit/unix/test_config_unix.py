@@ -80,7 +80,7 @@ def validate_xml_structure(xml_file):
         if not os.path.exists(xml_file):
             write_log(f"XML file {xml_file} not found", "ERROR")
             return False
-        
+
         # Check for XML declaration
         with open(xml_file, 'r') as f:
             first_line = f.readline().strip()
@@ -176,12 +176,12 @@ def main():
         write_log("Error: CheckTomcatConfigUnix.py not found", "ERROR")
         sys.exit(1)
     write_log("Verified file exists: ./CheckTomcatConfigUnix.py")
-    
+
     # Clear existing log
     if os.path.exists(LOG_FILE):
         open(LOG_FILE, 'w').close()
         write_log(f"Cleared existing log file: {LOG_FILE}")
-    
+
     # Detect Tomcat installation
     tomcat_info = detect_tomcat_path()
     if not tomcat_info:
@@ -259,7 +259,7 @@ def main():
                 continue
             
             write_log(f"Running test: {tomcat_version}_{server_test}_{password_test} for Tomcat {tomcat_version}")
-            
+
             # Modify server.xml
             server_xml = os.path.join(tomcat_conf_path, "conf", "server.xml")
             xml = secure_parse_xml(server_xml)
@@ -286,14 +286,14 @@ def main():
             if not secure_write_xml(server_xml, xml):
                 write_log("Failed to update server.xml", "ERROR")
                 continue
-            
+
             # Modify tomcat-users.xml
             users_xml = os.path.join(tomcat_conf_path, "conf", "tomcat-users.xml")
             users = secure_parse_xml(users_xml)
             if not users:
                 write_log("Failed to parse tomcat-users.xml", "ERROR")
                 continue
-            
+
             root = users.getroot()
             user = root.find(".//user[@username='testuser']")
             if user is None:
@@ -317,7 +317,7 @@ def main():
                 write_log(f"Test output: {result.stdout}")
             except subprocess.CalledProcessError as e:
                 write_log(f"Error running CheckTomcatConfigUnix.py: {str(e)}", "ERROR")
-    
+
     # Restore original files
     restore_config_files(tomcat_conf_path, backup_dir)
     

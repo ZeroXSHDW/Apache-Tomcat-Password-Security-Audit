@@ -307,23 +307,23 @@ main() {
     local users_xml="$conf_dir/tomcat-users.xml"
     local server_xml="$conf_dir/server.xml"
 
-    # Before update
+    # Print users before update
     print_users_info "$users_xml"
 
     # Update users
     update_all_users "$users_xml" "$bin_dir" "$version"
 
-    # After update
-    echo "\nUsers after update:"
+    # Print users after update
+    echo -e "\nUsers after update:"
     print_users_info "$users_xml"
-    echo "\nUser compliance check:"
+    echo -e "\nUser compliance check:"
     check_user_compliance "$users_xml"
 
     # Update server.xml and confirm
     update_server_xml "$server_xml" "$version"
 
     # Compliance summary
-    echo "\nCompliance summary:"
+    echo -e "\nCompliance summary:"
     echo "- server.xml CredentialHandler:"
     extract_credential_handler "$server_xml"
     echo "- Users:"

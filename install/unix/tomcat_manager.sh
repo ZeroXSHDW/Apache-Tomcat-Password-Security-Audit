@@ -652,8 +652,8 @@ http_status=$(curl -s -o /dev/null -w "%{http_code}" "$download_url")
 if [ "$http_status" != "200" ]; then
     write_log "Tomcat $latest_minor not available at $download_url (HTTP $http_status). Skipping." "ERROR"
     rm -f "$zip_file"
-    exit 1
-fi
+        exit 1
+    fi
 # Download if not already valid
 if [ -f "$zip_file" ] && tar tzf "$zip_file" > /dev/null 2>&1; then
     write_log "Using existing Tomcat archive: $zip_file"
@@ -685,21 +685,34 @@ rm -f "$zip_file"
 hash=$(generate_hash "$INSTALL_PATH-$test_version/bin" "$PASSWORD" "$test_version")
 if [ -z "$hash" ]; then
     write_log "Failed to generate password hash for version $test_version" "ERROR"
-    exit 1
-fi
+            exit 1
+        fi
 users_xml="$INSTALL_PATH-$test_version/conf/tomcat-users.xml"
 if update_user "$users_xml" "$USERNAME" "$hash" "$ROLES"; then
     write_log "Successfully configured user $USERNAME for version $test_version"
     success=1
 else
     write_log "Failed to configure user for version $test_version" "ERROR"
-    exit 1
+        exit 1
 fi
 write_log "Tomcat $test_version installation completed successfully" "INFO"
 
+# After creating tomcat-users.xml, ensure at least one user is present
+if ! grep -q '<user ' "$users_xml"; then
+    ADMIN_PASS=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
+    echo '<user username="admin" password="'$ADMIN_PASS'" roles="manager-gui,admin-gui"/>' >> "$users_xml"
+    echo "[WARNING] No users were present in tomcat-users.xml. Added default admin user: admin / $ADMIN_PASS"
+fi
+# Compliance check
+if ! grep -q '<user ' "$users_xml"; then
+    echo "[ERROR] No active users found in tomcat-users.xml after install!" >&2
+else
+    echo "[INFO] At least one user is present in tomcat-users.xml."
+fi
+
 if [ "$success" = "1" ]; then
     write_log "Tomcat version $test_version installed successfully." "INFO"
-    exit 0
+exit 0
 else
     write_log "Tomcat version $test_version installation failed." "ERROR"
     exit 1
