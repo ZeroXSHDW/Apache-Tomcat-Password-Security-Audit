@@ -65,24 +65,62 @@ find_tomcat_conf() {
 
 # --- 3. Detect Tomcat version ---
 detect_tomcat_version() {
-    local bin_dir="$1"
-    local ver=""
-    # Try to extract from directory name (e.g., /opt/tomcat-10.1/bin)
-    if [[ "$bin_dir" =~ tomcat-([0-9]+)\.([0-9]+) ]]; then
-        ver="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
-    elif [[ "$bin_dir" =~ tomcat([0-9]+) ]]; then
-        # e.g., tomcat9, tomcat10
-        ver="${BASH_REMATCH[1]}.0"
+    local tomcat_home="$1"
+    local version_file="${tomcat_home}/RELEASE-NOTES"
+    local catalina_jar="${tomcat_home}/lib/catalina.jar"
+    local version="unknown"
+    local full_version=""
+
+    # Method 1: Check RELEASE-NOTES
+    if [ -f "$version_file" ]; then
+        version_line=$(grep "Apache Tomcat Version" "$version_file" | head -n 1)
+        if [[ "$version_line" =~ Apache\ Tomcat\ Version\ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            full_version="${BASH_REMATCH[1]}"
+            case "$full_version" in
+                7.0.*) version="7.0" ;;
+                8.0.*) version="8.0" ;;
+                8.5.*) version="8.5" ;;
+                9.0.*) version="9.0" ;;
+                10.0.*) version="10.0" ;;
+                10.1.*) version="10.1" ;;
+            esac
+        fi
     fi
-    # Try RELEASE-NOTES if not found
-    if [ -z "$ver" ] && [ -f "$bin_dir/../RELEASE-NOTES" ]; then
-        ver=$(grep -o 'Apache Tomcat Version [0-9]\+\.[0-9]\+\.[0-9]\+' "$bin_dir/../RELEASE-NOTES" | grep -o '[0-9]\+\.[0-9]\+' | head -1)
+
+    # Method 2: Check directory name
+    if [ "$version" = "unknown" ]; then
+        tomcat_home_lower=$(echo "$tomcat_home" | tr '[:upper:]' '[:lower:]')
+        case "$tomcat_home_lower" in
+            *tomcat7*) version="7.0" ;;
+            *tomcat8.5*) version="8.5" ;;
+            *tomcat8*) version="8.0" ;;
+            *tomcat9*) version="9.0" ;;
+            *tomcat10.1*) version="10.1" ;;
+            *tomcat10*) version="10.0" ;;
+        esac
     fi
-    # Fallback
-    if [ -z "$ver" ]; then
-        ver="8.5"
+
+    # Method 3: Check catalina.jar manifest
+    if [ "$version" = "unknown" ] && [ -f "$catalina_jar" ] && command -v unzip >/dev/null; then
+        manifest_version=$(unzip -p "$catalina_jar" META-INF/MANIFEST.MF 2>/dev/null | grep "Implementation-Version" | sed -n 's/.*Implementation-Version: \([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p')
+        if [ -n "$manifest_version" ]; then
+            case "$manifest_version" in
+                7.0.*) version="7.0" ;;
+                8.0.*) version="8.0" ;;
+                8.5.*) version="8.5" ;;
+                9.0.*) version="9.0" ;;
+                10.0.*) version="10.0" ;;
+                10.1.*) version="10.1" ;;
+            esac
+        fi
     fi
-    echo "$ver"
+
+    # Fallback: Error if version is unknown
+    if [ "$version" = "unknown" ]; then
+        version="8.5"
+    fi
+
+    echo "$version"
 }
 
 # --- 4. Generate password hash ---
@@ -191,7 +229,8 @@ main() {
     local conf_dir="${bin_and_conf##*|}"
     log "Tomcat bin directory: $bin_dir"
     log "Tomcat conf directory: $conf_dir"
-    local version=$(detect_tomcat_version "$bin_dir")
+    local tomcat_home=$(dirname "$bin_dir")
+    local version=$(detect_tomcat_version "$tomcat_home")
     log "Tomcat version: $version"
     local users_xml="$conf_dir/tomcat-users.xml"
     local server_xml="$conf_dir/server.xml"
