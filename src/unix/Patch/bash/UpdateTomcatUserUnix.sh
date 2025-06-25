@@ -304,8 +304,8 @@ update_server_xml() {
     BEGIN {in_realm=0}
     {
         if ($0 ~ /<Realm/ && $0 ~ /UserDatabaseRealm/) {
-            if ($0 ~ /\/>") {
-                sub(/\/>$/, ">", $0)
+            if ($0 ~ /\/>/) {
+                sub(/\/>/, ">", $0)
                 print $0
                 print "    " handler
                 print "</Realm>"
