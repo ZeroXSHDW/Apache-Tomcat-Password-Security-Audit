@@ -1,68 +1,30 @@
 ┌──(user㉿kali)-[~/Downloads]
-└─$ sudo ./tomcat_manager.sh -p /opt/tomcat -v 10.1 -u admin -w securepass -r manager,admin
-[2025-06-25 11:52:06] [INFO] Starting Tomcat installation
-[2025-06-25 11:52:07] [WARNING] No valid Java installation found. Attempting to install...
-[2025-06-25 11:52:07] [INFO] Installing OpenJDK via apt-get...
-Hit:1 http://http.kali.org/kali kali-rolling InRelease
-Reading package lists... Done
-Reading package lists... Done
-Building dependency tree... Done
-Reading state information... Done
-openjdk-11-jdk is already the newest version (11.0.25~5ea-1).
-0 upgraded, 0 newly installed, 0 to remove and 260 not upgraded.
-[2025-06-25 11:52:19] [INFO] Successfully installed and configured Java at /usr/lib/jvm/java-11-openjdk-amd64
-[DEBUG] Validating username: 'admin'
-[DEBUG] Username matches regex (via grep)
-[2025-06-25 11:52:20] [INFO] Created installation directory: /opt/tomcat-10.1
-[2025-06-25 11:52:20] [INFO] Latest available minor version for Tomcat 10.1 is 10.1.42
-[2025-06-25 11:52:23] [INFO] Downloading Tomcat 10.1.42
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100 13.4M  100 13.4M    0     0  4993k      0  0:00:02  0:00:02 --:--:-- 4996k
-[2025-06-25 11:52:27] [INFO] Extracting Tomcat to /opt/tomcat-10.1
-[2025-06-25 11:52:37] [INFO] Created backup: /opt/tomcat-10.1/conf/tomcat-users.xml.bak.20250625115237
-[2025-06-25 11:52:37] [INFO] Successfully configured user admin for version 10.1
-[2025-06-25 11:52:37] [INFO] Tomcat 10.1 installation completed successfully
-[INFO] Only user admin is present in tomcat-users.xml.
-[2025-06-25 11:52:37] [INFO] Tomcat version 10.1 installed successfully.
-                                                                                                                                                           
-┌──(user㉿kali)-[~/Downloads]
-└─$ sudo chmod +x UpdateTomcatUserUnix.sh                                                  
-                                                                                                                                                           
-┌──(user㉿kali)-[~/Downloads]
-└─$ sudo ./UpdateTomcatUserUnix.sh                                                         
-2025-06-25 11:52:51,--- Tomcat User Patch Script Started ---
-2025-06-25 11:52:51,Found Tomcat bin: /opt/tomcat-10.1/bin
-2025-06-25 11:52:51,Found Tomcat conf: /opt/tomcat-10.1/conf
-2025-06-25 11:52:51,Tomcat bin directory: /opt/tomcat-10.1/bin
-2025-06-25 11:52:51,Tomcat conf directory: /opt/tomcat-10.1/conf
-2025-06-25 11:52:51,Checking RELEASE-NOTES for version...
-2025-06-25 11:52:51,Version found in RELEASE-NOTES: 10.1.42 (10.1)
-2025-06-25 11:52:51,Tomcat version: 10.1
+└─$ sudo ./UpdateTomcatUserUnix.sh                                                  
+2025-06-25 11:59:01,--- Tomcat User Patch Script Started ---
+2025-06-25 11:59:01,Found Tomcat bin: /opt/tomcat-10.1/bin
+2025-06-25 11:59:01,Found Tomcat conf: /opt/tomcat-10.1/conf
+2025-06-25 11:59:01,Tomcat bin directory: /opt/tomcat-10.1/bin
+2025-06-25 11:59:01,Tomcat conf directory: /opt/tomcat-10.1/conf
+2025-06-25 11:59:01,Checking RELEASE-NOTES for version...
+2025-06-25 11:59:01,Version found in RELEASE-NOTES: 10.1.42 (10.1)
+2025-06-25 11:59:01,Tomcat version: 10.1
 Current Tomcat Users:
   - admin (roles: manager,admin, password type: Plaintext)
-[WARNING] No active users found. Added default admin user: admin / Unbz6jwzPFWCQTgL
-  - admin (roles: manager-gui,admin-gui, password type: Plaintext)
+[WARNING] No active users found in /opt/tomcat-10.1/conf/tomcat-users.xml.
 username,roles,old_password,old_type,new_hash,new_type
-admin,manager,admin,securepass,Plaintext,f6a2880fd5a065208c0efa18d24cd382041295f7,Hash
-2025-06-25 11:52:51,User admin: password replaced with hash f6a2880fd5a065208c0efa18d24cd382041295f7
-admin,manager-gui,admin-gui,Unbz6jwzPFWCQTgL,Plaintext,3a185749501b7c60e5249c7d0cb5547bd1878e94,Hash
-2025-06-25 11:52:51,User admin: password replaced with hash 3a185749501b7c60e5249c7d0cb5547bd1878e94
+admin,manager,admin,securepass,Plaintext,0df12a5fb62668de210ef4145ae0a1960eb307b1,Hash
+2025-06-25 11:59:01,User admin: password replaced with hash 0df12a5fb62668de210ef4145ae0a1960eb307b1
 
 Users after update:
 Current Tomcat Users:
   - admin (roles: manager,admin, password type: Hash)
-  - admin (roles: manager-gui,admin-gui, password type: Hash)
-[WARNING] No active users found. Added default admin user: admin / UhqhATw2YF3dZyum
-  - admin (roles: manager-gui,admin-gui, password type: Plaintext)
+[WARNING] No active users found in /opt/tomcat-10.1/conf/tomcat-users.xml.
 
 User compliance check:
   - admin: Compliant (hashed)
-  - admin: Compliant (hashed)
-  - admin: Non-compliant (plaintext password)
 [WARNING] No active users found in /opt/tomcat-10.1/conf/tomcat-users.xml.
 CredentialHandler_Before,CredentialHandler_After
-2025-06-25 11:52:51,server.xml CredentialHandler updated for Tomcat 10.1.
+2025-06-25 11:59:01,server.xml CredentialHandler updated for Tomcat 10.1.
 ,
 Warning: CredentialHandler update may have failed.
 
@@ -70,8 +32,6 @@ Compliance summary:
 - server.xml CredentialHandler:
 - Users:
   - admin: Compliant (hashed)
-  - admin: Compliant (hashed)
-  - admin: Non-compliant (plaintext password)
 [WARNING] No active users found in /opt/tomcat-10.1/conf/tomcat-users.xml.
 Using CATALINA_BASE:   /opt/tomcat-10.1
 Using CATALINA_HOME:   /opt/tomcat-10.1
@@ -86,8 +46,6 @@ Using JRE_HOME:        /usr
 Using CLASSPATH:       /opt/tomcat-10.1/bin/bootstrap.jar:/opt/tomcat-10.1/bin/tomcat-juli.jar
 Using CATALINA_OPTS:   
 Tomcat started.
-2025-06-25 11:52:51,Tomcat restarted via catalina.sh.
-2025-06-25 11:52:51,All users updated and server.xml patched.
+2025-06-25 11:59:01,Tomcat restarted via catalina.sh.
+2025-06-25 11:59:01,All users updated and server.xml patched.
 SUCCESS: All users updated and server.xml patched.
-                                                                                                                                                           
-┌──(user㉿kali)-[~/Downloads]
