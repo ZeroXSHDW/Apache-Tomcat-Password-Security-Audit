@@ -155,6 +155,57 @@ generate_hash() {
     echo "$hash"
 }
 
+# Helper: Extract CredentialHandler block from server.xml
+extract_credential_handler() {
+    local server_xml="$1"
+    awk '/<CredentialHandler/,/\/?>/' "$server_xml" | tr '\n' ' ' | sed 's/^ *//;s/ *$//'
+}
+
+# Helper: Print all users and their password type
+print_users_info() {
+    local users_xml="$1"
+    echo "Current Tomcat Users:"
+    local user_count=0
+    grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
+        local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
+        local roles=$(echo "$line" | sed -n 's/.*roles="\([^"]*\)".*/\1/p')
+        local password=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
+        local type="Plaintext"
+        if [[ "$password" =~ ^[0-9a-fA-F:]+$ ]]; then
+            if [[ "$password" =~ : ]]; then
+                type="Salted Hash"
+            else
+                type="Hash"
+            fi
+        fi
+        echo "  - $username (roles: $roles, password type: $type)"
+        user_count=$((user_count+1))
+    done
+    if [ "$user_count" -eq 0 ]; then
+        echo "[WARNING] No active users found in $users_xml."
+    fi
+}
+
+# Helper: Print user compliance report
+print_user_compliance_report() {
+    local users_xml="$1"
+    echo "User Compliance Report:"
+    grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
+        local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
+        local roles=$(echo "$line" | sed -n 's/.*roles="\([^"]*\)".*/\1/p')
+        local password=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
+        local type="Plaintext"
+        if [[ "$password" =~ ^[0-9a-fA-F:]+$ ]]; then
+            if [[ "$password" =~ : ]]; then
+                type="Salted Hash"
+            else
+                type="Hash"
+            fi
+        fi
+        echo "$username,$roles,$type"
+    done
+}
+
 # --- 5. Update tomcat-users.xml for all users ---
 update_all_users() {
     local users_xml="$1"; local bin_dir="$2"; local version="$3"
@@ -190,60 +241,6 @@ update_all_users() {
         fi
     done
     mv "$tmp_xml" "$users_xml"
-}
-
-# Helper: Extract CredentialHandler block from server.xml
-extract_credential_handler() {
-    local server_xml="$1"
-    awk '/<CredentialHandler/,/\/?>/' "$server_xml" | tr '\n' ' ' | sed 's/^ *//;s/ *$//'
-}
-
-# Helper: Print all users and their password type
-print_users_info() {
-    local users_xml="$1"
-    echo "Current Tomcat Users:"
-    local user_count=0
-    grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
-        local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
-        local roles=$(echo "$line" | sed -n 's/.*roles="\([^"]*\)".*/\1/p')
-        local password=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
-        local type="Plaintext"
-        if [[ "$password" =~ ^[0-9a-fA-F:]+$ ]]; then
-            if [[ "$password" =~ : ]]; then
-                type="Salted Hash"
-            else
-                type="Hash"
-            fi
-        fi
-        echo "  - $username (roles: $roles, password type: $type)"
-        user_count=$((user_count+1))
-    done
-    if [ "$user_count" -eq 0 ]; then
-        echo "[WARNING] No active users found in $users_xml."
-    fi
-}
-
-# Helper: Check user compliance
-check_user_compliance() {
-    local users_xml="$1"
-    local compliant=1
-    local user_count=0
-    grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
-        local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
-        local password=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
-        if ! [[ "$password" =~ ^[0-9a-fA-F:]+$ ]]; then
-            echo "  - $username: Non-compliant (plaintext password)"
-            compliant=0
-        else
-            echo "  - $username: Compliant (hashed)"
-        fi
-        user_count=$((user_count+1))
-    done
-    if [ "$user_count" -eq 0 ]; then
-        echo "[WARNING] No active users found in $users_xml."
-        compliant=0
-    fi
-    return $compliant
 }
 
 # --- 6. Update server.xml CredentialHandler ---
@@ -332,24 +329,19 @@ main() {
     # Print users before update
     print_users_info "$users_xml"
 
+    # Update server.xml and confirm BEFORE updating users
+    update_server_xml "$server_xml" "$version"
+
     # Update users
     update_all_users "$users_xml" "$bin_dir" "$version"
 
     # Print users after update
     echo -e "\nUsers after update:"
     print_users_info "$users_xml"
-    echo -e "\nUser compliance check:"
-    check_user_compliance "$users_xml"
 
-    # Update server.xml and confirm
-    update_server_xml "$server_xml" "$version"
-
-    # Compliance summary
-    echo -e "\nCompliance summary:"
-    echo "- server.xml CredentialHandler:"
-    extract_credential_handler "$server_xml"
-    echo "- Users:"
-    check_user_compliance "$users_xml"
+    # Print compliance report
+    echo -e "\nUser Compliance Report (username,roles,hash_type):"
+    print_user_compliance_report "$users_xml"
 
     restart_tomcat "$bin_dir"
 
