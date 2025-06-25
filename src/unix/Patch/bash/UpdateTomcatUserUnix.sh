@@ -219,10 +219,7 @@ print_users_info() {
         user_count=$((user_count+1))
     done
     if [ "$user_count" -eq 0 ]; then
-        ADMIN_PASS=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
-        sed -i "/<\/tomcat-users>/i \\  <user username=\"admin\" password=\"$ADMIN_PASS\" roles=\"manager-gui,admin-gui\"/>" "$users_xml"
-        echo "[WARNING] No active users found. Added default admin user: admin / $ADMIN_PASS"
-        echo "  - admin (roles: manager-gui,admin-gui, password type: Plaintext)"
+        echo "[WARNING] No active users found in $users_xml."
     fi
 }
 
