@@ -1,26 +1,85 @@
 ┌──(user㉿kali)-[~/Downloads]
-└─$ sudo ./UpdateTomcatUserUnix.sh       
-2025-06-25 14:32:59,Checking RELEASE-NOTES for version...
-2025-06-25 14:32:59,Version found in RELEASE-NOTES: 10.1.42 (10.1)
-─────────────────────────────
- Tomcat CredentialHandler Update
-─────────────────────────────
-• Before:
-    (none found)
-• After:
-    (none found)
-⚠  No CredentialHandler found or updated.
-─────────────────────────────
- Tomcat User Password Update
-─────────────────────────────
-✔ Updated user: admin
-    • Old password:  securepass   (Plaintext, ❌ Non-compliant)
-    • New password:  3b4870f09818a6c1971b4cacc3ff3a9e99986572   (Hash, ✅ Compliant)
+└─$ sudo ./tomcat_manager.sh -p /opt/tomcat -v 10.1 -u admin -w securepass123 -r manager,admin
+[2025-06-25 14:41:10] [INFO] Starting Tomcat installation
+[2025-06-25 14:41:11] [WARNING] No valid Java installation found. Attempting to install...
+[2025-06-25 14:41:11] [INFO] Installing OpenJDK via apt-get...
+Hit:1 http://http.kali.org/kali kali-rolling InRelease
+Reading package lists... Done
+Reading package lists... Done
+Building dependency tree... Done
+Reading state information... Done
+openjdk-11-jdk is already the newest version (11.0.25~5ea-1).
+0 upgraded, 0 newly installed, 0 to remove and 260 not upgraded.
+[2025-06-25 14:41:23] [INFO] Successfully installed and configured Java at /usr/lib/jvm/java-11-openjdk-amd64
+[DEBUG] Validating username: 'admin'
+[DEBUG] Username matches regex (via grep)
+[2025-06-25 14:41:24] [INFO] Created installation directory: /opt/tomcat-10.1
+[2025-06-25 14:41:24] [INFO] Latest available minor version for Tomcat 10.1 is 10.1.42
+[2025-06-25 14:41:27] [INFO] Downloading Tomcat 10.1.42
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100 13.4M  100 13.4M    0     0  7139k      0  0:00:01  0:00:01 --:--:-- 7146k
+[2025-06-25 14:41:30] [INFO] Extracting Tomcat to /opt/tomcat-10.1
+[2025-06-25 14:41:37] [INFO] Created backup: /opt/tomcat-10.1/conf/tomcat-users.xml.bak.20250625144137
+[2025-06-25 14:41:37] [INFO] Successfully configured user admin for version 10.1
+[2025-06-25 14:41:37] [INFO] Tomcat 10.1 installation completed successfully
+[INFO] Only user admin is present in tomcat-users.xml.
+[2025-06-25 14:41:38] [INFO] Tomcat version 10.1 installed successfully.
+                                                                                                                                                           
+┌──(user㉿kali)-[~/Downloads]
+└─$ sudo cat /opt/tomcat-10.1/conf/tomcat-users.xml                                        
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one or more
+  contributor license agreements.  See the NOTICE file distributed with
+  this work for additional information regarding copyright ownership.
+  The ASF licenses this file to You under the Apache License, Version 2.0
+  (the "License"); you may not use this file except in compliance with
+  the License.  You may obtain a copy of the License at
 
-─────────────────────────────
- Tomcat User Password Update
-─────────────────────────────
-No plaintext user passwords found to update.
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<tomcat-users xmlns="http://tomcat.apache.org/xml"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="http://tomcat.apache.org/xml tomcat-users.xsd"
+              version="1.0">
+<!--
+  By default, no user is included in the "manager-gui" role required
+  to operate the "/manager/html" web application.  If you wish to use this app,
+  you must define such a user - the username and password are arbitrary.
+
+  Built-in Tomcat manager roles:
+    - manager-gui    - allows access to the HTML GUI and the status pages
+    - manager-script - allows access to the HTTP API and the status pages
+    - manager-jmx    - allows access to the JMX proxy and the status pages
+    - manager-status - allows access to the status pages only
+
+  The users below are wrapped in a comment and are therefore ignored. If you
+  wish to configure one or more of these users for use with the manager web
+  application, do not forget to remove the <!.. ..> that surrounds them. You
+  will also need to set the passwords to something appropriate.
+-->
+<!--
+-->
+<!--
+  The sample user and role entries below are intended for use with the
+  examples web application. They are wrapped in a comment and thus are ignored
+  when reading this file. If you wish to configure these users for use with the
+  examples web application, do not forget to remove the <!.. ..> that surrounds
+  them. You will also need to set the passwords to something appropriate.
+-->
+<!--
+  <role rolename="tomcat"/>
+  <role rolename="role1"/>
+-->
+  <user username="admin" password="securepass123" roles="manager,admin"/>
+</tomcat-users>
                                                                                                                                                            
 ┌──(user㉿kali)-[~/Downloads]
 └─$ sudo cat /opt/tomcat-10.1/conf/server.xml                                              
@@ -182,4 +241,31 @@ No plaintext user passwords found to update.
                prefix="localhost_access_log" suffix=".txt"
                pattern="%h %l %u %t &quot;%r&quot; %s %b" />
 
-      </Host
+      </Host>
+    </Engine>
+  </Service>
+</Server>
+                                                                                                                                                           
+┌──(user㉿kali)-[~/Downloads]
+└─$ sudo ./UpdateTomcatUserUnix.sh                                                         
+2025-06-25 14:42:03,Checking RELEASE-NOTES for version...
+2025-06-25 14:42:03,Version found in RELEASE-NOTES: 10.1.42 (10.1)
+─────────────────────────────
+ Tomcat CredentialHandler Update
+─────────────────────────────
+• Before:
+    (none found)
+• After:
+    (none found)
+⚠  No CredentialHandler found or updated.
+─────────────────────────────
+ Tomcat User Password Update
+─────────────────────────────
+✔ Updated user: admin
+    • Old password:  securepass123   (Plaintext, ❌ Non-compliant)
+    • New password:  7dfd3166505fbddf7377817ea5c98ff2e79b5d30   (Hash, ✅ Compliant)
+
+─────────────────────────────
+ Tomcat User Password Update
+─────────────────────────────
+No plaintext user passwords found to update.
