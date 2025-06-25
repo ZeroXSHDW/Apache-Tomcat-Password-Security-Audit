@@ -226,7 +226,7 @@ update_all_users() {
     local csv_header="Timestamp,Username,OldType,NewType,Compliance"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     [ ! -f "$csv_file" ] && echo "$csv_header" > "$csv_file"
-    grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
+    grep -E '^[[:space:]]*<user ' "$users_xml" | grep -v '^[[:space:]]*<!--' | while read -r line; do
         local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
         local pw=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
         local old_type="Plaintext"
@@ -257,7 +257,6 @@ update_all_users() {
             echo "    • New password:  $hash   ($new_type, ✅ Compliant)"
             echo
             echo "$timestamp,$username,Plaintext,$new_type,$compliance" >> "$csv_file"
-            # Replace password in XML (no .bak backup)
             sed "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml" > "${tmp_xml}.new" && mv "${tmp_xml}.new" "$tmp_xml"
         fi
     done
@@ -276,7 +275,6 @@ update_server_xml() {
     local before_block after_block
     before_block=$(awk '/<CredentialHandler/{flag=1} flag; /\/>/{flag=0}' "$server_xml" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
     [ -z "$before_block" ] && before_block="(none found)"
-    # Prepare the new handler
     local handler=""
     case "$version" in
         7.0)
@@ -292,7 +290,6 @@ update_server_xml() {
             handler='<CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-512" iterations="10000" saltLength="16"/>'
             ;;
     esac
-    # Insert or update CredentialHandler in server.xml (no .bak backup)
     if grep -q '<CredentialHandler' "$server_xml"; then
         sed "/<CredentialHandler/c\    $handler" "$server_xml" > "${server_xml}.new" && mv "${server_xml}.new" "$server_xml"
     else
@@ -336,13 +333,17 @@ main() {
     touch "$LOG_FILE_PATH"
     chmod 600 "$LOG_FILE_PATH"
     [ ! -f "$LOG_FILE" ] && echo "Timestamp,Message" > "$LOG_FILE"
-    local bin_and_conf=$(find_tomcat_bin_and_conf)
-    local bin_dir="${bin_and_conf%%|*}"
-    local conf_dir="${bin_and_conf##*|}"
-    local tomcat_home=$(dirname "$bin_dir")
-    local version=$(detect_tomcat_version "$tomcat_home")
+    local custom_conf_path=""
+    if [ $# -ge 1 ]; then
+        custom_conf_path="$1"
+    fi
+    local conf_dir
+    conf_dir=$(get_tomcat_config_path "$custom_conf_path")
     local users_xml="$conf_dir/tomcat-users.xml"
     local server_xml="$conf_dir/server.xml"
+    local bin_dir=$(dirname "$conf_dir")/bin
+    local tomcat_home=$(dirname "$bin_dir")
+    local version=$(detect_tomcat_version "$tomcat_home")
     update_server_xml "$server_xml" "$version"
     update_all_users "$users_xml" "$bin_dir" "$version"
     print_compliance_summary "$version" "$server_xml" "$users_xml"
@@ -356,8 +357,8 @@ print_compliance_summary() {
     local ch_line
     ch_line=$(awk '/<CredentialHandler/{flag=1} flag; /\/>/{flag=0}' "$server_xml" | tr '\n' ' ')
     local handler algorithm iterations salt_length
-    handler=$(echo "$ch_line" | grep -o 'className="[^"]*"' | sed 's/className="\([^"]*\)"/\1/')
-    algorithm=$(echo "$ch_line" | grep -o 'algorithm="[^"]*"' | sed 's/algorithm="\([^"]*\)"/\1/')
+    handler=$(echo "$ch_line" | grep -o 'className="[^\"]*"' | sed 's/className="\([^"]*\)"/\1/')
+    algorithm=$(echo "$ch_line" | grep -o 'algorithm="[^\"]*"' | sed 's/algorithm="\([^"]*\)"/\1/')
     iterations=$(echo "$ch_line" | grep -o 'iterations="[0-9]*"' | sed 's/iterations="\([0-9]*\)"/\1/')
     salt_length=$(echo "$ch_line" | grep -o 'saltLength="[0-9]*"' | sed 's/saltLength="\([0-9]*\)"/\1/')
     [ -z "$handler" ] && handler="(none)"
@@ -383,7 +384,7 @@ print_compliance_summary() {
     echo "User Accounts:"
     printf "  %-13s | %-15s | %-15s | %-10s\n" "Username" "Roles" "Password Type" "Compliance"
     printf "  %-13s | %-15s | %-15s | %-10s\n" "-------------" "---------------" "---------------" "-----------"
-    grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
+    grep -E '^[[:space:]]*<user ' "$users_xml" | grep -v '^[[:space:]]*<!--' | while read -r line; do
         local username roles password type compliance
         username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
         roles=$(echo "$line" | sed -n 's/.*roles="\([^"]*\)".*/\1/p')
@@ -403,6 +404,98 @@ print_compliance_summary() {
     echo
     echo "─────────────────────────────"
     echo "All users updated and server.xml patched."
+}
+
+get_tomcat_config_path() {
+    local custom_conf_path="$1"
+    local conf_path=""
+    # Check custom path provided as argument
+    if [ -n "$custom_conf_path" ]; then
+        if [ -d "$custom_conf_path" ] && [ -f "$custom_conf_path/server.xml" ] && [ -f "$custom_conf_path/tomcat-users.xml" ]; then
+            conf_path="$custom_conf_path"
+        else
+            echo "ERROR: Invalid custom configuration path: $custom_conf_path" >&2
+            exit 1
+        fi
+    fi
+    # Check CATALINA_BASE
+    if [ -z "$conf_path" ] && [ -n "${CATALINA_BASE:-}" ] && [ -d "${CATALINA_BASE}/conf" ] && [ -f "${CATALINA_BASE}/conf/server.xml" ] && [ -f "${CATALINA_BASE}/conf/tomcat-users.xml" ]; then
+        conf_path="${CATALINA_BASE}/conf"
+    fi
+    # Check CATALINA_HOME
+    if [ -z "$conf_path" ] && [ -n "${CATALINA_HOME:-}" ] && [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ] && [ -f "${CATALINA_HOME}/conf/tomcat-users.xml" ]; then
+        conf_path="${CATALINA_HOME}/conf"
+    fi
+    # Check running process
+    if [ -z "$conf_path" ]; then
+        local tomcat_pid
+        tomcat_pid=$(pgrep -f "org.apache.catalina.startup.Bootstrap" 2>/dev/null)
+        if [ -n "$tomcat_pid" ]; then
+            local proc_args
+            proc_args=$(ps -p "$tomcat_pid" -o args 2>/dev/null)
+            local catalina_home
+            catalina_home=$(echo "$proc_args" | grep -o -E '\-Dcatalina\.home=[^ ]+' | sed 's/-Dcatalina\.home=//')
+            local catalina_base
+            catalina_base=$(echo "$proc_args" | grep -o -E '\-Dcatalina\.base=[^ ]+' | sed 's/-Dcatalina\.base=//')
+            if [ -n "$catalina_base" ] && [ -d "$catalina_base/conf" ] && [ -f "$catalina_base/conf/server.xml" ]; then
+                conf_path="$catalina_base/conf"
+            elif [ -n "$catalina_home" ] && [ -d "$catalina_home/conf" ] && [ -f "$catalina_home/conf/server.xml" ]; then
+                conf_path="$catalina_home/conf"
+            fi
+        fi
+    fi
+    # Infer CATALINA_HOME from catalina.sh
+    if [ -z "$conf_path" ] && [ -z "${CATALINA_HOME:-}" ]; then
+        local catalina_script
+        catalina_script=$(command -v catalina.sh 2>/dev/null)
+        if [ -n "$catalina_script" ] && [ -f "$catalina_script" ]; then
+            CATALINA_HOME=$(dirname "$(dirname "$catalina_script")")
+            if [ -d "${CATALINA_HOME}/conf" ] && [ -f "${CATALINA_HOME}/conf/server.xml" ] && [ -f "${CATALINA_HOME}/conf/tomcat-users.xml" ]; then
+                conf_path="${CATALINA_HOME}/conf"
+            fi
+        fi
+    fi
+    # Search common paths
+    if [ -z "$conf_path" ]; then
+        for path in \
+            "/opt/tomcat/conf" \
+            "/usr/local/tomcat/conf" \
+            "/var/lib/tomcat7/conf" \
+            "/var/lib/tomcat8/conf" \
+            "/var/lib/tomcat9/conf" \
+            "/var/lib/tomcat10/conf" \
+            "/usr/share/tomcat/conf" \
+            "/usr/share/tomcat7/conf" \
+            "/usr/share/tomcat8/conf" \
+            "/usr/share/tomcat9/conf" \
+            "/usr/share/tomcat10/conf" \
+            "/etc/tomcat/conf" \
+            "/etc/tomcat7/conf" \
+            "/etc/tomcat8/conf" \
+            "/etc/tomcat9/conf" \
+            "/etc/tomcat10/conf"; do
+            if [ -d "$path" ] && [ -f "$path/server.xml" ] && [ -f "$path/tomcat-users.xml" ]; then
+                conf_path="$path"
+                break
+            fi
+        done
+    fi
+    # Fallback to find command
+    if [ -z "$conf_path" ]; then
+        local found_path
+        found_path=$(find / -type f -path "*/conf/server.xml" 2>/dev/null | head -n 1)
+        if [ -n "$found_path" ]; then
+            conf_path=$(dirname "$found_path")
+            if [ ! -f "$conf_path/tomcat-users.xml" ]; then
+                conf_path=""
+            fi
+        fi
+    fi
+    if [ -z "$conf_path" ]; then
+        echo "ERROR: Could not locate Tomcat configuration directory (server.xml and tomcat-users.xml)." >&2
+        exit 1
+    fi
+    echo "$conf_path"
 }
 
 main "$@"
