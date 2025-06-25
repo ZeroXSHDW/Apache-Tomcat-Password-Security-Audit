@@ -1,10 +1,50 @@
 ┌──(user㉿kali)-[~/Downloads]
-└─$ sudo ./UpdateTomcatUserUnix.sh       
-2025-06-25 15:11:31,Checking RELEASE-NOTES for version...
-2025-06-25 15:11:31,Version found in RELEASE-NOTES: 10.1.42 (10.1)
+└─$ sudo ./UpdateTomcatUserUnix.sh          
+2025-06-25 15:30:57,Checking RELEASE-NOTES for version...
+2025-06-25 15:30:57,Version found in RELEASE-NOTES: 10.1.42 (10.1)
+─────────────────────────────
+ Tomcat CredentialHandler Update
+─────────────────────────────
+• Before:
+    (none found)
+• After:
+    <CredentialHandler className="org.apache.catalina.realm.SecretKeyCredentialHandler" algorithm="PBKDF2WithHmacSHA512" iterations="10000" saltLength="16" keyLength="256"/>
+✅ CredentialHandler updated for Tomcat 10.1.
+─────────────────────────────
+ Tomcat User Password Update
+─────────────────────────────
+✔ Updated user: admin
+    • Old password:  securepass123   (Plaintext, ❌ Non-compliant)
+    • New password:  249755443d1afcd6bf69486a653d297542edf764   (Hash, ✅ Compliant)
+
+─────────────────────────────
+ Tomcat User Password Update
+─────────────────────────────
+No <user ...> entries found in /opt/tomcat-10.1/conf/tomcat-users.xml.
+─────────────────────────────
+ Tomcat User & Credential Audit
+─────────────────────────────
+Tomcat Version: 10.1
+
+CredentialHandler:
+  Status: Compliant
+  Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
+  Algorithm: PBKDF2WithHmacSHA512
+  Iterations: 10000
+  Salt Length: 16
+
+User Accounts:
+  Username      | Roles           | Password Type   | Compliance
+  ------------- | --------------- | --------------- | -----------
+  admin         | manager,admin   | Hash            | Compliant 
+
+─────────────────────────────
+All users updated and server.xml patched.
+2025-06-25 15:30:57,Restarting Tomcat via catalina.sh.
+2025-06-25 15:30:57,Tomcat restarted via catalina.sh.
                                                                                                                                                            
 ┌──(user㉿kali)-[~/Downloads]
-└─$ sudo cat /opt/tomcat-10.1/conf/tomcat-users.xml                                    
+└─$ sudo cat /opt/tomcat-10.1/conf/tomcat-users.xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Licensed to the Apache Software Foundation (ASF) under one or more
@@ -55,11 +95,11 @@
   <role rolename="tomcat"/>
   <role rolename="role1"/>
 -->
-  <user username="admin" password="securepass123" roles="manager,admin"/>
+  <user username="admin" password="249755443d1afcd6bf69486a653d297542edf764" roles="manager,admin"/>
 </tomcat-users>
                                                                                                                                                            
 ┌──(user㉿kali)-[~/Downloads]
-└─$ sudo cat /opt/tomcat-10.1/conf/server.xml                                          
+└─$ sudo cat /opt/tomcat-10.1/conf/server.xml      
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Licensed to the Apache Software Foundation (ASF) under one or more
@@ -199,6 +239,7 @@
              that are performed against this UserDatabase are immediately
              available for use by the Realm.  -->
         <Realm className="org.apache.catalina.realm.UserDatabaseRealm"
+    <CredentialHandler className="org.apache.catalina.realm.SecretKeyCredentialHandler" algorithm="PBKDF2WithHmacSHA512" iterations="10000" saltLength="16" keyLength="256"/>
                resourceName="UserDatabase"/>
       </Realm>
 
@@ -222,6 +263,3 @@
     </Engine>
   </Service>
 </Server>
-                                                                                                                                                           
-┌──(user㉿kali)-[~/Downloads]
-└─$ 
