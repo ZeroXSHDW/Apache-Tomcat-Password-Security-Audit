@@ -160,19 +160,34 @@ update_all_users() {
     local users_xml="$1"; local bin_dir="$2"; local version="$3"
     local tmp_xml="${users_xml}.tmp"
     cp "$users_xml" "$tmp_xml"
-    local users=( $(xmllint --xpath '//user/@username' "$users_xml" 2>/dev/null | sed -E 's/ username="([^"]*)"/\n\1/g' | grep -v '^$') )
-    for user in "${users[@]}"; do
-        local pw=$(xmllint --xpath "string(//user[@username='$user']/@password)" "$users_xml")
-        local roles=$(xmllint --xpath "string(//user[@username='$user']/@roles)" "$users_xml")
+    local header_printed=0
+    grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
+        local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
+        local roles=$(echo "$line" | sed -n 's/.*roles="\([^"]*\)".*/\1/p')
+        local pw=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
+        local old_type="Plaintext"
         if [[ "$pw" =~ ^[0-9a-fA-F:]+$ ]]; then
-            log "User $user already has a hash, skipping."
-            continue
+            if [[ "$pw" =~ : ]]; then
+                old_type="Salted Hash"
+            else
+                old_type="Hash"
+            fi
         fi
-        local hash=$(generate_hash "$bin_dir" "$pw" "$version")
-        log "User $user: password replaced with hash $hash"
-        echo "User $user: password replaced with hash $hash"
-        # Replace password in XML
-        sed -i.bak "/<user.*username=\"${user}\"/s#password=\"[^\"]*\"#password=\"${hash}\"#" "$tmp_xml"
+        if [ "$old_type" = "Plaintext" ]; then
+            if [ $header_printed -eq 0 ]; then
+                echo "username,roles,old_password,old_type,new_hash,new_type"
+                header_printed=1
+            fi
+            local hash=$(generate_hash "$bin_dir" "$pw" "$version")
+            local new_type="Hash"
+            if [[ "$hash" =~ : ]]; then
+                new_type="Salted Hash"
+            fi
+            echo "$username,$roles,$pw,$old_type,$hash,$new_type"
+            log "User $username: password replaced with hash $hash"
+            # Replace password in XML
+            sed -i.bak "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml"
+        fi
     done
     mv "$tmp_xml" "$users_xml"
 }
@@ -188,7 +203,6 @@ print_users_info() {
     local users_xml="$1"
     echo "Current Tomcat Users:"
     local user_count=0
-    # Extract only uncommented <user ...> entries
     grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
         local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
         local roles=$(echo "$line" | sed -n 's/.*roles="\([^"]*\)".*/\1/p')
@@ -205,7 +219,6 @@ print_users_info() {
         user_count=$((user_count+1))
     done
     if [ "$user_count" -eq 0 ]; then
-        # Add a default admin user if none found
         ADMIN_PASS=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
         sed -i "/<\/tomcat-users>/i \\  <user username=\"admin\" password=\"$ADMIN_PASS\" roles=\"manager-gui,admin-gui\"/>" "$users_xml"
         echo "[WARNING] No active users found. Added default admin user: admin / $ADMIN_PASS"
