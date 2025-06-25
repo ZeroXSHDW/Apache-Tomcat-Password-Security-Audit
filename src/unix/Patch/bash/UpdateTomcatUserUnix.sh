@@ -187,8 +187,8 @@ extract_credential_handler() {
 print_users_info() {
     local users_xml="$1"
     echo "Current Tomcat Users:"
-    xmllint --xpath '//user' "$users_xml" 2>/dev/null | \
-        grep '<user' | while read -r line; do
+    local user_count=0
+    xmllint --xpath '//user' "$users_xml" 2>/dev/null | grep '<user' | grep -v '^<!--' | while read -r line; do
         local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
         local roles=$(echo "$line" | sed -n 's/.*roles="\([^"]*\)".*/\1/p')
         local password=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
@@ -201,15 +201,19 @@ print_users_info() {
             fi
         fi
         echo "  - $username (roles: $roles, password type: $type)"
+        user_count=$((user_count+1))
     done
+    if [ "$user_count" -eq 0 ]; then
+        echo "[WARNING] No active users found in $users_xml."
+    fi
 }
 
 # Helper: Check user compliance
 check_user_compliance() {
     local users_xml="$1"
     local compliant=1
-    xmllint --xpath '//user' "$users_xml" 2>/dev/null | \
-        grep '<user' | while read -r line; do
+    local user_count=0
+    xmllint --xpath '//user' "$users_xml" 2>/dev/null | grep '<user' | grep -v '^<!--' | while read -r line; do
         local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
         local password=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
         if ! [[ "$password" =~ ^[0-9a-fA-F:]+$ ]]; then
@@ -218,7 +222,12 @@ check_user_compliance() {
         else
             echo "  - $username: Compliant (hashed)"
         fi
+        user_count=$((user_count+1))
     done
+    if [ "$user_count" -eq 0 ]; then
+        echo "[WARNING] No active users found in $users_xml."
+        compliant=0
+    fi
     return $compliant
 }
 
