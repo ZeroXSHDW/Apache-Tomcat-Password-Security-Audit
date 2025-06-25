@@ -327,25 +327,11 @@ update_server_xml() {
 # --- 7. Restart Tomcat ---
 restart_tomcat() {
     local bin_dir="$1"
-    if command -v systemctl >/dev/null 2>&1; then
-        for svc in tomcat tomcat7 tomcat8 tomcat9 tomcat10; do
-            if systemctl is-active --quiet $svc 2>/dev/null; then
-                systemctl restart $svc
-                sleep 5
-                log "Tomcat service $svc restarted."
-                return 0
-            fi
-        done
-    fi
-    # Fallback: catalina.sh
-    if [ -x "$bin_dir/catalina.sh" ]; then
-        "$bin_dir/catalina.sh" stop || true
-        sleep 5
-        "$bin_dir/catalina.sh" start
-        log "Tomcat restarted via catalina.sh."
-        return 0
-    fi
-    error_exit "Could not restart Tomcat."
+    log "Restarting Tomcat via catalina.sh."
+    "$bin_dir/catalina.sh" stop >/dev/null 2>&1
+    sleep 2
+    "$bin_dir/catalina.sh" start >/dev/null 2>&1
+    log "Tomcat restarted via catalina.sh."
 }
 
 # --- 8. Main ---
