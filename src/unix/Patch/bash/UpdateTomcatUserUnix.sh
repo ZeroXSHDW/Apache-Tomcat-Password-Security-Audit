@@ -222,10 +222,15 @@ update_all_users() {
     cp "$users_xml" "$tmp_xml"
     local header_printed=0
     local any_updated=0
+    local csv_file="/tmp/TomcatManager.csv"
+    local csv_header="Timestamp,Username,OldType,NewType,Compliance"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    [ ! -f "$csv_file" ] && echo "$csv_header" > "$csv_file"
     grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
         local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
         local pw=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
         local old_type="Plaintext"
+        local new_type compliance
         if [[ "$pw" =~ ^[0-9a-fA-F:]+$ ]]; then
             if [[ "$pw" =~ : ]]; then
                 old_type="Salted Hash"
@@ -241,14 +246,17 @@ update_all_users() {
                 header_printed=1
             fi
             any_updated=1
-            echo "✔ Updated user: $username"
-            echo "    • Old password:  $pw   (Plaintext, ❌ Non-compliant)"
             local hash=$(generate_hash "$bin_dir" "$pw" "$version")
-            local new_type="Hash"
+            new_type="Hash"
             if [[ "$hash" =~ : ]]; then
                 new_type="Salted Hash"
             fi
+            compliance="Compliant"
+            echo "✔ Updated user: $username"
+            echo "    • Old password:  $pw   (Plaintext, ❌ Non-compliant)"
             echo "    • New password:  $hash   ($new_type, ✅ Compliant)"
+            echo
+            echo "$timestamp,$username,Plaintext,$new_type,$compliance" >> "$csv_file"
             # Replace password in XML (no .bak backup)
             sed "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml" > "${tmp_xml}.new" && mv "${tmp_xml}.new" "$tmp_xml"
         fi
@@ -345,8 +353,6 @@ print_compliance_summary() {
     local version="$1"
     local server_xml="$2"
     local users_xml="$3"
-
-    # CredentialHandler info
     local ch_line
     ch_line=$(awk '/<CredentialHandler/{flag=1} flag; /\/>/{flag=0}' "$server_xml" | tr '\n' ' ')
     local handler algorithm iterations salt_length
@@ -358,17 +364,13 @@ print_compliance_summary() {
     [ -z "$algorithm" ] && algorithm="(none)"
     [ -z "$iterations" ] && iterations="(none)"
     [ -z "$salt_length" ] && salt_length="(none)"
-
-    # Compliance logic (simplified for demo)
     local ch_compliance="Non-compliant"
     if [[ "$handler" == *SecretKeyCredentialHandler* && "$algorithm" == *PBKDF2WithHmacSHA512* && "$iterations" -ge 10000 && "$salt_length" -ge 16 ]]; then
         ch_compliance="Compliant"
     fi
-
     echo "─────────────────────────────"
     echo " Tomcat User & Credential Audit"
     echo "─────────────────────────────"
-    echo
     echo "Tomcat Version: $version"
     echo
     echo "CredentialHandler:"
