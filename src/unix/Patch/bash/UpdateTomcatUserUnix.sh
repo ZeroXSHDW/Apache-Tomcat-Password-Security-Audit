@@ -23,21 +23,23 @@ error_exit() {
 }
 
 # --- 1. Locate Tomcat bin directory ---
-find_tomcat_bin() {
-    # Search for all bin/digest.sh under likely parent directories
+find_tomcat_bin_and_conf() {
     local search_parents=(/opt /usr/local /var/lib /usr/share /etc)
-    local found_bin=""
     for parent in "${search_parents[@]}"; do
         while IFS= read -r digest; do
             if [ -x "$digest" ]; then
-                found_bin=$(dirname "$digest")
-                # Check for sibling conf/server.xml and conf/tomcat-users.xml
-                local conf_dir=$(dirname "$found_bin")/conf
-                if [ -f "$conf_dir/server.xml" ] && [ -f "$conf_dir/tomcat-users.xml" ]; then
-                    log "Found Tomcat bin: $found_bin"
-                    echo "$found_bin"
-                    return 0
-                fi
+                local bin_dir=$(dirname "$digest")
+                # Search upwards for conf directory
+                local dir="$bin_dir"
+                while [ "$dir" != "/" ]; do
+                    if [ -d "$dir/conf" ] && [ -f "$dir/conf/server.xml" ] && [ -f "$dir/conf/tomcat-users.xml" ]; then
+                        log "Found Tomcat bin: $bin_dir"
+                        log "Found Tomcat conf: $dir/conf"
+                        echo "$bin_dir|$dir/conf"
+                        return 0
+                    fi
+                    dir=$(dirname "$dir")
+                done
             fi
         done < <(find "$parent" -type f -name digest.sh 2>/dev/null)
     done
@@ -177,9 +179,10 @@ main() {
     [ ! -f "$LOG_FILE" ] && echo "Timestamp,Message" > "$LOG_FILE"
 
     log "--- Tomcat User Patch Script Started ---"
-    local bin_dir=$(find_tomcat_bin)
+    local bin_and_conf=$(find_tomcat_bin_and_conf)
+    local bin_dir="${bin_and_conf%%|*}"
+    local conf_dir="${bin_and_conf##*|}"
     log "Tomcat bin directory: $bin_dir"
-    local conf_dir=$(find_tomcat_conf "$bin_dir")
     log "Tomcat conf directory: $conf_dir"
     local version=$(detect_tomcat_version "$bin_dir")
     log "Tomcat version: $version"
