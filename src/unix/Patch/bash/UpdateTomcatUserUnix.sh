@@ -222,10 +222,16 @@ update_all_users() {
     cp "$users_xml" "$tmp_xml"
     local header_printed=0
     local any_updated=0
+    local csv_file="/tmp/TomcatManager.csv"
+    local csv_header="Timestamp,Username,OldType,NewType,Compliance"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    [ ! -f "$csv_file" ] && echo "$csv_header" > "$csv_file"
+    local csv_rows=""
     grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
         local username=$(echo "$line" | sed -n 's/.*username=\"\([^\"]*\)\".*/\1/p')
         local pw=$(echo "$line" | sed -n 's/.*password=\"\([^\"]*\)\".*/\1/p')
         local old_type="Plaintext"
+        local new_type compliance
         if [[ "$pw" =~ ^[0-9a-fA-F:]+$ ]]; then
             if [[ "$pw" =~ : ]]; then
                 old_type="Salted Hash"
@@ -242,28 +248,34 @@ update_all_users() {
                 header_printed=1
             fi
             any_updated=1
-            echo "✔ Updated user: $username"
-            echo "    • Old password:  $pw   (Plaintext, ❌ Non-compliant)"
             local hash=$(generate_hash "$bin_dir" "$pw" "$version")
-            local new_type="Hash"
+            new_type="Hash"
             if [[ "$hash" =~ : ]]; then
                 new_type="Salted Hash"
             fi
+            compliance="Compliant"
+            echo "✔ Updated user: $username"
+            echo "    • Old password:  $pw   (Plaintext, ❌ Non-compliant)"
             echo "    • New password:  $hash   ($new_type, ✅ Compliant)"
             echo
-            log "User $username: password replaced with hash $hash"
-            # Replace password in XML
-            sed -i.bak "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml"
+            csv_rows+="$timestamp,$username,Plaintext,$new_type,$compliance\n"
+            # Replace password in XML (no .bak backup)
+            sed "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml" > "${tmp_xml}.new" && mv "${tmp_xml}.new" "$tmp_xml"
         fi
     done
     mv "$tmp_xml" "$users_xml"
-    if [ "$header_printed" -eq 0 ]; then
+    if [ "$any_updated" -eq 0 ]; then
         echo "─────────────────────────────"
         echo " Tomcat User Password Update"
         echo "─────────────────────────────"
         echo
         echo "No plaintext user passwords found to update."
         echo
+    fi
+    # Write CSV rows if any
+    if [ -n "$csv_rows" ]; then
+        printf "%b" "$csv_rows" >> "$csv_file"
+        echo "CSV output written to $csv_file"
     fi
 }
 
