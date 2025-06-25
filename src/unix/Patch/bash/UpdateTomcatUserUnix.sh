@@ -177,9 +177,58 @@ update_all_users() {
     mv "$tmp_xml" "$users_xml"
 }
 
+# Helper: Extract CredentialHandler block from server.xml
+extract_credential_handler() {
+    local server_xml="$1"
+    awk '/<CredentialHandler/,/\/?>/' "$server_xml" | tr '\n' ' ' | sed 's/^ *//;s/ *$//'
+}
+
+# Helper: Print all users and their password type
+print_users_info() {
+    local users_xml="$1"
+    echo "Current Tomcat Users:"
+    xmllint --xpath '//user' "$users_xml" 2>/dev/null | \
+        grep '<user' | while read -r line; do
+        local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
+        local roles=$(echo "$line" | sed -n 's/.*roles="\([^"]*\)".*/\1/p')
+        local password=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
+        local type="Plaintext"
+        if [[ "$password" =~ ^[0-9a-fA-F:]+$ ]]; then
+            if [[ "$password" =~ : ]]; then
+                type="Salted Hash"
+            else
+                type="Hash"
+            fi
+        fi
+        echo "  - $username (roles: $roles, password type: $type)"
+    done
+}
+
+# Helper: Check user compliance
+check_user_compliance() {
+    local users_xml="$1"
+    local compliant=1
+    xmllint --xpath '//user' "$users_xml" 2>/dev/null | \
+        grep '<user' | while read -r line; do
+        local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
+        local password=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
+        if ! [[ "$password" =~ ^[0-9a-fA-F:]+$ ]]; then
+            echo "  - $username: Non-compliant (plaintext password)"
+            compliant=0
+        else
+            echo "  - $username: Compliant (hashed)"
+        fi
+    done
+    return $compliant
+}
+
 # --- 6. Update server.xml CredentialHandler ---
 update_server_xml() {
     local server_xml="$1"; local version="$2"
+    echo "Current CredentialHandler in server.xml:"
+    local before_ch=$(extract_credential_handler "$server_xml")
+    echo "  $before_ch"
+    log "Current CredentialHandler: $before_ch"
     local handler=""
     case "$version" in
         7.0)
@@ -204,6 +253,14 @@ update_server_xml() {
     $handler" "$server_xml"
     fi
     log "server.xml CredentialHandler updated for Tomcat $version."
+    echo "Updated CredentialHandler in server.xml:"
+    local after_ch=$(extract_credential_handler "$server_xml")
+    echo "  $after_ch"
+    if [[ "$after_ch" == *"$handler"* ]]; then
+        echo "CredentialHandler successfully updated to compliant configuration."
+    else
+        echo "Warning: CredentialHandler update may have failed."
+    fi
 }
 
 # --- 7. Restart Tomcat ---
@@ -250,8 +307,28 @@ main() {
     local users_xml="$conf_dir/tomcat-users.xml"
     local server_xml="$conf_dir/server.xml"
 
+    # Before update
+    print_users_info "$users_xml"
+
+    # Update users
     update_all_users "$users_xml" "$bin_dir" "$version"
+
+    # After update
+    echo "\nUsers after update:"
+    print_users_info "$users_xml"
+    echo "\nUser compliance check:"
+    check_user_compliance "$users_xml"
+
+    # Update server.xml and confirm
     update_server_xml "$server_xml" "$version"
+
+    # Compliance summary
+    echo "\nCompliance summary:"
+    echo "- server.xml CredentialHandler:"
+    extract_credential_handler "$server_xml"
+    echo "- Users:"
+    check_user_compliance "$users_xml"
+
     restart_tomcat "$bin_dir"
 
     log "All users updated and server.xml patched."
