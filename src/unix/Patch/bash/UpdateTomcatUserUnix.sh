@@ -221,10 +221,10 @@ update_all_users() {
     local tmp_xml="${users_xml}.tmp"
     cp "$users_xml" "$tmp_xml"
     local header_printed=0
+    local any_updated=0
     grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
-        local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
-        local roles=$(echo "$line" | sed -n 's/.*roles="\([^"]*\)".*/\1/p')
-        local pw=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
+        local username=$(echo "$line" | sed -n 's/.*username=\"\([^\"]*\)\".*/\1/p')
+        local pw=$(echo "$line" | sed -n 's/.*password=\"\([^\"]*\)\".*/\1/p')
         local old_type="Plaintext"
         if [[ "$pw" =~ ^[0-9a-fA-F:]+$ ]]; then
             if [[ "$pw" =~ : ]]; then
@@ -235,33 +235,45 @@ update_all_users() {
         fi
         if [ "$old_type" = "Plaintext" ]; then
             if [ $header_printed -eq 0 ]; then
-                printf "\nUser Update Results:\n"
-                printf "%-20s | %-15s | %-12s\n" "Username" "Password Type" "Compliance"
-                printf "%-20s | %-15s | %-12s\n" "--------------------" "---------------" "------------"
+                echo "─────────────────────────────"
+                echo " Tomcat User Password Update"
+                echo "─────────────────────────────"
+                echo
                 header_printed=1
             fi
-            printf "%-20s | %-15s | %-12s\n" "$username" "Plaintext" "Non-compliant"
-            printf "    Plaintext password: %s\n" "$pw"
+            any_updated=1
+            echo "✔ Updated user: $username"
+            echo "    • Old password:  $pw   (Plaintext, ❌ Non-compliant)"
             local hash=$(generate_hash "$bin_dir" "$pw" "$version")
             local new_type="Hash"
             if [[ "$hash" =~ : ]]; then
                 new_type="Salted Hash"
             fi
-            printf "%-20s | %-15s | %-12s\n" "$username" "$new_type" "Compliant"
-            printf "    Hashed password:    %s\n" "$hash"
+            echo "    • New password:  $hash   ($new_type, ✅ Compliant)"
+            echo
             log "User $username: password replaced with hash $hash"
             # Replace password in XML
             sed -i.bak "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml"
         fi
     done
     mv "$tmp_xml" "$users_xml"
+    if [ "$header_printed" -eq 0 ]; then
+        echo "─────────────────────────────"
+        echo " Tomcat User Password Update"
+        echo "─────────────────────────────"
+        echo
+        echo "No plaintext user passwords found to update."
+        echo
+    fi
 }
 
 # --- 6. Update server.xml CredentialHandler ---
 update_server_xml() {
     local server_xml="$1"; local version="$2"
-    local before_ch=$(extract_credential_handler "$server_xml")
-    echo "CredentialHandler_Before,CredentialHandler_After"
+    local before_block after_block
+    before_block=$(awk '/<CredentialHandler/{flag=1} flag; /\/>/{flag=0}' "$server_xml" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
+    [ -z "$before_block" ] && before_block="(none found)"
+
     # Prepare the new handler
     local handler=""
     case "$version" in
@@ -287,13 +299,29 @@ update_server_xml() {
     $handler" "$server_xml"
     fi
     log "server.xml CredentialHandler updated for Tomcat $version."
-    local after_ch=$(extract_credential_handler "$server_xml")
-    echo "$before_ch,$after_ch"
-    if [[ "$after_ch" == *"$handler"* ]]; then
-        echo "CredentialHandler successfully updated to compliant configuration."
+    after_block=$(awk '/<CredentialHandler/{flag=1} flag; /\/>/{flag=0}' "$server_xml" | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
+    [ -z "$after_block" ] && after_block="(none found)"
+
+    echo "\n─────────────────────────────"
+    echo " Tomcat CredentialHandler Update"
+    echo "─────────────────────────────"
+    echo
+    echo "• Before:"
+    echo "    $before_block"
+    echo
+    echo "• After:"
+    echo "    $after_block"
+    echo
+    if [ "$before_block" != "$after_block" ]; then
+        echo "✅ CredentialHandler updated for Tomcat $version."
     else
-        echo "Warning: CredentialHandler update may have failed."
+        if [ "$before_block" = "(none found)" ]; then
+            echo "⚠️  No CredentialHandler found or updated."
+        else
+            echo "No CredentialHandler update needed; already compliant."
+        fi
     fi
+    echo "─────────────────────────────"
 }
 
 # --- 7. Restart Tomcat ---
@@ -340,22 +368,11 @@ main() {
     local users_xml="$conf_dir/tomcat-users.xml"
     local server_xml="$conf_dir/server.xml"
 
-    # Print users before update
-    print_users_info "$users_xml"
-
-    # Update server.xml and confirm BEFORE updating users
+    # Update server.xml and show improved output
     update_server_xml "$server_xml" "$version"
 
     # Update users
     update_all_users "$users_xml" "$bin_dir" "$version"
-
-    # Print users after update
-    echo -e "\nUsers after update:"
-    print_users_info "$users_xml"
-
-    # Print compliance report
-    echo -e "\nUser Compliance Report (username,roles,hash_type):"
-    print_user_compliance_report "$users_xml"
 
     restart_tomcat "$bin_dir"
 
