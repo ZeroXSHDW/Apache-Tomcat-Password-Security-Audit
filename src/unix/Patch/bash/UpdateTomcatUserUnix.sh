@@ -14,7 +14,7 @@ HOSTNAME=$(hostname)
 # --- Helper Functions ---
 log() {
     local msg="$1"
-    echo "$TIMESTAMP,$msg" | tee -a "$LOG_FILE_PATH"
+    echo "$TIMESTAMP,$msg" | tee -a "$LOG_FILE_PATH" >&2
 }
 
 error_exit() {
