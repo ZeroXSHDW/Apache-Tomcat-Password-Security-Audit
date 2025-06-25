@@ -73,6 +73,7 @@ detect_tomcat_version() {
 
     # Method 1: Check RELEASE-NOTES
     if [ -f "$version_file" ]; then
+        log "Checking RELEASE-NOTES for version..."
         version_line=$(grep "Apache Tomcat Version" "$version_file" | head -n 1)
         if [[ "$version_line" =~ Apache\ Tomcat\ Version\ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
             full_version="${BASH_REMATCH[1]}"
@@ -84,11 +85,17 @@ detect_tomcat_version() {
                 10.0.*) version="10.0" ;;
                 10.1.*) version="10.1" ;;
             esac
+            log "Version found in RELEASE-NOTES: $full_version ($version)"
+        else
+            log "No version found in RELEASE-NOTES"
         fi
+    else
+        log "RELEASE-NOTES not found at $version_file"
     fi
 
     # Method 2: Check directory name
     if [ "$version" = "unknown" ]; then
+        log "Checking directory name for version..."
         tomcat_home_lower=$(echo "$tomcat_home" | tr '[:upper:]' '[:lower:]')
         case "$tomcat_home_lower" in
             *tomcat7*) version="7.0" ;;
@@ -98,10 +105,12 @@ detect_tomcat_version() {
             *tomcat10.1*) version="10.1" ;;
             *tomcat10*) version="10.0" ;;
         esac
+        [ "$version" != "unknown" ] && log "Version inferred from directory: $version"
     fi
 
     # Method 3: Check catalina.jar manifest
     if [ "$version" = "unknown" ] && [ -f "$catalina_jar" ] && command -v unzip >/dev/null; then
+        log "Checking catalina.jar manifest for version..."
         manifest_version=$(unzip -p "$catalina_jar" META-INF/MANIFEST.MF 2>/dev/null | grep "Implementation-Version" | sed -n 's/.*Implementation-Version: \([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p')
         if [ -n "$manifest_version" ]; then
             case "$manifest_version" in
@@ -112,11 +121,17 @@ detect_tomcat_version() {
                 10.0.*) version="10.0" ;;
                 10.1.*) version="10.1" ;;
             esac
+            log "Version found in catalina.jar manifest: $manifest_version ($version)"
+        else
+            log "No version found in catalina.jar manifest"
         fi
+    elif [ ! -f "$catalina_jar" ]; then
+        log "catalina.jar not found at $catalina_jar"
     fi
 
     # Fallback: Error if version is unknown
     if [ "$version" = "unknown" ]; then
+        log "ERROR: Could not determine Tomcat version at $tomcat_home. Defaulting to 8.5." 2
         version="8.5"
     fi
 
