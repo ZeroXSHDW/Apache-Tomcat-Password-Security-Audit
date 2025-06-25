@@ -354,16 +354,78 @@ main() {
     local users_xml="$conf_dir/tomcat-users.xml"
     local server_xml="$conf_dir/server.xml"
 
-    # Update server.xml and show improved output
-    update_server_xml "$server_xml" "$version"
+    # Update server.xml and users (no output here)
+    update_server_xml "$server_xml" "$version" >/dev/null
+    update_all_users "$users_xml" "$bin_dir" "$version" >/dev/null
 
-    # Update users
-    update_all_users "$users_xml" "$bin_dir" "$version"
+    # Print compliance summary only
+    print_compliance_summary "$version" "$server_xml" "$users_xml"
 
-    restart_tomcat "$bin_dir"
+    restart_tomcat "$bin_dir" >/dev/null
 
     log "All users updated and server.xml patched."
-    echo "SUCCESS: All users updated and server.xml patched."
+}
+
+print_compliance_summary() {
+    local version="$1"
+    local server_xml="$2"
+    local users_xml="$3"
+
+    # CredentialHandler info
+    local ch_line
+    ch_line=$(awk '/<CredentialHandler/{flag=1} flag; /\/>/{flag=0}' "$server_xml" | tr '\n' ' ')
+    local handler algorithm iterations salt_length
+    handler=$(echo "$ch_line" | grep -o 'className="[^"]*"' | sed 's/className="\([^"]*\)"/\1/')
+    algorithm=$(echo "$ch_line" | grep -o 'algorithm="[^"]*"' | sed 's/algorithm="\([^"]*\)"/\1/')
+    iterations=$(echo "$ch_line" | grep -o 'iterations="[0-9]*"' | sed 's/iterations="\([0-9]*\)"/\1/')
+    salt_length=$(echo "$ch_line" | grep -o 'saltLength="[0-9]*"' | sed 's/saltLength="\([0-9]*\)"/\1/')
+    [ -z "$handler" ] && handler="(none)"
+    [ -z "$algorithm" ] && algorithm="(none)"
+    [ -z "$iterations" ] && iterations="(none)"
+    [ -z "$salt_length" ] && salt_length="(none)"
+
+    # Compliance logic (simplified for demo)
+    local ch_compliance="Non-compliant"
+    if [[ "$handler" == *SecretKeyCredentialHandler* && "$algorithm" == *PBKDF2WithHmacSHA512* && "$iterations" -ge 10000 && "$salt_length" -ge 16 ]]; then
+        ch_compliance="Compliant"
+    fi
+
+    echo "─────────────────────────────"
+    echo " Tomcat User & Credential Audit"
+    echo "─────────────────────────────"
+    echo
+    echo "Tomcat Version: $version"
+    echo
+    echo "CredentialHandler:"
+    echo "  Status: $ch_compliance"
+    echo "  Handler: $handler"
+    echo "  Algorithm: $algorithm"
+    echo "  Iterations: $iterations"
+    echo "  Salt Length: $salt_length"
+    echo
+    echo "User Accounts:"
+    printf "  %-13s | %-15s | %-15s | %-10s\n" "Username" "Roles" "Password Type" "Compliance"
+    printf "  %-13s | %-15s | %-15s | %-10s\n" "-------------" "---------------" "---------------" "-----------"
+    grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
+        local username roles password type compliance
+        username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
+        roles=$(echo "$line" | sed -n 's/.*roles="\([^"]*\)".*/\1/p')
+        password=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
+        type="Plaintext"
+        compliance="Non-compliant"
+        if [[ "$password" =~ ^[0-9a-fA-F:]+$ ]]; then
+            if [[ "$password" =~ : ]]; then
+                type="Salted Hash"
+            else
+                type="Hash"
+            fi
+            compliance="Compliant"
+        fi
+        printf "  %-13s | %-15s | %-15s | %-10s\n" "$username" "$roles" "$type" "$compliance"
+    done
+    echo
+    echo "─────────────────────────────"
+    echo "All users updated and server.xml patched."
 }
 
 main "$@"
