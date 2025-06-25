@@ -165,7 +165,7 @@ extract_credential_handler() {
 print_users_info() {
     local users_xml="$1"
     echo "Current Tomcat Users:"
-    local user_count=0
+    local tmpfile=$(mktemp)
     grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
         local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
         local roles=$(echo "$line" | sed -n 's/.*roles="\([^"]*\)".*/\1/p')
@@ -179,8 +179,10 @@ print_users_info() {
             fi
         fi
         echo "  - $username (roles: $roles, password type: $type)"
-        user_count=$((user_count+1))
+        echo 1 >> "$tmpfile"
     done
+    local user_count=$(wc -l < "$tmpfile")
+    rm -f "$tmpfile"
     if [ "$user_count" -eq 0 ]; then
         echo "[WARNING] No active users found in $users_xml."
     fi
@@ -190,6 +192,7 @@ print_users_info() {
 print_user_compliance_report() {
     local users_xml="$1"
     echo "User Compliance Report:"
+    local tmpfile=$(mktemp)
     grep -E '^[[:space:]]*<user ' "$users_xml" | while read -r line; do
         local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
         local roles=$(echo "$line" | sed -n 's/.*roles="\([^"]*\)".*/\1/p')
@@ -203,7 +206,13 @@ print_user_compliance_report() {
             fi
         fi
         echo "$username,$roles,$type"
+        echo 1 >> "$tmpfile"
     done
+    local user_count=$(wc -l < "$tmpfile")
+    rm -f "$tmpfile"
+    if [ "$user_count" -eq 0 ]; then
+        echo "[WARNING] No active users found in $users_xml."
+    fi
 }
 
 # --- 5. Update tomcat-users.xml for all users ---
@@ -226,15 +235,20 @@ update_all_users() {
         fi
         if [ "$old_type" = "Plaintext" ]; then
             if [ $header_printed -eq 0 ]; then
-                echo "username,roles,old_password,old_type,new_hash,new_type"
+                printf "\nUser Update Results:\n"
+                printf "%-20s | %-15s | %-12s\n" "Username" "Password Type" "Compliance"
+                printf "%-20s | %-15s | %-12s\n" "--------------------" "---------------" "------------"
                 header_printed=1
             fi
+            printf "%-20s | %-15s | %-12s\n" "$username" "Plaintext" "Non-compliant"
+            printf "    Plaintext password: %s\n" "$pw"
             local hash=$(generate_hash "$bin_dir" "$pw" "$version")
             local new_type="Hash"
             if [[ "$hash" =~ : ]]; then
                 new_type="Salted Hash"
             fi
-            echo "$username,$roles,$pw,$old_type,$hash,$new_type"
+            printf "%-20s | %-15s | %-12s\n" "$username" "$new_type" "Compliant"
+            printf "    Hashed password:    %s\n" "$hash"
             log "User $username: password replaced with hash $hash"
             # Replace password in XML
             sed -i.bak "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml"
