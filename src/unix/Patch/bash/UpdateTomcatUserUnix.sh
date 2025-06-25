@@ -130,7 +130,7 @@ update_all_users() {
         log "User $user: password replaced with hash $hash"
         echo "User $user: password replaced with hash $hash"
         # Replace password in XML
-        sed -i.bak "/<user.*username=\\\"$user\\\"/s/password=\\\"[^\"]*\\\"/password=\\\"$hash\\\"/" "$tmp_xml"
+        sed -i.bak "/<user.*username=\"${user}\"/s#password=\"[^\"]*\"#password=\"${hash}\"#" "$tmp_xml"
     done
     mv "$tmp_xml" "$users_xml"
 }
