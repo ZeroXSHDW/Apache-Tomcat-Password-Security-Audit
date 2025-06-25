@@ -67,14 +67,21 @@ find_tomcat_conf() {
 detect_tomcat_version() {
     local bin_dir="$1"
     local ver=""
-    if [ -f "$bin_dir/../RELEASE-NOTES" ]; then
+    # Try to extract from directory name (e.g., /opt/tomcat-10.1/bin)
+    if [[ "$bin_dir" =~ tomcat-([0-9]+)\.([0-9]+) ]]; then
+        ver="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+    elif [[ "$bin_dir" =~ tomcat([0-9]+) ]]; then
+        # e.g., tomcat9, tomcat10
+        ver="${BASH_REMATCH[1]}.0"
+    fi
+    # Try RELEASE-NOTES if not found
+    if [ -z "$ver" ] && [ -f "$bin_dir/../RELEASE-NOTES" ]; then
         ver=$(grep -o 'Apache Tomcat Version [0-9]\+\.[0-9]\+\.[0-9]\+' "$bin_dir/../RELEASE-NOTES" | grep -o '[0-9]\+\.[0-9]\+' | head -1)
     fi
-    if [[ "$bin_dir" =~ tomcat7 ]]; then ver="7.0"; fi
-    if [[ "$bin_dir" =~ tomcat8 ]]; then ver="8.5"; fi
-    if [[ "$bin_dir" =~ tomcat9 ]]; then ver="9.0"; fi
-    if [[ "$bin_dir" =~ tomcat10 ]]; then ver="10.0"; fi
-    if [ -z "$ver" ]; then ver="8.5"; fi # fallback
+    # Fallback
+    if [ -z "$ver" ]; then
+        ver="8.5"
+    fi
     echo "$ver"
 }
 
