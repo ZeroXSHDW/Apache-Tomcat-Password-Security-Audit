@@ -24,44 +24,24 @@ error_exit() {
 
 # --- 1. Locate Tomcat bin directory ---
 find_tomcat_bin() {
-    local bin_paths=(
-        "/opt/tomcat/bin" "/usr/local/tomcat/bin" "/var/lib/tomcat7/bin" "/var/lib/tomcat8/bin" "/var/lib/tomcat9/bin" "/var/lib/tomcat10/bin"
-        "/usr/share/tomcat/bin" "/usr/share/tomcat7/bin" "/usr/share/tomcat8/bin" "/usr/share/tomcat9/bin" "/usr/share/tomcat10/bin"
-        "/etc/tomcat/bin" "/etc/tomcat7/bin" "/etc/tomcat8/bin" "/etc/tomcat9/bin" "/etc/tomcat10/bin"
-    )
-    for p in "${bin_paths[@]}"; do
-        if [ -x "$p/digest.sh" ]; then
-            echo "$p"
-            return 0
-        fi
-    done
-    # Try alternative versioned paths
-    local alt_bin=$(find /opt /usr/local /var/lib /usr/share /etc -type d -name 'tomcat*' 2>/dev/null | grep '/bin$' | head -n1)
-    if [ -n "$alt_bin" ] && [ -x "$alt_bin/digest.sh" ]; then
-        echo "$alt_bin"
-        return 0
-    fi
-    # Try systemd or process tracking
-    local pid=$(pgrep -f 'org.apache.catalina.startup.Bootstrap' | head -n1)
-    if [ -n "$pid" ]; then
-        local proc_cwd="/proc/$pid/cwd"
-        if [ -d "$proc_cwd/bin" ] && [ -x "$proc_cwd/bin/digest.sh" ]; then
-            echo "$proc_cwd/bin"
-            return 0
-        fi
-    fi
-    # Try systemctl
-    for svc in tomcat tomcat7 tomcat8 tomcat9 tomcat10; do
-        local unit=$(systemctl show -p FragmentPath $svc.service 2>/dev/null | cut -d= -f2)
-        if [ -n "$unit" ] && [ -f "$unit" ]; then
-            local base_dir=$(dirname $(dirname "$unit"))
-            if [ -x "$base_dir/bin/digest.sh" ]; then
-                echo "$base_dir/bin"
-                return 0
+    # Search for all bin/digest.sh under likely parent directories
+    local search_parents=(/opt /usr/local /var/lib /usr/share /etc)
+    local found_bin=""
+    for parent in "${search_parents[@]}"; do
+        while IFS= read -r digest; do
+            if [ -x "$digest" ]; then
+                found_bin=$(dirname "$digest")
+                # Check for sibling conf/server.xml and conf/tomcat-users.xml
+                local conf_dir=$(dirname "$found_bin")/conf
+                if [ -f "$conf_dir/server.xml" ] && [ -f "$conf_dir/tomcat-users.xml" ]; then
+                    log "Found Tomcat bin: $found_bin"
+                    echo "$found_bin"
+                    return 0
+                fi
             fi
-        fi
+        done < <(find "$parent" -type f -name digest.sh 2>/dev/null)
     done
-    error_exit "Could not locate Tomcat bin directory with digest.sh."
+    error_exit "Could not locate Tomcat bin directory with digest.sh and valid conf."
 }
 
 # --- 2. Locate tomcat-users.xml and server.xml ---
