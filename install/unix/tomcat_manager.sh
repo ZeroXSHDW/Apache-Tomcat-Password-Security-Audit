@@ -697,17 +697,14 @@ else
 fi
 write_log "Tomcat $test_version installation completed successfully" "INFO"
 
-# After creating tomcat-users.xml, ensure at least one uncommented user is present
-if ! grep -E '^[[:space:]]*<user ' "$users_xml"; then
-    ADMIN_PASS=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
-    sed -i "/<\/tomcat-users>/i \\  <user username=\"admin\" password=\"$ADMIN_PASS\" roles=\"manager-gui,admin-gui\"/>" "$users_xml"
-    echo "[WARNING] No active users were present in tomcat-users.xml. Added default admin user: admin / $ADMIN_PASS"
-fi
-# Compliance check
-if ! grep -E '^[[:space:]]*<user ' "$users_xml"; then
-    echo "[ERROR] No active users found in tomcat-users.xml after install!" >&2
-else
-    echo "[INFO] At least one active user is present in tomcat-users.xml."
+# After creating tomcat-users.xml, ensure only the specified user is present
+# Remove all other uncommented <user ...> entries
+if [ -n "$USERNAME" ] && [ -n "$PASSWORD" ] && [ -n "$ROLES" ]; then
+    # Remove all uncommented <user ...> lines
+    sed -i '/^[[:space:]]*<user /d' "$users_xml"
+    # Insert the specified user before </tomcat-users>
+    sed -i "/<\/tomcat-users>/i \\  <user username=\"$USERNAME\" password=\"$PASSWORD\" roles=\"$ROLES\"/>" "$users_xml"
+    echo "[INFO] Only user $USERNAME is present in tomcat-users.xml."
 fi
 
 if [ "$success" = "1" ]; then

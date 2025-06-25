@@ -252,10 +252,9 @@ check_user_compliance() {
 # --- 6. Update server.xml CredentialHandler ---
 update_server_xml() {
     local server_xml="$1"; local version="$2"
-    echo "Current CredentialHandler in server.xml:"
     local before_ch=$(extract_credential_handler "$server_xml")
-    echo "  $before_ch"
-    log "Current CredentialHandler: $before_ch"
+    echo "CredentialHandler_Before,CredentialHandler_After"
+    # Prepare the new handler
     local handler=""
     case "$version" in
         7.0)
@@ -280,9 +279,8 @@ update_server_xml() {
     $handler" "$server_xml"
     fi
     log "server.xml CredentialHandler updated for Tomcat $version."
-    echo "Updated CredentialHandler in server.xml:"
     local after_ch=$(extract_credential_handler "$server_xml")
-    echo "  $after_ch"
+    echo "$before_ch,$after_ch"
     if [[ "$after_ch" == *"$handler"* ]]; then
         echo "CredentialHandler successfully updated to compliant configuration."
     else
