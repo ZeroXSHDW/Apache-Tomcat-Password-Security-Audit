@@ -1,8 +1,8 @@
-──(user㉿kali)-[~/Downloads]
+┌──(user㉿kali)-[~/Downloads]
 └─$ sudo ./tomcat_manager.sh -p /opt/tomcat -v 10.1 -u admin -w securepass -r manager,admin
-[2025-06-25 11:31:58] [INFO] Starting Tomcat installation
-[2025-06-25 11:31:59] [WARNING] No valid Java installation found. Attempting to install...
-[2025-06-25 11:31:59] [INFO] Installing OpenJDK via apt-get...
+[2025-06-25 11:37:30] [INFO] Starting Tomcat installation
+[2025-06-25 11:37:31] [WARNING] No valid Java installation found. Attempting to install...
+[2025-06-25 11:37:31] [INFO] Installing OpenJDK via apt-get...
 Hit:1 http://http.kali.org/kali kali-rolling InRelease
 Reading package lists... Done
 Reading package lists... Done
@@ -10,50 +10,106 @@ Building dependency tree... Done
 Reading state information... Done
 openjdk-11-jdk is already the newest version (11.0.25~5ea-1).
 0 upgraded, 0 newly installed, 0 to remove and 260 not upgraded.
-[2025-06-25 11:32:11] [INFO] Successfully installed and configured Java at /usr/lib/jvm/java-11-openjdk-amd64
+[2025-06-25 11:37:44] [INFO] Successfully installed and configured Java at /usr/lib/jvm/java-11-openjdk-amd64
 [DEBUG] Validating username: 'admin'
 [DEBUG] Username matches regex (via grep)
-[2025-06-25 11:32:11] [INFO] Created installation directory: /opt/tomcat-10.1
-[2025-06-25 11:32:12] [INFO] Latest available minor version for Tomcat 10.1 is 10.1.42
-[2025-06-25 11:32:15] [INFO] Downloading Tomcat 10.1.42
+[2025-06-25 11:37:45] [INFO] Created installation directory: /opt/tomcat-10.1
+[2025-06-25 11:37:46] [INFO] Latest available minor version for Tomcat 10.1 is 10.1.42
+[2025-06-25 11:37:48] [INFO] Downloading Tomcat 10.1.42
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
-100 13.4M  100 13.4M    0     0  4243k      0  0:00:03  0:00:03 --:--:-- 4246k
-[2025-06-25 11:32:21] [INFO] Extracting Tomcat to /opt/tomcat-10.1
-[2025-06-25 11:32:27] [INFO] Created backup: /opt/tomcat-10.1/conf/tomcat-users.xml.bak.20250625113227
-[2025-06-25 11:32:27] [INFO] Successfully configured user admin for version 10.1
-[2025-06-25 11:32:27] [INFO] Tomcat 10.1 installation completed successfully
-  <user username="admin" password="bfe068996254b798744e361ebe45e214a6cd8cc41f768f914b7b5cd9807ab7047cac2c12c692b587540b1eea0507014ace642eda36fcbbcc763a0c95ecd49460" roles="manager,admin"/>
+100 13.4M  100 13.4M    0     0  5043k      0  0:00:02  0:00:02 --:--:-- 5043k
+[2025-06-25 11:37:53] [INFO] Extracting Tomcat to /opt/tomcat-10.1
+[2025-06-25 11:38:00] [INFO] Created backup: /opt/tomcat-10.1/conf/tomcat-users.xml.bak.20250625113800
+[2025-06-25 11:38:01] [INFO] Successfully configured user admin for version 10.1
+[2025-06-25 11:38:01] [INFO] Tomcat 10.1 installation completed successfully
+  <user username="admin" password="78ea58c2485d92a4a310c4ca739f74db13993277e00fe5ab4fcc1aef28af6bbeaa2a3486209f94e9e8d538e3ea61af9dfc41e170c209ddff2f4b932a270d3ca6" roles="manager,admin"/>
   <user username="robot" password="<must-be-changed>" roles="manager-script"/>
   <user username="tomcat" password="<must-be-changed>" roles="tomcat"/>
   <user username="both" password="<must-be-changed>" roles="tomcat,role1"/>
   <user username="role1" password="<must-be-changed>" roles="role1"/>
-  <user username="admin" password="bfe068996254b798744e361ebe45e214a6cd8cc41f768f914b7b5cd9807ab7047cac2c12c692b587540b1eea0507014ace642eda36fcbbcc763a0c95ecd49460" roles="manager,admin"/>
+  <user username="admin" password="78ea58c2485d92a4a310c4ca739f74db13993277e00fe5ab4fcc1aef28af6bbeaa2a3486209f94e9e8d538e3ea61af9dfc41e170c209ddff2f4b932a270d3ca6" roles="manager,admin"/>
   <user username="robot" password="<must-be-changed>" roles="manager-script"/>
   <user username="tomcat" password="<must-be-changed>" roles="tomcat"/>
   <user username="both" password="<must-be-changed>" roles="tomcat,role1"/>
   <user username="role1" password="<must-be-changed>" roles="role1"/>
 [INFO] At least one active user is present in tomcat-users.xml.
-[2025-06-25 11:32:27] [INFO] Tomcat version 10.1 installed successfully.
+[2025-06-25 11:38:01] [INFO] Tomcat version 10.1 installed successfully.
                                                                                                                                                            
 ┌──(user㉿kali)-[~/Downloads]
 └─$ sudo ./UpdateTomcatUserUnix.sh                                                      
-sudo: ./UpdateTomcatUserUnix.sh: command not found
-                                                                                                                                                           
-┌──(user㉿kali)-[~/Downloads]
-└─$ sudo chmod +x UpdateTomcatUserUnix.sh                                               
-                                                                                                                                                           
-┌──(user㉿kali)-[~/Downloads]
-└─$ sudo ./UpdateTomcatUserUnix.sh       
-2025-06-25 11:33:02,--- Tomcat User Patch Script Started ---
-2025-06-25 11:33:02,Found Tomcat bin: /opt/tomcat-10.1/bin
-2025-06-25 11:33:02,Found Tomcat conf: /opt/tomcat-10.1/conf
-2025-06-25 11:33:02,Tomcat bin directory: /opt/tomcat-10.1/bin
-2025-06-25 11:33:02,Tomcat conf directory: /opt/tomcat-10.1/conf
-2025-06-25 11:33:02,Checking RELEASE-NOTES for version...
-2025-06-25 11:33:02,Version found in RELEASE-NOTES: 10.1.42 (10.1)
-2025-06-25 11:33:02,Tomcat version: 10.1
+2025-06-25 11:38:11,--- Tomcat User Patch Script Started ---
+2025-06-25 11:38:11,Found Tomcat bin: /opt/tomcat-10.1/bin
+2025-06-25 11:38:11,Found Tomcat conf: /opt/tomcat-10.1/conf
+2025-06-25 11:38:11,Tomcat bin directory: /opt/tomcat-10.1/bin
+2025-06-25 11:38:11,Tomcat conf directory: /opt/tomcat-10.1/conf
+2025-06-25 11:38:11,Checking RELEASE-NOTES for version...
+2025-06-25 11:38:11,Version found in RELEASE-NOTES: 10.1.42 (10.1)
+2025-06-25 11:38:11,Tomcat version: 10.1
 Current Tomcat Users:
+  - admin (roles: manager,admin, password type: Hash)
+  - robot (roles: manager-script, password type: Plaintext)
+  - tomcat (roles: tomcat, password type: Plaintext)
+  - both (roles: tomcat,role1, password type: Plaintext)
+  - role1 (roles: role1, password type: Plaintext)
+[WARNING] No active users found. Added default admin user: admin / mEenwwKehCVJunY8
+  - admin (roles: manager-gui,admin-gui, password type: Plaintext)
+
+Users after update:
+Current Tomcat Users:
+  - admin (roles: manager,admin, password type: Hash)
+  - robot (roles: manager-script, password type: Plaintext)
+  - tomcat (roles: tomcat, password type: Plaintext)
+  - both (roles: tomcat,role1, password type: Plaintext)
+  - role1 (roles: role1, password type: Plaintext)
+  - admin (roles: manager-gui,admin-gui, password type: Plaintext)
+[WARNING] No active users found. Added default admin user: admin / Wlk0fbgRtfUWXj7z
+  - admin (roles: manager-gui,admin-gui, password type: Plaintext)
+
+User compliance check:
+  - admin: Compliant (hashed)
+  - robot: Non-compliant (plaintext password)
+  - tomcat: Non-compliant (plaintext password)
+  - both: Non-compliant (plaintext password)
+  - role1: Non-compliant (plaintext password)
+  - admin: Non-compliant (plaintext password)
+  - admin: Non-compliant (plaintext password)
+[WARNING] No active users found in /opt/tomcat-10.1/conf/tomcat-users.xml.
+Current CredentialHandler in server.xml:
+  
+2025-06-25 11:38:11,Current CredentialHandler: 
+2025-06-25 11:38:11,server.xml CredentialHandler updated for Tomcat 10.1.
+Updated CredentialHandler in server.xml:
+  
+Warning: CredentialHandler update may have failed.
+
+Compliance summary:
+- server.xml CredentialHandler:
+- Users:
+  - admin: Compliant (hashed)
+  - robot: Non-compliant (plaintext password)
+  - tomcat: Non-compliant (plaintext password)
+  - both: Non-compliant (plaintext password)
+  - role1: Non-compliant (plaintext password)
+  - admin: Non-compliant (plaintext password)
+  - admin: Non-compliant (plaintext password)
+[WARNING] No active users found in /opt/tomcat-10.1/conf/tomcat-users.xml.
+Using CATALINA_BASE:   /opt/tomcat-10.1
+Using CATALINA_HOME:   /opt/tomcat-10.1
+Using CATALINA_TMPDIR: /opt/tomcat-10.1/temp
+Using JRE_HOME:        /usr
+Using CLASSPATH:       /opt/tomcat-10.1/bin/bootstrap.jar:/opt/tomcat-10.1/bin/tomcat-juli.jar
+Using CATALINA_OPTS:   
+Using CATALINA_BASE:   /opt/tomcat-10.1
+Using CATALINA_HOME:   /opt/tomcat-10.1
+Using CATALINA_TMPDIR: /opt/tomcat-10.1/temp
+Using JRE_HOME:        /usr
+Using CLASSPATH:       /opt/tomcat-10.1/bin/bootstrap.jar:/opt/tomcat-10.1/bin/tomcat-juli.jar
+Using CATALINA_OPTS:   
+Tomcat started.
+2025-06-25 11:38:11,Tomcat restarted via catalina.sh.
+2025-06-25 11:38:11,All users updated and server.xml patched.
+SUCCESS: All users updated and server.xml patched.
                                                                                                                                                            
 ┌──(user㉿kali)-[~/Downloads]
 └─$ sudo cat /opt/tomcat-10.1/conf/server.xml                                           
@@ -260,7 +316,7 @@ Current Tomcat Users:
   will also need to set the passwords to something appropriate.
 -->
 <!--
-  <user username="admin" password="bfe068996254b798744e361ebe45e214a6cd8cc41f768f914b7b5cd9807ab7047cac2c12c692b587540b1eea0507014ace642eda36fcbbcc763a0c95ecd49460" roles="manager,admin"/>
+  <user username="admin" password="78ea58c2485d92a4a310c4ca739f74db13993277e00fe5ab4fcc1aef28af6bbeaa2a3486209f94e9e8d538e3ea61af9dfc41e170c209ddff2f4b932a270d3ca6" roles="manager,admin"/>
   <user username="robot" password="<must-be-changed>" roles="manager-script"/>
 -->
 <!--
@@ -277,6 +333,3 @@ Current Tomcat Users:
   <user username="both" password="<must-be-changed>" roles="tomcat,role1"/>
   <user username="role1" password="<must-be-changed>" roles="role1"/>
 -->
-</tomcat-users>
-                                                                                                                                                           
-┌──(user㉿kali)-[~/Downloads]
