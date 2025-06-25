@@ -297,7 +297,7 @@ update_server_xml() {
         local realm_line
         realm_line=$(grep -E '<Realm[^>]*UserDatabaseRealm[^>]*/>' "$server_xml")
         if [ -n "$realm_line" ]; then
-            # Extract attributes
+            # Extract attributes (everything between <Realm and />)
             local attrs
             attrs=$(echo "$realm_line" | sed -E 's#<Realm (.*)/>#\1#')
             local open_realm="<Realm $attrs>"
