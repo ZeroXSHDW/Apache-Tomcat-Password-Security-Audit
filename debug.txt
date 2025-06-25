@@ -1,0 +1,29 @@
+└─$ sudo ./UpdateTomcatUserUnix.sh       
+2025-06-25 10:53:48,--- Tomcat User Patch Script Started ---
+2025-06-25 10:53:48,Tomcat bin directory: 2025-06-25 10:53:48,Found Tomcat bin: /opt/tomcat-10.1/bin
+2025-06-25 10:53:48,Found Tomcat conf: /opt/tomcat-10.1/conf
+/opt/tomcat-10.1/bin
+2025-06-25 10:53:48,Tomcat conf directory: /opt/tomcat-10.1/conf
+2025-06-25 10:53:48,Tomcat version: 2025-06-25 10:53:48,RELEASE-NOTES not found at 2025-06-25 10:53:48,Found Tomcat bin: /opt/tomcat-10.1/bin
+2025-06-25 10:53:48,Found Tomcat conf: /opt/tomcat-10.1/conf
+/opt/tomcat-10.1/RELEASE-NOTES
+2025-06-25 10:53:48,Checking directory name for version...
+2025-06-25 10:53:48,catalina.jar not found at 2025-06-25 10:53:48,Found Tomcat bin: /opt/tomcat-10.1/bin
+2025-06-25 10:53:48,Found Tomcat conf: /opt/tomcat-10.1/conf
+/opt/tomcat-10.1/lib/catalina.jar
+2025-06-25 10:53:48,ERROR: Could not determine Tomcat version at 2025-06-25 10:53:48,Found Tomcat bin: /opt/tomcat-10.1/bin
+2025-06-25 10:53:48,Found Tomcat conf: /opt/tomcat-10.1/conf
+/opt/tomcat-10.1. Defaulting to 8.5.
+8.5
+2025-06-25 10:53:48,server.xml CredentialHandler updated for Tomcat 2025-06-25 10:53:48,RELEASE-NOTES not found at 2025-06-25 10:53:48,Found Tomcat bin: /opt/tomcat-10.1/bin
+2025-06-25 10:53:48,Found Tomcat conf: /opt/tomcat-10.1/conf
+/opt/tomcat-10.1/RELEASE-NOTES
+2025-06-25 10:53:48,Checking directory name for version...
+2025-06-25 10:53:48,catalina.jar not found at 2025-06-25 10:53:48,Found Tomcat bin: /opt/tomcat-10.1/bin
+2025-06-25 10:53:48,Found Tomcat conf: /opt/tomcat-10.1/conf
+/opt/tomcat-10.1/lib/catalina.jar
+2025-06-25 10:53:48,ERROR: Could not determine Tomcat version at 2025-06-25 10:53:48,Found Tomcat bin: /opt/tomcat-10.1/bin
+2025-06-25 10:53:48,Found Tomcat conf: /opt/tomcat-10.1/conf
+/opt/tomcat-10.1. Defaulting to 8.5.
+8.5.
+2025-06-25 10:53:48,ERROR: Could not restart Tomcat.
