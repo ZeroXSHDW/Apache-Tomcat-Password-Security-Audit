@@ -227,47 +227,54 @@ update_all_users() {
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     [ ! -f "$csv_file" ] && echo "$csv_header" > "$csv_file"
     local user_count=0
-    grep -E '^[[:space:]]*<user ' "$users_xml" | grep -v '^[[:space:]]*<!--' | while read -r line; do
-        user_count=$((user_count+1))
-        local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
-        local pw=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
-        local old_type="Plaintext"
-        local new_type compliance
-        if [[ "$pw" =~ ^[0-9a-fA-F:]+$ ]]; then
-            if [[ "$pw" =~ : ]]; then
-                old_type="Salted Hash"
-            else
-                old_type="Hash"
+    local real_user_count=0
+    while IFS= read -r line; do
+        # Only process uncommented <user ...> lines
+        if echo "$line" | grep -qE '^[[:space:]]*<user '; then
+            if ! echo "$line" | grep -qE '^[[:space:]]*<!--'; then
+                user_count=$((user_count+1))
+                local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
+                local pw=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
+                local old_type="Plaintext"
+                local new_type compliance
+                if [[ "$pw" =~ ^[0-9a-fA-F:]+$ ]]; then
+                    if [[ "$pw" =~ : ]]; then
+                        old_type="Salted Hash"
+                    else
+                        old_type="Hash"
+                    fi
+                fi
+                if [ "$old_type" = "Plaintext" ]; then
+                    if [ $header_printed -eq 0 ]; then
+                        echo "─────────────────────────────"
+                        echo " Tomcat User Password Update"
+                        echo "─────────────────────────────"
+                        header_printed=1
+                    fi
+                    any_updated=1
+                    local hash=$(generate_hash "$bin_dir" "$pw" "$version")
+                    new_type="Hash"
+                    if [[ "$hash" =~ : ]]; then
+                        new_type="Salted Hash"
+                    fi
+                    compliance="Compliant"
+                    echo "✔ Updated user: $username"
+                    echo "    • Old password:  $pw   (Plaintext, ❌ Non-compliant)"
+                    echo "    • New password:  $hash   ($new_type, ✅ Compliant)"
+                    echo
+                    echo "$timestamp,$username,Plaintext,$new_type,$compliance" >> "$csv_file"
+                    sed "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml" > "${tmp_xml}.new" && mv "${tmp_xml}.new" "$tmp_xml"
+                fi
+                real_user_count=$((real_user_count+1))
             fi
         fi
-        if [ "$old_type" = "Plaintext" ]; then
-            if [ $header_printed -eq 0 ]; then
-                echo "─────────────────────────────"
-                echo " Tomcat User Password Update"
-                echo "─────────────────────────────"
-                header_printed=1
-            fi
-            any_updated=1
-            local hash=$(generate_hash "$bin_dir" "$pw" "$version")
-            new_type="Hash"
-            if [[ "$hash" =~ : ]]; then
-                new_type="Salted Hash"
-            fi
-            compliance="Compliant"
-            echo "✔ Updated user: $username"
-            echo "    • Old password:  $pw   (Plaintext, ❌ Non-compliant)"
-            echo "    • New password:  $hash   ($new_type, ✅ Compliant)"
-            echo
-            echo "$timestamp,$username,Plaintext,$new_type,$compliance" >> "$csv_file"
-            sed "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml" > "${tmp_xml}.new" && mv "${tmp_xml}.new" "$tmp_xml"
-        fi
-    done
+    done < "$users_xml"
     mv "$tmp_xml" "$users_xml"
-    if [ "$user_count" -eq 0 ]; then
+    if [ "$real_user_count" -eq 0 ]; then
         echo "─────────────────────────────"
         echo " Tomcat User Password Update"
         echo "─────────────────────────────"
-        echo "No <user ...> entries found in $users_xml."
+        echo "No uncommented <user ...> entries found in $users_xml."
     elif [ "$header_printed" -eq 0 ]; then
         echo "─────────────────────────────"
         echo " Tomcat User Password Update"
@@ -304,8 +311,8 @@ update_server_xml() {
     BEGIN {in_realm=0}
     {
         if ($0 ~ /<Realm/ && $0 ~ /UserDatabaseRealm/) {
-            if ($0 ~ /\/>/) {
-                sub(/\/>/, ">", $0)
+            if ($0 ~ /\/>") {
+                sub(/\/>$/, ">", $0)
                 print $0
                 print "    " handler
                 print "</Realm>"
