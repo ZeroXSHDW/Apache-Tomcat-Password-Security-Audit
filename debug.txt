@@ -1,41 +1,11 @@
-└─$ sudo ./UpdateTomcatUserUnix.sh                                                         
-2025-06-25 13:58:33,--- Tomcat User Patch Script Started ---
-2025-06-25 13:58:33,Found Tomcat bin: /opt/tomcat-10.1/bin
-2025-06-25 13:58:33,Found Tomcat conf: /opt/tomcat-10.1/conf
-2025-06-25 13:58:33,Tomcat bin directory: /opt/tomcat-10.1/bin
-2025-06-25 13:58:33,Tomcat conf directory: /opt/tomcat-10.1/conf
-2025-06-25 13:58:33,Checking RELEASE-NOTES for version...
-2025-06-25 13:58:33,Version found in RELEASE-NOTES: 10.1.42 (10.1)
-2025-06-25 13:58:33,Tomcat version: 10.1
-2025-06-25 13:58:33,server.xml CredentialHandler updated for Tomcat 10.1.
-\n─────────────────────────────
- Tomcat CredentialHandler Update
-─────────────────────────────
-
-• Before:
-    (none found)
-
-• After:
-    (none found)
-
-⚠  No CredentialHandler found or updated.
-─────────────────────────────
-─────────────────────────────
- Tomcat User Password Update
-─────────────────────────────
-
-✔ Updated user: admin
-    • Old password:  securepass   (Plaintext, ❌ Non-compliant)
-    • New password:  37e239e71db25241541219299aa64f3834a2c4e4   (Hash, ✅ Compliant)
-
-2025-06-25 13:58:33,User admin: password replaced with hash 37e239e71db25241541219299aa64f3834a2c4e4
-─────────────────────────────
- Tomcat User Password Update
-─────────────────────────────
-
-No plaintext user passwords found to update.
-
-2025-06-25 13:58:33,Restarting Tomcat via catalina.sh.
-2025-06-25 13:58:33,Tomcat restarted via catalina.sh.
-2025-06-25 13:58:33,All users updated and server.xml patched.
-SUCCESS: All users updated and server.xml patched.
+└─$ sudo ./UpdateTomcatUserUnix.sh       
+2025-06-25 14:06:14,--- Tomcat User Patch Script Started ---
+2025-06-25 14:06:14,Found Tomcat bin: /opt/tomcat-10.1/bin
+2025-06-25 14:06:14,Found Tomcat conf: /opt/tomcat-10.1/conf
+2025-06-25 14:06:14,Tomcat bin directory: /opt/tomcat-10.1/bin
+2025-06-25 14:06:14,Tomcat conf directory: /opt/tomcat-10.1/conf
+2025-06-25 14:06:14,Checking RELEASE-NOTES for version...
+2025-06-25 14:06:14,Version found in RELEASE-NOTES: 10.1.42 (10.1)
+2025-06-25 14:06:14,Tomcat version: 10.1
+2025-06-25 14:06:14,server.xml CredentialHandler updated for Tomcat 10.1.
+         
