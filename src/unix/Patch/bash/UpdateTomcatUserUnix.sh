@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # --- Config ---
-LOG_FILE="/tmp/TomcatManager.csv"
+# LOG_FILE="/tmp/TomcatManager.csv"  # Removed CSV log file
 LOG_DIR="/tmp"
 LOG_FILE_PATH="$LOG_DIR/TomcatManager.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
@@ -226,10 +226,11 @@ update_all_users() {
     cp "$users_xml" "$tmp_xml"
     local header_printed=0
     local any_updated=0
-    local csv_file="/tmp/TomcatManager.csv"
-    local csv_header="Timestamp,Username,OldType,NewType,PlaintextPassword,HashedPassword,Compliance"
+    # Removed CSV file logic
+    # local csv_file="/tmp/TomcatManager.csv"
+    # local csv_header="Timestamp,Username,OldType,NewType,PlaintextPassword,HashedPassword,Compliance"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    [ ! -f "$csv_file" ] && echo "$csv_header" > "$csv_file"
+    # [ ! -f "$csv_file" ] && echo "$csv_header" > "$csv_file"
     local user_count=0
     local total_user_count=0
     echo "Attempting to update users in $users_xml"
@@ -266,7 +267,8 @@ update_all_users() {
             echo "    • Old password:  $pw   (Plaintext, ❌ Non-compliant)"
             echo "    • New password:  $hash   ($new_type, ✅ Compliant)"
             echo
-            echo "$timestamp,$username,Plaintext,$new_type,$pw,$hash,$compliance" >> "$csv_file"
+            # Removed CSV write
+            # echo "$timestamp,$username,Plaintext,$new_type,$pw,$hash,$compliance" >> "$csv_file"
             sed "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml" > "${tmp_xml}.new" && mv "${tmp_xml}.new" "$tmp_xml"
         fi
     done
@@ -371,7 +373,7 @@ main() {
     mkdir -p "$LOG_DIR"
     touch "$LOG_FILE_PATH"
     chmod 600 "$LOG_FILE_PATH"
-    [ ! -f "$LOG_FILE" ] && echo "Timestamp,Message" > "$LOG_FILE"
+    [ ! -f "$LOG_FILE_PATH" ] && echo "Timestamp,Message" > "$LOG_FILE_PATH"
     local custom_conf_path=""
     if [ $# -ge 1 ]; then
         custom_conf_path="$1"
