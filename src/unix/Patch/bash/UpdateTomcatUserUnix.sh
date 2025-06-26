@@ -142,6 +142,10 @@ detect_tomcat_version() {
 generate_hash() {
     local bin_dir="$1"; local password="$2"; local version="$3"
     local digest="$bin_dir/digest.sh"
+    if [ ! -x "$digest" ]; then
+        echo "ERROR: digest.sh not found or not executable at $digest" >&2
+        exit 1
+    fi
     local algo iterations salt
     case "$version" in
         7.0) algo="SHA-256";;
@@ -223,10 +227,11 @@ update_all_users() {
     local header_printed=0
     local any_updated=0
     local csv_file="/tmp/TomcatManager.csv"
-    local csv_header="Timestamp,Username,OldType,NewType,Compliance"
+    local csv_header="Timestamp,Username,OldType,NewType,PlaintextPassword,HashedPassword,Compliance"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     [ ! -f "$csv_file" ] && echo "$csv_header" > "$csv_file"
     local user_count=0
+    echo "Attempting to update users in $users_xml"
     grep -E '^[[:space:]]*<user ' "$users_xml" | grep -v '^[[:space:]]*<!--' | while read -r line; do
         user_count=$((user_count+1))
         local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
@@ -258,7 +263,7 @@ update_all_users() {
             echo "    • Old password:  $pw   (Plaintext, ❌ Non-compliant)"
             echo "    • New password:  $hash   ($new_type, ✅ Compliant)"
             echo
-            echo "$timestamp,$username,Plaintext,$new_type,$compliance" >> "$csv_file"
+            echo "$timestamp,$username,Plaintext,$new_type,$pw,$hash,$compliance" >> "$csv_file"
             sed "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml" > "${tmp_xml}.new" && mv "${tmp_xml}.new" "$tmp_xml"
         fi
     done
@@ -274,6 +279,7 @@ update_all_users() {
         echo "─────────────────────────────"
         echo "No plaintext user passwords found to update."
     fi
+    echo "Finished updating users in $users_xml"
 }
 
 # --- 6. Update server.xml CredentialHandler ---
