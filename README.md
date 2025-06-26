@@ -117,43 +117,25 @@ sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
 - **Output**: Logs to `/tmp/TomcatManager.csv`.
 - **Example Output:**
 ```
+2025-06-26 16:51:37,Created backup: /opt/tomcat/conf/server.xml.bak.20250626165137
 ─────────────────────────────
  Tomcat CredentialHandler Update
 ─────────────────────────────
 • Before:
     (none found)
 • After:
-    <CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-512" iterations="10000" saltLength="16"/>
-✅ CredentialHandler updated for Tomcat 8.5.
+    <CredentialHandler className="org.apache.catalina.realm.SecretKeyCredentialHandler" algorithm="PBKDF2WithHmacSHA512" iterations="10000" saltLength="16" keyLength="256"/>
+✅ CredentialHandler updated for Tomcat 10.1.
+2025-06-26 16:51:37,Created backup: /opt/tomcat/conf/tomcat-users.xml.bak.20250626165137
 ─────────────────────────────
  Tomcat User Password Update
 ─────────────────────────────
-✔ Updated user: admin
-    • Old password:  securepass   (Plaintext, ❌ Non-compliant)
-    • New password:  [HASHED]   (Hash, ✅ Compliant)
-─────────────────────────────
- Tomcat User & Credential Audit
-─────────────────────────────
-Tomcat Version: 8.5
-
-CredentialHandler:
-  Status: Compliant
-  Handler: org.apache.catalina.realm.MessageDigestCredentialHandler
-  Algorithm: SHA-512
-  Iterations: 10000
-  Salt Length: 16
-
-User Accounts:
-  Username      | Roles           | Password Type   | Compliance
-  ------------- | --------------- | --------------- | -----------
-  admin         | manager,admin   | Hash            | Compliant
-─────────────────────────────
-All users updated and server.xml patched.
+✔ Updated user: tomcat
+    • Old password:  plaintext   (Plaintext, ❌ Non-compliant)
+    • New password:  [HASHED]   (Salted Hash, ✅ Compliant)
+Finished updating users in /opt/tomcat/conf/tomcat-users.xml
 ```
-- **Optional Custom Path**:
-```bash
-sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh --custom-conf=/opt/tomcat/conf
-```
+- **Backups**: Before patching, backups are created for both `server.xml` and `tomcat-users.xml` with a timestamp.
 
 ### 3. Windows: Audit, Patch, and Remote Audit
 
@@ -201,46 +183,27 @@ Audit completed. Log: C:\Users\<User>\AppData\Local\Temp\TomcatManager.csv
 ```powershell
 .\src\windows\Patch\powershell\UpdateTomcatUserWin.ps1
 ```
-- **Output**: Logs to `$env:LOCALAPPDATA\Temp\TomcatManager.csv`.
+- **Output**: Logs to `$env:LOCALAPPDATA\Temp\TomcatManager.csv` and console.
 - **Example Output:**
 ```
-─────────────────────────────
- Tomcat CredentialHandler Update
-─────────────────────────────
-• Before:
-    (none found)
-• After:
-    <CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-512" iterations="10000" saltLength="16"/>
-✅ CredentialHandler updated for Tomcat 8.5.
-─────────────────────────────
- Tomcat User Password Update
-─────────────────────────────
-✔ Updated user: admin
-    • Old password:  securepass   (Plaintext, ❌ Non-compliant)
-    • New password:  [HASHED]   (Hash, ✅ Compliant)
-─────────────────────────────
- Tomcat User & Credential Audit
-─────────────────────────────
-Tomcat Version: 8.5
-
-CredentialHandler:
-  Status: Compliant
-  Handler: org.apache.catalina.realm.MessageDigestCredentialHandler
-  Algorithm: SHA-512
-  Iterations: 10000
-  Salt Length: 16
-
-User Accounts:
-  Username      | Roles           | Password Type   | Compliance
-  ------------- | --------------- | --------------- | -----------
-  admin         | manager,admin   | Hash            | Compliant
-─────────────────────────────
-All users updated and server.xml patched.
+Auto-detected TomcatHome: C:\tomcat
+2025-06-26 16:51:37 - INFO - Java version: openjdk version "11.0.22" 2024-01-16
+2025-06-26 16:51:37 - INFO - Using TomcatHome: C:\tomcat
+2025-06-26 16:51:37 - INFO - Starting Tomcat configuration and user update
+2025-06-26 16:51:37 - INFO - Administrative privileges confirmed
+2025-06-26 16:51:37 - INFO - Detected Tomcat version: 10.1
+2025-06-26 16:51:37 - INFO - Created or updated setenv.bat at C:\tomcat\bin\setenv.bat to set CATALINA_HOME.
+2025-06-26 16:51:39 - INFO - Created backup: C:\tomcat\conf\server.xml.bak.20250626165139
+2025-06-26 16:51:39 - INFO - Patched server.xml with correct CredentialHandler for Tomcat 10.1
+2025-06-26 16:51:39 - INFO - Created backup: C:\tomcat\conf\tomcat-users.xml.bak.20250626165139
+2025-06-26 16:51:39 - INFO - Hashing plaintext password for user tomcat using Tomcat 10.1
+2025-06-26 16:51:41 - INFO - digest.bat output: s3cretP@ssw0rd!:8dc9918eaf2ca02a0d0a81e18a2f0393$10000$523134b8b96e34cb3cb9aa0ce29ad0e22a646c82
+2025-06-26 16:51:41 - INFO - Updated password for user tomcat
+2025-06-26 16:51:41 - INFO - Successfully updated user hashes in tomcat-users.xml
+2025-06-26 16:51:41 - INFO - Tomcat is not running. No restart will be performed.
+2025-06-26 16:51:41 - INFO - Configuration update completed successfully
 ```
-- **Optional Custom Path**:
-```powershell
-.\src\windows\Patch\powershell\UpdateTomcatUserWin.ps1 -TomcatConfPath "C:\Program Files\Apache Software Foundation\Tomcat\conf"
-```
+- **Backups**: Before patching, backups are created for both `server.xml` and `tomcat-users.xml` with a timestamp.
 
 #### Remote Audit
 ```powershell

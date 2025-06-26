@@ -2,15 +2,46 @@
 #Requires -RunAsAdministrator
 
 param(
-    [string]$TomcatHome = "C:\Program Files\Apache Software Foundation\Tomcat\apache-tomcat-10.1.42",
+    [string]$TomcatHome = $null,
     [string]$ServiceName = "Tomcat101"
 )
+
+# Auto-detect TomcatHome if not provided or does not exist
+if (-not $TomcatHome -or -not (Test-Path $TomcatHome)) {
+    $candidates = @(
+        "C:\\tomcat",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat\\apache-tomcat-10.1.42"
+    )
+    $found = $false
+    foreach ($cand in $candidates) {
+        if (Test-Path $cand) {
+            $TomcatHome = $cand
+            $found = $true
+            Write-Host "Auto-detected TomcatHome: $TomcatHome"
+            break
+        }
+    }
+    if (-not $found) {
+        Write-Host "ERROR: Could not auto-detect Tomcat installation. Please specify -TomcatHome."
+        exit 1
+    }
+}
 
 function Write-Log {
     param($Message, $Level = "INFO")
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Write-Host "$timestamp - $Level - $Message"
 }
+
+# Log Java version
+try {
+    $javaVersion = & java -version 2>&1 | Select-Object -First 1
+    Write-Log "Java version: $javaVersion"
+} catch {
+    Write-Log "Could not determine Java version. Is Java in PATH?" "WARNING"
+}
+
+Write-Log "Using TomcatHome: $TomcatHome"
 
 function Test-AdminRights {
     $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -59,16 +90,50 @@ function Get-TomcatVersion {
     }
 }
 
+function Ensure-SetenvBat {
+    param([string]$TomcatHome)
+    if (-not (Test-Path $TomcatHome)) {
+        Write-Log "ERROR: Tomcat home directory $TomcatHome does not exist. Cannot create setenv.bat." "ERROR"
+        exit 1
+    }
+    $binDir = Join-Path $TomcatHome "bin"
+    if (-not (Test-Path $binDir)) {
+        New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+        Write-Log "Created missing Tomcat bin directory: $binDir"
+    }
+    $setenvPath = Join-Path $binDir "setenv.bat"
+    $desired = 'set "CATALINA_HOME=' + $TomcatHome + '"'
+    $needsUpdate = $true
+    if (Test-Path $setenvPath) {
+        $current = Get-Content $setenvPath -Raw
+        if ($current -match [regex]::Escape($desired)) {
+            $needsUpdate = $false
+        }
+    }
+    if ($needsUpdate) {
+        Set-Content -Path $setenvPath -Value $desired -Encoding ASCII
+        Write-Log "Created or updated setenv.bat at $setenvPath to set CATALINA_HOME."
+    } else {
+        Write-Log "setenv.bat already sets CATALINA_HOME correctly."
+    }
+}
+
 function Test-PBKDF2Support {
     param([string]$TomcatHome)
+    Ensure-SetenvBat -TomcatHome $TomcatHome
     $digestScript = Join-Path $TomcatHome "bin\digest.bat"
-    $env:CATALINA_HOME = $TomcatHome
     $testPassword = "TestPassword123!"
-    $digestArgs = @('-a', 'PBKDF2WithHmacSHA512', '-i', '10000', '-s', '16', $testPassword)
+    $digestArgs = "-a PBKDF2WithHmacSHA512 -i 10000 -s 16 $testPassword"
     try {
-        $process = Start-Process -FilePath $digestScript -ArgumentList $digestArgs -NoNewWindow -Wait -RedirectStandardOutput "temp_hash.txt" -PassThru
-        $output = Get-Content "temp_hash.txt" -ErrorAction SilentlyContinue | Out-String
-        Remove-Item "temp_hash.txt" -Force -ErrorAction SilentlyContinue
+        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName = 'cmd.exe'
+        $startInfo.Arguments = "/c `"$digestScript $digestArgs`""
+        $startInfo.WorkingDirectory = (Split-Path $digestScript)
+        $startInfo.UseShellExecute = $false
+        $startInfo.RedirectStandardOutput = $true
+        $process = [System.Diagnostics.Process]::Start($startInfo)
+        $output = $process.StandardOutput.ReadToEnd()
+        $process.WaitForExit()
         if ($output -match "NoSuchAlgorithmException" -or $output -match "not available" -or $output -match "Error") {
             return $false
         }
@@ -85,11 +150,7 @@ function Test-PBKDF2Support {
 function Patch-ServerXml {
     param(
         [string]$TomcatHome,
-        [string]$Version,
-        [string]$HandlerClass,
-        [string]$Algorithm,
-        [string]$Iterations = $null,
-        [string]$SaltLength = $null
+        [string]$Version
     )
     $serverXmlPath = Join-Path $TomcatHome "conf\server.xml"
     if (-not (Test-Path $serverXmlPath)) {
@@ -111,13 +172,18 @@ function Patch-ServerXml {
     foreach ($h in $handlers) { $realm.RemoveChild($h) | Out-Null }
     # Add new CredentialHandler
     $ch = $xml.CreateElement("CredentialHandler")
-    $ch.SetAttribute("className", $HandlerClass)
-    $ch.SetAttribute("algorithm", $Algorithm)
-    if ($Iterations) { $ch.SetAttribute("iterations", $Iterations) }
-    if ($SaltLength) { $ch.SetAttribute("saltLength", $SaltLength) }
+    if ($Version -eq "7.0") {
+        $ch.SetAttribute("className", "org.apache.catalina.realm.MessageDigestCredentialHandler")
+        $ch.SetAttribute("algorithm", "SHA-256")
+    } else {
+        $ch.SetAttribute("className", "org.apache.catalina.realm.SecretKeyCredentialHandler")
+        $ch.SetAttribute("algorithm", "PBKDF2WithHmacSHA512")
+        $ch.SetAttribute("iterations", "10000")
+        $ch.SetAttribute("saltLength", "16")
+    }
     $realm.AppendChild($ch) | Out-Null
     $xml.Save($serverXmlPath)
-    Write-Log "Patched server.xml with $HandlerClass, $Algorithm, Iterations: $Iterations, SaltLength: $SaltLength"
+    Write-Log "Patched server.xml with correct CredentialHandler for Tomcat $Version"
     return $true
 }
 
@@ -128,31 +194,49 @@ function Get-PasswordHash {
         [string]$Version,
         [string]$TomcatHome
     )
+    Ensure-SetenvBat -TomcatHome $TomcatHome
     $digestScript = Join-Path $TomcatBin "digest.bat"
     if (-not (Test-Path $digestScript)) {
         Write-Log "digest.bat not found at $digestScript" "ERROR"
         return $null
     }
-    $env:CATALINA_HOME = $TomcatHome
     if ($Version -eq "7.0") {
         $algorithm = "SHA-256"
-        $args = @('-a', $algorithm, $Password)
-    } elseif ($Version -in @("8.5", "9.0", "10.0", "10.1")) {
+        $args = "-a $algorithm $Password"
+    } elseif ($Version -eq "8.5") {
         $algorithm = "PBKDF2WithHmacSHA512"
         $iterations = "10000"
         $saltLength = "16"
-        $args = @('-a', $algorithm, '-i', $iterations, '-s', $saltLength, $Password)
+        $args = "-a $algorithm -i $iterations -s $saltLength $Password"
+    } elseif ($Version -in @("9.0", "10.0", "10.1")) {
+        $algorithm = "PBKDF2WithHmacSHA512"
+        $iterations = "10000"
+        $saltLength = "16"
+        $args = "-h org.apache.catalina.realm.SecretKeyCredentialHandler -a $algorithm -i $iterations -s $saltLength $Password"
     } else {
         Write-Log "ERROR: Unsupported Tomcat version $Version for password hashing." "ERROR"
         return $null
     }
     try {
-        $process = Start-Process -FilePath $digestScript -ArgumentList $args -NoNewWindow -Wait -RedirectStandardOutput "temp_hash.txt" -PassThru
-        $digestRaw = Get-Content "temp_hash.txt" -ErrorAction SilentlyContinue | Out-String
-        Remove-Item "temp_hash.txt" -Force -ErrorAction SilentlyContinue
-        if ($Version -in @("8.5", "9.0", "10.0", "10.1") -and $digestRaw -match "^([^:]+):") {
-            $hash = $matches[1].Trim()
-            if ($hash -match '^[0-9a-fA-F]+\$[0-9]+\$[0-9a-fA-F]+$') {
+        Write-Log "Running digest.bat command: $digestScript $args"
+        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName = 'cmd.exe'
+        $startInfo.Arguments = "/c `"$digestScript $args`""
+        $startInfo.WorkingDirectory = (Split-Path $digestScript)
+        $startInfo.UseShellExecute = $false
+        $startInfo.RedirectStandardOutput = $true
+        $process = [System.Diagnostics.Process]::Start($startInfo)
+        $digestRaw = $process.StandardOutput.ReadToEnd()
+        $process.WaitForExit()
+        $digestRaw = $digestRaw.Trim()
+        Write-Log "digest.bat output: $digestRaw"
+        if ($digestRaw -match "MessageDigestCredentialHandler" -or $digestRaw -match "NoSuchAlgorithmException") {
+            Write-Log "WARNING: digest.bat output indicates MessageDigestCredentialHandler or missing PBKDF2 support. Check your Tomcat and Java versions!" "ERROR"
+        }
+        if ($Version -in @("8.5", "9.0", "10.0", "10.1")) {
+            # Accept Tomcat 9+ PBKDF2 format: password:salt$iterations$hash or password:salt$iterations$salt$hash
+            if ($digestRaw -match "^.+:[0-9a-fA-F]+\$[0-9]+\$[0-9a-fA-F]+(\$[0-9a-fA-F]+)?$") {
+                $hash = $digestRaw
                 return $hash
             } else {
                 Write-Log "digest.bat output did not match expected PBKDF2 hash format: $digestRaw" "ERROR"
@@ -218,30 +302,83 @@ function Update-AllUserPasswords {
     return $updated
 }
 
-function Restart-TomcatService {
-    param($ServiceName)
+function Get-TomcatStatus {
+    param(
+        [string]$ServiceName,
+        [string]$TomcatHome
+    )
+    $status = @{}
+    # Check for service
     try {
         $service = Get-Service -Name $ServiceName -ErrorAction Stop
-        if ($service.Status -eq 'Running') {
-            Write-Log "Stopping Tomcat service..."
+        $status.ServiceFound = $true
+        $status.ServiceStatus = $service.Status
+    } catch {
+        $status.ServiceFound = $false
+        $status.ServiceStatus = 'NotFound'
+    }
+    # Check for process (tomcat*.exe or java.exe with catalina)
+    $proc = Get-Process | Where-Object {
+        ($_.ProcessName -like 'tomcat*' -or $_.ProcessName -eq 'java') -and ($_.Path -like "$TomcatHome*" -or $_.Path -like '*catalina*')
+    }
+    if ($proc) {
+        $status.ProcessFound = $true
+        $status.ProcessCount = $proc.Count
+    } else {
+        $status.ProcessFound = $false
+        $status.ProcessCount = 0
+    }
+    return $status
+}
+
+function Restart-TomcatIfRunning {
+    param(
+        [string]$ServiceName,
+        [string]$TomcatHome
+    )
+    $status = Get-TomcatStatus -ServiceName $ServiceName -TomcatHome $TomcatHome
+    if ($status.ServiceFound -and $status.ServiceStatus -eq 'Running') {
+        Write-Log "Tomcat is running as a service ($ServiceName). Restarting via service..."
+        try {
             Stop-Service -Name $ServiceName -Force
             Start-Sleep -Seconds 5
-        } else {
-            Write-Log "Tomcat service is already stopped."
-        }
-        Write-Log "Starting Tomcat service..."
-        Start-Service -Name $ServiceName
-        $service = Get-Service -Name $ServiceName
-        if ($service.Status -eq 'Running') {
-            Write-Log "Tomcat service successfully started"
-            return $true
-        } else {
-            Write-Log "Failed to start Tomcat service. Status: $($service.Status)" "ERROR"
+            Start-Service -Name $ServiceName
+            $service = Get-Service -Name $ServiceName
+            if ($service.Status -eq 'Running') {
+                Write-Log "Tomcat service successfully restarted."
+                return $true
+            } else {
+                Write-Log "Failed to restart Tomcat service. Status: $($service.Status)" "ERROR"
+                return $false
+            }
+        } catch {
+            Write-Log "Error managing Tomcat service: $_" "ERROR"
             return $false
         }
-    } catch {
-        Write-Log "Error managing Tomcat service: $_" "ERROR"
-        return $false
+    } elseif ($status.ProcessFound) {
+        Write-Log "Tomcat is running as a standalone process. Attempting to restart process..."
+        try {
+            $proc = Get-Process | Where-Object {
+                ($_.ProcessName -like 'tomcat*' -or $_.ProcessName -eq 'java') -and ($_.Path -like "$TomcatHome*" -or $_.Path -like '*catalina*')
+            }
+            $proc | Stop-Process -Force
+            Start-Sleep -Seconds 5
+            $startupScript = Join-Path $TomcatHome 'bin\startup.bat'
+            if (Test-Path $startupScript) {
+                Start-Process -FilePath 'cmd.exe' -ArgumentList "/c `"$startupScript`"" -WorkingDirectory (Join-Path $TomcatHome 'bin')
+                Write-Log "Tomcat process restarted via $startupScript."
+                return $true
+            } else {
+                Write-Log "Could not find startup.bat to restart Tomcat process." "ERROR"
+                return $false
+            }
+        } catch {
+            Write-Log "Error restarting Tomcat process: $_" "ERROR"
+            return $false
+        }
+    } else {
+        Write-Log "Tomcat is not running. No restart will be performed."
+        return $true
     }
 }
 
@@ -252,7 +389,7 @@ Test-AdminRights
 $Version = Get-TomcatVersion -TomcatHome $TomcatHome
 
 if ($Version -eq "7.0") {
-    Patch-ServerXml -TomcatHome $TomcatHome -Version $Version -HandlerClass "org.apache.catalina.realm.MessageDigestCredentialHandler" -Algorithm "SHA-256" | Out-Null
+    Patch-ServerXml -TomcatHome $TomcatHome -Version $Version
     $HashAlg = "SHA-256"
 } elseif ($Version -in @("8.5", "9.0", "10.0", "10.1")) {
     $pbkdf2Supported = Test-PBKDF2Support -TomcatHome $TomcatHome
@@ -260,7 +397,7 @@ if ($Version -eq "7.0") {
         Write-Log "ERROR: PBKDF2WithHmacSHA512 is not available in your Java runtime. Please upgrade Java to at least 8u161 or 11+ with PBKDF2 support. Cannot update user passwords to compliance. Exiting." "ERROR"
         exit 1
     }
-    Patch-ServerXml -TomcatHome $TomcatHome -Version $Version -HandlerClass "org.apache.catalina.realm.SecretKeyCredentialHandler" -Algorithm "PBKDF2WithHmacSHA512" -Iterations "10000" -SaltLength "16" | Out-Null
+    Patch-ServerXml -TomcatHome $TomcatHome -Version $Version
     $HashAlg = "PBKDF2WithHmacSHA512"
 } else {
     Write-Log "ERROR: Unsupported Tomcat version $Version. Exiting without making changes." "ERROR"
@@ -269,9 +406,7 @@ if ($Version -eq "7.0") {
 
 $updated = Update-AllUserPasswords -TomcatHome $TomcatHome -Version $Version
 
-if (-not (Restart-TomcatService -ServiceName $ServiceName)) {
-    Write-Log "Failed to restart Tomcat service" "ERROR"
-    exit 1
-}
+# Only restart Tomcat if it was running at script start, and use the same method
+Restart-TomcatIfRunning -ServiceName $ServiceName -TomcatHome $TomcatHome | Out-Null
 
 Write-Log "Configuration update completed successfully" 

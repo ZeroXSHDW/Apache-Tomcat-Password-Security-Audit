@@ -1,6 +1,18 @@
 #!/bin/bash
 # UpdateTomcatUserUnix.sh
 # Patch and update all Tomcat users with secure password hashes and update server.xml CredentialHandler
+#
+# - Automatically creates a timestamped backup of both server.xml and tomcat-users.xml before any changes.
+# - Logs actions to /tmp/TomcatManager.log and prints to console.
+# - Usage: sudo ./UpdateTomcatUserUnix.sh [optional-custom-conf-path]
+#
+# Example output:
+#   2025-06-26 16:51:37,Created backup: /opt/tomcat/conf/server.xml.bak.20250626165137
+#   ...
+#   2025-06-26 16:51:37,Created backup: /opt/tomcat/conf/tomcat-users.xml.bak.20250626165137
+#   ...
+#
+# See README.md for more details.
 
 set -euo pipefail
 
@@ -19,6 +31,15 @@ log() {
 error_exit() {
     log "ERROR: $1"
     exit 1
+}
+
+backup_file() {
+    local file="$1"
+    if [ -f "$file" ]; then
+        local backup="${file}.bak.$(date +%Y%m%d%H%M%S)"
+        cp "$file" "$backup"
+        log "Created backup: $backup"
+    fi
 }
 
 # --- 1. Locate Tomcat bin and conf directories ---
@@ -378,7 +399,9 @@ main() {
     local bin_dir=$(dirname "$conf_dir")/bin
     local tomcat_home=$(dirname "$bin_dir")
     local version=$(detect_tomcat_version "$tomcat_home")
+    backup_file "$server_xml"
     update_server_xml "$server_xml" "$version"
+    backup_file "$users_xml"
     update_all_users "$users_xml" "$bin_dir" "$version"
     print_compliance_summary "$version" "$server_xml" "$users_xml"
     restart_tomcat "$bin_dir" >/dev/null
