@@ -72,35 +72,38 @@ Run the Unix Bash auditing script to check compliance:
 sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
 ```
 - **Output**: Logs to `/tmp/TomcatManager.csv`.
-- **Example Output**:
+- **Example Output:**
 ```
-07:05 PM IST, Tuesday, May 20, 2025
-server01
+Execution Time: 2025-06-26 14:12:11
+Hostname: kali
 ===========================
-Config Path: /opt/tomcat/conf
 Checking for running Tomcat processes...
-Found running Tomcat process (PID: 1234)
-  - Check process details with: ps -ef | grep 1234
-  - Found CATALINA_HOME from process: /opt/tomcat/conf
-  - Tomcat may be running from an alternate installation
-server.xml is owned by root
-server.xml permissions are secure (0o640)
-tomcat-users.xml is owned by root
-tomcat-users.xml permissions are secure (0o640)
-Tomcat Home: /opt/tomcat
-Tomcat Version: 9.0
+  No running Tomcat processes found
+Searching common Tomcat configuration paths...
+Found Tomcat configuration via find: /opt/tomcat-8.5/conf
+Config Path: /opt/tomcat-8.5/conf
+  /opt/tomcat-8.5/conf/server.xml is owned by root
+  /opt/tomcat-8.5/conf/server.xml permissions are secure (600)
+  /opt/tomcat-8.5/conf/tomcat-users.xml is owned by root
+  /opt/tomcat-8.5/conf/tomcat-users.xml permissions are secure (600)
+Tomcat Home: /opt/tomcat-8.5
+Validating Tomcat installation at /opt/tomcat-8.5
+Tomcat installation validation passed
+Tomcat Version: 8.5
 Auditing server.xml
 Server Configuration:
-  Status: Compliant for Tomcat 9.0
-  Credential Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
-  Algorithm: PBKDF2WithHmacSHA512
+    - Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16
+    - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'
+  Status: Compliant for Tomcat 8.5
+  Credential Handler: org.apache.catalina.realm.MessageDigestCredentialHandler
+  Algorithm: SHA-512
   Iterations: 10000
   Salt Length: 16
 Auditing tomcat-users.xml
-User Audit Results:
-Username | Password Type | Compliance
----------|---------------|-----------
-    testuser | Salted_PBKDF2 | Compliant
+    User Audit Results:
+    Username | Password Type | Compliance
+    ---------|---------------|-----------
+        admin | Hash | Compliant
 ===========================
 Overall Status: Secure
 Audit completed. Log: /tmp/TomcatManager.csv
@@ -112,28 +115,40 @@ Run the Unix Bash patching script to convert plaintext passwords to compliant ha
 sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
 ```
 - **Output**: Logs to `/tmp/TomcatManager.csv`.
-- **Example Output**:
+- **Example Output:**
 ```
-Execution Time: 2025-06-18 13:58:00
-Hostname: server01
-===========================
-Found valid Tomcat configuration at: /opt/tomcat/conf
-Tomcat Home: /opt/tomcat
-Config Path: /opt/tomcat/conf
-Tomcat Version: 9.0
-Reading /opt/tomcat/conf/tomcat-users.xml for users with plaintext passwords
-Found 2 user(s) with plaintext passwords
-  Processing user: testuser (Original plaintext password: [REDACTED])
-  Generated Hash for testuser: hash1:salt1
-  Processing user: admin (Original plaintext password: [REDACTED])
-  Generated Hash for admin: hash2:salt2
-Updating /opt/tomcat/conf/tomcat-users.xml with new hashes
-Updating /opt/tomcat/conf/server.xml for compliance
-Restarting Tomcat to apply changes
-Compliance Status: Compliant with PBKDF2WithHmacSHA512, 10000 iterations, 16-byte salt (SecretKeyCredentialHandler)
-===========================
-Overall Status: Secure
-Audit completed
+─────────────────────────────
+ Tomcat CredentialHandler Update
+─────────────────────────────
+• Before:
+    (none found)
+• After:
+    <CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-512" iterations="10000" saltLength="16"/>
+✅ CredentialHandler updated for Tomcat 8.5.
+─────────────────────────────
+ Tomcat User Password Update
+─────────────────────────────
+✔ Updated user: admin
+    • Old password:  securepass   (Plaintext, ❌ Non-compliant)
+    • New password:  [HASHED]   (Hash, ✅ Compliant)
+─────────────────────────────
+ Tomcat User & Credential Audit
+─────────────────────────────
+Tomcat Version: 8.5
+
+CredentialHandler:
+  Status: Compliant
+  Handler: org.apache.catalina.realm.MessageDigestCredentialHandler
+  Algorithm: SHA-512
+  Iterations: 10000
+  Salt Length: 16
+
+User Accounts:
+  Username      | Roles           | Password Type   | Compliance
+  ------------- | --------------- | --------------- | -----------
+  admin         | manager,admin   | Hash            | Compliant
+─────────────────────────────
+All users updated and server.xml patched.
 ```
 - **Optional Custom Path**:
 ```bash
@@ -147,7 +162,7 @@ sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh --custom-conf=/opt/tomcat/con
 .\src\windows\Audit\powershell\CheckTomcatConfigWin.ps1
 ```
 - **Output**: Logs to `$env:LOCALAPPDATA\Temp\TomcatManager.csv` (e.g., `C:\Users\<User>\AppData\Local\Temp`).
-- **Example Output**:
+- **Example Output:**
 ```
 Checking Apache Tomcat configuration security...
 ############################################################WIN-SERVER###########################################################
@@ -158,25 +173,25 @@ Searching common Tomcat configuration paths...
 Found Tomcat configuration at: C:\Program Files\Apache Software Foundation\Tomcat\conf
 Config Path: C:\Program Files\Apache Software Foundation\Tomcat\conf
 Tomcat Home: C:\Program Files\Apache Software Foundation\Tomcat
-Detected Tomcat version from RELEASE-NOTES: 10.0.27
+Detected Tomcat version from RELEASE-NOTES: 8.5.99
 No Tomcat process found running as NT AUTHORITY\SYSTEM.
 Validating Tomcat installation at C:\Program Files\Apache Software Foundation\Tomcat
 Tomcat installation validation passed
-Tomcat Version: 10.0.27
+Tomcat Version: 8.5.99
 Auditing server.xml
 Server Configuration:
-    - Recommendation: Use PBKDF2WithHmacSHA512 or SHA-256 with at least 10,000 iterations and 16+ salt length.
-    - Example: <CredentialHandler className='org.apache.catalina.realm.SecretKeyCredentialHandler' algorithm='PBKDF2WithHmacSHA512' iterations='10000' saltLength='16'/>
-  Credential Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
-  Algorithm: PBKDF2WithHmacSHA512
+    - Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16
+    - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'
+  Status: Compliant for Tomcat 8.5
+  Credential Handler: org.apache.catalina.realm.MessageDigestCredentialHandler
+  Algorithm: SHA-512
   Iterations: 10000
   Salt Length: 16
-  Status: Compliant
 Auditing tomcat-users.xml
     User Audit Results:
     Username | Password Type | Compliance
     ---------|---------------|-----------
-    testuser | Hashed_SHA256 | Compliant
+    admin    | Hash          | Compliant
 ===========================
 Overall Status: Secure
 Audit completed. Log: C:\Users\<User>\AppData\Local\Temp\TomcatManager.csv
@@ -187,27 +202,40 @@ Audit completed. Log: C:\Users\<User>\AppData\Local\Temp\TomcatManager.csv
 .\src\windows\Patch\powershell\UpdateTomcatUserWin.ps1
 ```
 - **Output**: Logs to `$env:LOCALAPPDATA\Temp\TomcatManager.csv`.
-- **Example Output**:
+- **Example Output:**
 ```
-Execution Time: 2025-06-18 13:53:00
-Hostname: WIN-SERVER
-===========================
-Found valid Tomcat configuration at: C:\Program Files\Apache Software Foundation\Tomcat\conf
-Tomcat Home: C:\Program Files\Apache Software Foundation\Tomcat
-Config Path: C:\Program Files\Apache Software Foundation\Tomcat\conf
-Tomcat Version: 9.0
-Found 2 user(s) with plaintext passwords
-    Processing user: testuser (Original plaintext password: [REDACTED])
-    Generated Hash for testuser: hash1:salt1
-    Processing user: admin (Original plaintext password: [REDACTED])
-    Generated Hash for admin: hash2:salt2
-Updating C:\Program Files\Apache Software Foundation\Tomcat\conf\tomcat-users.xml with new hashes
-Updating C:\Program Files\Apache Software Foundation\Tomcat\conf\server.xml for compliance
-Restarting Tomcat to apply changes
-Compliance Status: Compliant with PBKDF2WithHmacSHA512, 10000 iterations, 16-byte salt (SecretKeyCredentialHandler)
-===========================
-Overall Status: Secure
-Audit completed
+─────────────────────────────
+ Tomcat CredentialHandler Update
+─────────────────────────────
+• Before:
+    (none found)
+• After:
+    <CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-512" iterations="10000" saltLength="16"/>
+✅ CredentialHandler updated for Tomcat 8.5.
+─────────────────────────────
+ Tomcat User Password Update
+─────────────────────────────
+✔ Updated user: admin
+    • Old password:  securepass   (Plaintext, ❌ Non-compliant)
+    • New password:  [HASHED]   (Hash, ✅ Compliant)
+─────────────────────────────
+ Tomcat User & Credential Audit
+─────────────────────────────
+Tomcat Version: 8.5
+
+CredentialHandler:
+  Status: Compliant
+  Handler: org.apache.catalina.realm.MessageDigestCredentialHandler
+  Algorithm: SHA-512
+  Iterations: 10000
+  Salt Length: 16
+
+User Accounts:
+  Username      | Roles           | Password Type   | Compliance
+  ------------- | --------------- | --------------- | -----------
+  admin         | manager,admin   | Hash            | Compliant
+─────────────────────────────
+All users updated and server.xml patched.
 ```
 - **Optional Custom Path**:
 ```powershell
@@ -220,7 +248,7 @@ $cred = Get-Credential
 .\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName WIN-SERVER -Credential $cred
 ```
 - **Output**: Logs to `C:\Temp\TomcatConfigCheck.csv` on the client.
-- **Example Output**:
+- **Example Output:**
 ```
 [Client] Starting script execution at 2025-06-18 13:35:00.
 [WIN-SERVER] Checking Apache Tomcat configuration security on WIN-SERVER...
@@ -232,43 +260,28 @@ $cred = Get-Credential
 [WIN-SERVER] Found Tomcat configuration at: C:\Program Files\Apache Software Foundation\Tomcat\conf
 [WIN-SERVER] Config Path: C:\Program Files\Apache Software Foundation\Tomcat\conf
 [WIN-SERVER] Tomcat Home: C:\Program Files\Apache Software Foundation\Tomcat
-[WIN-SERVER] Detected Tomcat version from RELEASE-NOTES: 10.0.27
+[WIN-SERVER] Detected Tomcat version from RELEASE-NOTES: 8.5.99
 [WIN-SERVER] No Tomcat process found running as NT AUTHORITY\SYSTEM.
 [WIN-SERVER] Validating Tomcat installation at C:\Program Files\Apache Software Foundation\Tomcat
 [WIN-SERVER] Tomcat installation validation passed
-[WIN-SERVER] Tomcat Version: 10.0.27
+[WIN-SERVER] Tomcat Version: 8.5.99
 [WIN-SERVER] Auditing server.xml
 [WIN-SERVER] Server Configuration:
-[WIN-SERVER]     - Recommendation: Use PBKDF2WithHmacSHA512 or SHA-256 with at least 10,000 iterations and 16+ salt length.
-[WIN-SERVER]     - Example: <CredentialHandler className='org.apache.catalina.realm.SecretKeyCredentialHandler' algorithm='PBKDF2WithHmacSHA512' iterations='10000' saltLength='16'/>
-[WIN-SERVER]   Credential Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
-[WIN-SERVER]   Algorithm: PBKDF2WithHmacSHA512
+[WIN-SERVER]     - Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16
+[WIN-SERVER]     - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'
+[WIN-SERVER]   Status: Compliant for Tomcat 8.5
+[WIN-SERVER]   Credential Handler: org.apache.catalina.realm.MessageDigestCredentialHandler
+[WIN-SERVER]   Algorithm: SHA-512
 [WIN-SERVER]   Iterations: 10000
 [WIN-SERVER]   Salt Length: 16
-[WIN-SERVER]   Status: Compliant
 [WIN-SERVER] Auditing tomcat-users.xml
 [WIN-SERVER]     User Audit Results:
 [WIN-SERVER]     Username | Password Type | Compliance
 [WIN-SERVER]     ---------|---------------|-----------
-[WIN-SERVER]     testuser | Hashed_SHA256 | Compliant
+[WIN-SERVER]     admin    | Hash          | Compliant
 [WIN-SERVER] ===========================
 [WIN-SERVER] Overall Status: Secure
 [WIN-SERVER] Audit completed. Log: C:\Temp\TomcatConfigCheck.csv
-```
-- **Log File Content (TomcatConfigCheck.csv)**:
-```
-Timestamp,Server,Message
-2025-06-18 13:35:00,Windows-Server,[Windows-Server] Checking Apache Tomcat configuration security on Windows-Server...;[Windows-Server] Tomcat configuration directory located at C:\Program Files\Apache Software Foundation\Tomcat\conf;[Windows-Server] Detected Tomcat version 10.0 at C:\Program Files\Apache Software Foundation\Tomcat\conf;[Windows-Server] User 'testuser': Compliant;[Windows-Server] Overall Configuration: Secure;[Windows-Server] Audit completed
-```
-- **Multiple Servers**:
-```powershell
-$cred = Get-Credential
-.\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName Server1,Server2 -Credential $cred
-```
-- **Custom Path**:
-```powershell
-$cred = Get-Credential
-.\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName Windows-Server -TomcatConfPath "C:\Program Files\Apache Software Foundation\Tomcat\conf" -Credential $cred
 ```
 
 ## Testing Framework
@@ -357,3 +370,17 @@ Apache-Tomcat-Password-Security-Audit/
 
 ## License
 Licensed under the Apache 2.0 License. See `docs/LICENSE` for details.
+
+## Improved Install Scripts
+
+For secure, automated Tomcat installation, see the [install/README.md](install/README.md) for full details and example outputs. These scripts ensure your Tomcat deployment is compliant from the start.
+
+## Log Files
+- **Windows:** `$env:TEMP\TomcatManager.log` and `$env:TEMP\TomcatManager.csv`
+- **Unix:** `~/TomcatManager.log` and `/tmp/TomcatManager.csv`
+
+## Troubleshooting
+- **Permissions:** Always run as Administrator (Windows) or with sudo/root (Unix).
+- **Java Not Found:** The script will attempt to install Java if missing, but you may need to install it manually on some systems.
+- **Firewall/Service Issues:** Use the `--no-firewall` or `--no-service` options if you do not want these configured.
+- **Log Files:** Check the log files for detailed error messages if something fails.

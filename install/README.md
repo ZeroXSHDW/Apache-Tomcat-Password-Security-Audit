@@ -43,6 +43,23 @@ cd <repo-root>\install\windows
 - Adds a firewall rule for port 8080
 - Logs actions to `$env:TEMP\TomcatManager.log`
 
+**Example Output:**
+```
+[INFO] Installing Tomcat 9.0.85 to C:\Program Files\Apache Software Foundation\Tomcat
+[INFO] Java detected: C:\Program Files\AdoptOpenJDK\jdk-11.0.11.9-hotspot\bin\java.exe
+[INFO] Downloading Tomcat 9.0.85...
+[INFO] Extracting Tomcat...
+[INFO] Configuring admin user with secure hash...
+[INFO] Installing Tomcat as a Windows service...
+[INFO] Adding firewall rule for port 8080...
+[INFO] Installation complete. Tomcat service started.
+[INFO] CredentialHandler: org.apache.catalina.realm.MessageDigestCredentialHandler (SHA-512, 10000 iterations, 16 salt)
+[INFO] User Accounts:
+  Username | Roles         | Password Type | Compliance
+  -------- | ------------ | -------------| ----------
+  admin    | manager,admin| Hash         | Compliant
+```
+
 ---
 
 ## Unix: tomcat_manager.sh
@@ -72,12 +89,55 @@ sudo ./tomcat_manager.sh -v 9.0 -u admin -w MySecurePass! -r manager,admin
 - Optionally installs as a systemd service and configures firewall
 - Logs actions to `~/TomcatManager.log`
 
+**Example Output:**
+```
+─────────────────────────────
+ Tomcat CredentialHandler Update
+─────────────────────────────
+• Before:
+    (none found)
+• After:
+    <CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-512" iterations="10000" saltLength="16"/>
+✅ CredentialHandler updated for Tomcat 8.5.
+─────────────────────────────
+ Tomcat User Password Update
+─────────────────────────────
+✔ Updated user: admin
+    • Old password:  MySecurePass!   (Plaintext, ❌ Non-compliant)
+    • New password:  [HASHED]   (Hash, ✅ Compliant)
+─────────────────────────────
+ Tomcat User & Credential Audit
+─────────────────────────────
+Tomcat Version: 8.5
+
+CredentialHandler:
+  Status: Compliant
+  Handler: org.apache.catalina.realm.MessageDigestCredentialHandler
+  Algorithm: SHA-512
+  Iterations: 10000
+  Salt Length: 16
+
+User Accounts:
+  Username      | Roles           | Password Type   | Compliance
+  ------------- | --------------- | --------------- | -----------
+  admin         | manager,admin   | Hash            | Compliant
+─────────────────────────────
+All users updated and server.xml patched.
+```
+
 ---
 
-## Notes
-- These scripts are intended for lab, test, or initial deployment use. Review and adapt for production as needed.
-- For full audit and patching tools, see the main project README and the `src/` directory.
-- Always run these scripts with appropriate privileges (Administrator on Windows, root/sudo on Unix).
+## Log Files
+- **Windows:** `$env:TEMP\TomcatManager.log` and `$env:TEMP\TomcatManager.csv`
+- **Unix:** `~/TomcatManager.log` and `/tmp/TomcatManager.csv`
+
+---
+
+## Troubleshooting
+- **Permissions:** Always run as Administrator (Windows) or with sudo/root (Unix).
+- **Java Not Found:** The script will attempt to install Java if missing, but you may need to install it manually on some systems.
+- **Firewall/Service Issues:** Use the `--no-firewall` or `--no-service` options if you do not want these configured.
+- **Log Files:** Check the log files for detailed error messages if something fails.
 
 ---
 
