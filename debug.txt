@@ -1,35 +1,77 @@
 ┌──(user㉿kali)-[~/Downloads]
-└─$ sudo ./UpdateTomcatUserUnix.sh          
-2025-06-25 15:30:57,Checking RELEASE-NOTES for version...
-2025-06-25 15:30:57,Version found in RELEASE-NOTES: 10.1.42 (10.1)
+└─$ sudo ./CheckTomcatConfigUnixBash.sh
+Execution Time: 2025-06-26 14:12:11
+Hostname: kali
+===========================
+Checking for running Tomcat processes...
+  No running Tomcat processes found
+    - If Tomcat is installed, ensure it is running: sudo systemctl start tomcat
+Searching common Tomcat configuration paths...
+No Tomcat configuration found in common paths, attempting to locate server.xml...
+Found Tomcat configuration via find: /opt/tomcat-8.5/conf
+Config Path: /opt/tomcat-8.5/conf
+  No running Tomcat processes found for root check.
+  /opt/tomcat-8.5/conf/server.xml is owned by root
+  /opt/tomcat-8.5/conf/server.xml permissions are secure (600)
+  /opt/tomcat-8.5/conf/tomcat-users.xml is owned by root
+  /opt/tomcat-8.5/conf/tomcat-users.xml permissions are secure (600)
+Tomcat Home: /opt/tomcat-8.5
+Validating Tomcat installation at /opt/tomcat-8.5
+Tomcat installation validation passed
+Checking RELEASE-NOTES for version...
+Version found in RELEASE-NOTES: 8.5.99 (8.5)
+Tomcat Version: 8.5
+Auditing server.xml
+Server Configuration:
+    - Tomcat 8.5 requires MessageDigestCredentialHandler with SHA-512, iterations >= 10000, saltLength >= 16
+    - Recommendation: Configure MessageDigestCredentialHandler with algorithm='SHA-512', iterations='10000', saltLength='16'
+  Status: Non-compliant
+  Credential Handler: None
+  Algorithm: None
+  Iterations: 0
+  Salt Length: 0
+Auditing tomcat-users.xml
+    User Audit Results:
+    Username | Password Type | Compliance
+    ---------|---------------|-----------
+        admin | Plaintext | Non-compliant
+                - Plaintext passwords detected. Use salted SHA-256 or PBKDF2.
+===========================
+Overall Status: Insecure
+Audit completed
+                                                                                                                                                           
+┌──(user㉿kali)-[~/Downloads]
+└─$ sudo ./UpdateTomcatUserUnix.sh     
+2025-06-26 09:43:16,Checking RELEASE-NOTES for version...
+2025-06-26 09:43:16,Version found in RELEASE-NOTES: 8.5.99 (8.5)
 ─────────────────────────────
  Tomcat CredentialHandler Update
 ─────────────────────────────
 • Before:
     (none found)
 • After:
-    <CredentialHandler className="org.apache.catalina.realm.SecretKeyCredentialHandler" algorithm="PBKDF2WithHmacSHA512" iterations="10000" saltLength="16" keyLength="256"/>
-✅ CredentialHandler updated for Tomcat 10.1.
+    <CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-512" iterations="10000" saltLength="16"/>
+✅ CredentialHandler updated for Tomcat 8.5.
 ─────────────────────────────
  Tomcat User Password Update
 ─────────────────────────────
 ✔ Updated user: admin
-    • Old password:  securepass123   (Plaintext, ❌ Non-compliant)
-    • New password:  249755443d1afcd6bf69486a653d297542edf764   (Hash, ✅ Compliant)
+    • Old password:  securepass   (Plaintext, ❌ Non-compliant)
+    • New password:  ee131148e33a98b70825d0f190dfa506dfc7599ba4a7419f81f4dabdd7958ab583d26177941a0100d10292b1bb684fcd8f66ee10818cc3a2fc3516965f5be68a   (Hash, ✅ Compliant)
 
 ─────────────────────────────
  Tomcat User Password Update
 ─────────────────────────────
-No <user ...> entries found in /opt/tomcat-10.1/conf/tomcat-users.xml.
+No <user ...> entries found in /opt/tomcat-8.5/conf/tomcat-users.xml.
 ─────────────────────────────
  Tomcat User & Credential Audit
 ─────────────────────────────
-Tomcat Version: 10.1
+Tomcat Version: 8.5
 
 CredentialHandler:
-  Status: Compliant
-  Handler: org.apache.catalina.realm.SecretKeyCredentialHandler
-  Algorithm: PBKDF2WithHmacSHA512
+  Status: Non-compliant
+  Handler: org.apache.catalina.realm.MessageDigestCredentialHandler
+  Algorithm: SHA-512
   Iterations: 10000
   Salt Length: 16
 
@@ -40,66 +82,17 @@ User Accounts:
 
 ─────────────────────────────
 All users updated and server.xml patched.
-2025-06-25 15:30:57,Restarting Tomcat via catalina.sh.
-2025-06-25 15:30:57,Tomcat restarted via catalina.sh.
+2025-06-26 09:43:16,Restarting Tomcat via catalina.sh.
+2025-06-26 09:43:16,Tomcat restarted via catalina.sh.
                                                                                                                                                            
 ┌──(user㉿kali)-[~/Downloads]
-└─$ sudo cat /opt/tomcat-10.1/conf/tomcat-users.xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Licensed to the Apache Software Foundation (ASF) under one or more
-  contributor license agreements.  See the NOTICE file distributed with
-  this work for additional information regarding copyright ownership.
-  The ASF licenses this file to You under the Apache License, Version 2.0
-  (the "License"); you may not use this file except in compliance with
-  the License.  You may obtain a copy of the License at
-
-      http://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
--->
-<tomcat-users xmlns="http://tomcat.apache.org/xml"
-              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-              xsi:schemaLocation="http://tomcat.apache.org/xml tomcat-users.xsd"
-              version="1.0">
-<!--
-  By default, no user is included in the "manager-gui" role required
-  to operate the "/manager/html" web application.  If you wish to use this app,
-  you must define such a user - the username and password are arbitrary.
-
-  Built-in Tomcat manager roles:
-    - manager-gui    - allows access to the HTML GUI and the status pages
-    - manager-script - allows access to the HTTP API and the status pages
-    - manager-jmx    - allows access to the JMX proxy and the status pages
-    - manager-status - allows access to the status pages only
-
-  The users below are wrapped in a comment and are therefore ignored. If you
-  wish to configure one or more of these users for use with the manager web
-  application, do not forget to remove the <!.. ..> that surrounds them. You
-  will also need to set the passwords to something appropriate.
--->
-<!--
--->
-<!--
-  The sample user and role entries below are intended for use with the
-  examples web application. They are wrapped in a comment and thus are ignored
-  when reading this file. If you wish to configure these users for use with the
-  examples web application, do not forget to remove the <!.. ..> that surrounds
-  them. You will also need to set the passwords to something appropriate.
--->
-<!--
-  <role rolename="tomcat"/>
-  <role rolename="role1"/>
--->
-  <user username="admin" password="249755443d1afcd6bf69486a653d297542edf764" roles="manager,admin"/>
-</tomcat-users>
+└─$ sudo cat /tmp/TomcatManager.csv 
+Timestamp,Message
+2025-06-26 14:12:11,"Execution Time: 2025-06-26 14:12:11;Hostname: kali;===========================;Config Path: /opt/tomcat-8.5/conf;  No running Tomcat processes found for root check.;  /opt/tomcat-8.5/conf/server.xml is owned by root;  /opt/tomcat-8.5/conf/server.xml permissions are secure (600);  /opt/tomcat-8.5/conf/tomcat-users.xml is owned by root;  /opt/tomcat-8.5/conf/tomcat-users.xml permissions are secure (600);Tomcat Home: /opt/tomcat-8.5;Validating Tomcat installation at /opt/tomcat-8.5;Tomcat installation validation passed;Tomcat Version: 8.5;Auditing server.xml;Server Configuration:;  Status: Non-compliant;  Credential Handler: None;  Algorithm: None;  Iterations: 0;  Salt Length: 0;Auditing tomcat-users.xml;    User Audit Results:;    Username | Password Type | Compliance;    ---------|---------------|-----------;        admin | Plaintext | Non-compliant;                - Plaintext passwords detected. Use salted SHA-256 or PBKDF2.;===========================;Overall Status: Insecure;Audit completed"
+2025-06-26 09:43:41,admin,Plaintext,Hash,Compliant
                                                                                                                                                            
 ┌──(user㉿kali)-[~/Downloads]
-└─$ sudo cat /opt/tomcat-10.1/conf/server.xml      
+└─$ sudo cat /opt/tomcat-8.5/conf/server.xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Licensed to the Apache Software Foundation (ASF) under one or more
@@ -126,10 +119,8 @@ All users updated and server.xml patched.
   <!-- Security listener. Documentation at /docs/config/listeners.html
   <Listener className="org.apache.catalina.security.SecurityListener" />
   -->
-  <!-- OpenSSL support using Tomcat Native -->
-  <Listener className="org.apache.catalina.core.AprLifecycleListener" />
-  <!-- OpenSSL support using FFM API from Java 22 -->
-  <!-- <Listener className="org.apache.catalina.core.OpenSSLLifecycleListener" /> -->
+  <!-- APR library loader. Documentation at /docs/apr.html -->
+  <Listener className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="on" />
   <!-- Prevent memory leaks due to use of particular java/javax APIs-->
   <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
   <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener" />
@@ -165,8 +156,9 @@ All users updated and server.xml patched.
 
     <!-- A "Connector" represents an endpoint by which requests are received
          and responses are returned. Documentation at :
-         HTTP Connector: /docs/config/http.html
-         AJP  Connector: /docs/config/ajp.html
+         Java HTTP Connector: /docs/config/http.html
+         Java AJP  Connector: /docs/config/ajp.html
+         APR (HTTP/AJP) Connector: /docs/apr.html
          Define a non-SSL/TLS HTTP/1.1 Connector on port 8080
     -->
     <Connector port="8080" protocol="HTTP/1.1"
@@ -183,7 +175,7 @@ All users updated and server.xml patched.
                maxParameterCount="1000"
                />
     -->
-    <!-- Define an SSL/TLS HTTP/1.1 Connector on port 8443 with HTTP/2
+    <!-- Define an SSL/TLS HTTP/1.1 Connector on port 8443
          This connector uses the NIO implementation. The default
          SSLImplementation will depend on the presence of the APR/native
          library and the useOpenSSL attribute of the AprLifecycleListener.
@@ -195,10 +187,29 @@ All users updated and server.xml patched.
                maxThreads="150" SSLEnabled="true"
                maxParameterCount="1000"
                >
-        <UpgradeProtocol className="org.apache.coyote.http2.Http2Protocol" />
         <SSLHostConfig>
             <Certificate certificateKeystoreFile="conf/localhost-rsa.jks"
-                         certificateKeystorePassword="changeit" type="RSA" />
+                         type="RSA" />
+        </SSLHostConfig>
+    </Connector>
+    -->
+    <!-- Define an SSL/TLS HTTP/1.1 Connector on port 8443 with HTTP/2
+         This connector uses the APR/native implementation which always uses
+         OpenSSL for TLS.
+         Either JSSE or OpenSSL style configuration may be used. OpenSSL style
+         configuration is used below.
+    -->
+    <!--
+    <Connector port="8443" protocol="org.apache.coyote.http11.Http11AprProtocol"
+               maxThreads="150" SSLEnabled="true"
+               maxParameterCount="1000"
+               >
+        <UpgradeProtocol className="org.apache.coyote.http2.Http2Protocol" />
+        <SSLHostConfig>
+            <Certificate certificateKeyFile="conf/localhost-rsa-key.pem"
+                         certificateFile="conf/localhost-rsa-cert.pem"
+                         certificateChainFile="conf/localhost-rsa-chain.pem"
+                         type="RSA" />
         </SSLHostConfig>
     </Connector>
     -->
@@ -239,7 +250,7 @@ All users updated and server.xml patched.
              that are performed against this UserDatabase are immediately
              available for use by the Realm.  -->
         <Realm className="org.apache.catalina.realm.UserDatabaseRealm"
-    <CredentialHandler className="org.apache.catalina.realm.SecretKeyCredentialHandler" algorithm="PBKDF2WithHmacSHA512" iterations="10000" saltLength="16" keyLength="256"/>
+    <CredentialHandler className="org.apache.catalina.realm.MessageDigestCredentialHandler" algorithm="SHA-512" iterations="10000" saltLength="16"/>
                resourceName="UserDatabase"/>
       </Realm>
 
@@ -263,3 +274,6 @@ All users updated and server.xml patched.
     </Engine>
   </Service>
 </Server>
+                                                                                                                                                           
+┌──(user㉿kali)-[~/Downloads]
+└─$ 
