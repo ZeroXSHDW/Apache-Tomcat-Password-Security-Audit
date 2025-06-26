@@ -371,10 +371,6 @@ Apache-Tomcat-Password-Security-Audit/
 ## License
 Licensed under the Apache 2.0 License. See `docs/LICENSE` for details.
 
-## Improved Install Scripts
-
-For secure, automated Tomcat installation, see the [install/README.md](install/README.md) for full details and example outputs. These scripts ensure your Tomcat deployment is compliant from the start.
-
 ## Log Files
 - **Windows:** `$env:TEMP\TomcatManager.log` and `$env:TEMP\TomcatManager.csv`
 - **Unix:** `~/TomcatManager.log` and `/tmp/TomcatManager.csv`
