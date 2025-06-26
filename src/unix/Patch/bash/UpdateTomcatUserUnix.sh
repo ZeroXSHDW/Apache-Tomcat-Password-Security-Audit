@@ -231,7 +231,10 @@ update_all_users() {
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     [ ! -f "$csv_file" ] && echo "$csv_header" > "$csv_file"
     local user_count=0
+    local total_user_count=0
     echo "Attempting to update users in $users_xml"
+    # Count all <user ...> entries (not just plaintext)
+    total_user_count=$(grep -E '^[[:space:]]*<user ' "$users_xml" | grep -v '^[[:space:]]*<!--' | wc -l)
     grep -E '^[[:space:]]*<user ' "$users_xml" | grep -v '^[[:space:]]*<!--' | while read -r line; do
         user_count=$((user_count+1))
         local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
@@ -268,7 +271,7 @@ update_all_users() {
         fi
     done
     mv "$tmp_xml" "$users_xml"
-    if [ "$user_count" -eq 0 ]; then
+    if [ "$total_user_count" -eq 0 ]; then
         echo "─────────────────────────────"
         echo " Tomcat User Password Update"
         echo "─────────────────────────────"
@@ -393,8 +396,8 @@ print_compliance_summary() {
     local ch_line
     ch_line=$(awk '/<CredentialHandler/{flag=1} flag; /\/>/{flag=0}' "$server_xml" | tr '\n' ' ')
     local handler algorithm iterations salt_length
-    handler=$(echo "$ch_line" | grep -o 'className="[^\"]*"' | sed 's/className="\([^"]*\)"/\1/')
-    algorithm=$(echo "$ch_line" | grep -o 'algorithm="[^\"]*"' | sed 's/algorithm="\([^"]*\)"/\1/')
+    handler=$(echo "$ch_line" | grep -o 'className="[^"]*"' | sed 's/className="\([^\"]*\)"/\1/')
+    algorithm=$(echo "$ch_line" | grep -o 'algorithm="[^"]*"' | sed 's/algorithm="\([^\"]*\)"/\1/')
     iterations=$(echo "$ch_line" | grep -o 'iterations="[0-9]*"' | sed 's/iterations="\([0-9]*\)"/\1/')
     salt_length=$(echo "$ch_line" | grep -o 'saltLength="[0-9]*"' | sed 's/saltLength="\([0-9]*\)"/\1/')
     [ -z "$handler" ] && handler="(none)"
@@ -402,8 +405,18 @@ print_compliance_summary() {
     [ -z "$iterations" ] && iterations="(none)"
     [ -z "$salt_length" ] && salt_length="(none)"
     local ch_compliance="Non-compliant"
-    if [[ "$handler" == *SecretKeyCredentialHandler* && "$algorithm" == *PBKDF2WithHmacSHA512* && "$iterations" -ge 10000 && "$salt_length" -ge 16 ]]; then
-        ch_compliance="Compliant"
+    if [ "$version" = "7.0" ]; then
+        if [[ "$handler" == *MessageDigestCredentialHandler* && "$algorithm" == "SHA-256" ]]; then
+            ch_compliance="Compliant"
+        fi
+    elif [ "$version" = "8.0" ] || [ "$version" = "8.5" ]; then
+        if [[ "$handler" == *MessageDigestCredentialHandler* && "$algorithm" == "SHA-512" && "$iterations" -ge 10000 && "$salt_length" -ge 16 ]]; then
+            ch_compliance="Compliant"
+        fi
+    else # 9.0, 10.0, 10.1
+        if [[ "$handler" == *SecretKeyCredentialHandler* && "$algorithm" == *PBKDF2WithHmacSHA512* && "$iterations" -ge 10000 && "$salt_length" -ge 16 ]]; then
+            ch_compliance="Compliant"
+        fi
     fi
     echo "─────────────────────────────"
     echo " Tomcat User & Credential Audit"
