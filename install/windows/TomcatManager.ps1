@@ -218,85 +218,34 @@ function Install-OpenJDK11Manual {
         exit 1
     }
 
-    # Create or update junction at C:\Program Files\Java\jdk-11
-    $symlinkPath = 'C:\Program Files\Java\jdk-11'
-    $useSymlink = $true
-    if (Test-Path $symlinkPath) {
-        Write-Log "Removing existing jdk-11 junction/symlink: $symlinkPath"
-        try {
-            Remove-Item $symlinkPath -Force
-        } catch {
-            Write-Log "ERROR: Failed to remove $symlinkPath. Exception: $($_.Exception.Message)"
-        }
-    }
-    $junctionCreated = $false
-    try {
-        if ($PSVersionTable.PSVersion.Major -ge 5) {
-            try {
-                New-Item -ItemType Junction -Path $symlinkPath -Target $versionedJdkDir -Force | Out-Null
-                Write-Log "Created junction using PowerShell: $symlinkPath -> $versionedJdkDir"
-                $junctionCreated = $true
-            } catch {
-                Write-Log "PowerShell junction creation failed: $($_.Exception.Message)"
-            }
-        }
-        if (-not $junctionCreated) {
-            $mklinkCmd = "mklink /J `"$symlinkPath`" `"$versionedJdkDir`""
-            Write-Log "Attempting mklink: $mklinkCmd"
-            $mklinkOutput = cmd /c $mklinkCmd 2>&1
-            Write-Log "mklink output: $mklinkOutput"
-            if (Test-Path $symlinkPath) {
-                $junctionCreated = $true
-                Write-Log "Created junction using mklink: $symlinkPath -> $versionedJdkDir"
-            } else {
-                Write-Log "ERROR: mklink failed to create $symlinkPath"
-            }
-        }
-    } catch {
-        Write-Log "ERROR: Failed to create junction $symlinkPath -> $versionedJdkDir. Exception: $($_.Exception.Message)"
-        $useSymlink = $false
-    }
-
-    # Set JAVA_HOME environment variable to symlink/junction or fallback
-    $javaHomePath = $symlinkPath
-    $javaExe = "$javaHomePath\bin\java.exe"
-    if (-not (Test-Path $javaExe)) {
-        Write-Log "WARNING: $javaExe not found after creating junction. Logging directory contents for diagnostics."
-        if (Test-Path $javaHomePath) {
-            Write-Log "Contents of $($javaHomePath):"; Get-ChildItem $javaHomePath -Recurse | ForEach-Object { Write-Log "$($_.FullName)" }
-        } else {
-            Write-Log "$javaHomePath does not exist."
-        }
-        Write-Log "Contents of $($versionedJdkDir):"; Get-ChildItem $versionedJdkDir -Recurse | ForEach-Object { Write-Log "$($_.FullName)" }
-        Write-Log "Falling back to versioned directory."
-        $javaHomePath = $versionedJdkDir
-        $javaExe = "$javaHomePath\bin\java.exe"
-    }
-    Write-Log "Setting JAVA_HOME environment variable to $javaHomePath..."
-    [Environment]::SetEnvironmentVariable("JAVA_HOME", $javaHomePath, [EnvironmentVariableTarget]::Machine)
-    $env:JAVA_HOME = $javaHomePath
+    # Set JAVA_HOME environment variable to versioned directory (no symlink/junction)
+    Write-Log "Setting JAVA_HOME environment variable to $versionedJdkDir..."
+    [Environment]::SetEnvironmentVariable("JAVA_HOME", $versionedJdkDir, [EnvironmentVariableTarget]::Machine)
+    $env:JAVA_HOME = $versionedJdkDir
 
     # Update PATH
     $currentPath = [Environment]::GetEnvironmentVariable("PATH", [EnvironmentVariableTarget]::Machine)
-    if ($currentPath -notlike "*$javaHomePath\bin*") {
-        [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$javaHomePath\bin", [EnvironmentVariableTarget]::Machine)
-        $env:PATH = "$env:PATH;$javaHomePath\bin"
+    if ($currentPath -notlike "*$versionedJdkDir\bin*") {
+        [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$versionedJdkDir\bin", [EnvironmentVariableTarget]::Machine)
+        $env:PATH = "$env:PATH;$versionedJdkDir\bin"
     }
 
     # Verify installation
-    Write-Log "Verifying Java installation at $javaExe..."
+    Write-Log "Verifying Java installation at $javaExeVersioned..."
     try {
-        $javaVersion = & $javaExe -version 2>&1 | ForEach-Object { $_ -replace '^.*?(openjdk version.*)$', '$1' } | Out-String
+        $javaVersion = & $javaExeVersioned -version 2>&1 | ForEach-Object { $_ -replace '^.*?(openjdk version.*)$', '$1' } | Out-String
         Write-Log "java -version output: $javaVersion"
         if ($javaVersion -notmatch "11\.") {
             Write-Log "ERROR: Installed Java version is not 11. Output: $javaVersion"
             exit 1
         }
     } catch {
-        Write-Log "ERROR: Failed to run java -version at $javaExe. Exception: $($_.Exception.Message)"
+        Write-Log "ERROR: Failed to run java -version at $javaExeVersioned. Exception: $($_.Exception.Message)"
         exit 1
     }
-    Write-Log "OpenJDK 11 successfully installed at $versionedJdkDir and linked at $symlinkPath (or fallback used)"
+    Write-Log "OpenJDK 11 successfully installed at $versionedJdkDir"
+    Write-Log "Final JAVA_HOME: $versionedJdkDir"
+    Write-Log "Final java.exe path: $javaExeVersioned"
 
     # Log all Java installations in C:\Program Files\Java
     Write-Log "Current Java installations in C:\Program Files\Java:"
@@ -313,16 +262,6 @@ function Uninstall-Java {
             Remove-Item -Path $dir.FullName -Recurse -Force -ErrorAction Stop
         } catch {
             Write-Log "ERROR: Failed to remove Java directory $($dir.FullName). Exception: $($_.Exception.Message)"
-        }
-    }
-    # Remove jdk-11 symlink/junction if present
-    $symlinkPath = 'C:\Program Files\Java\jdk-11'
-    if (Test-Path $symlinkPath) {
-        Write-Log "Removing jdk-11 symlink/junction: $symlinkPath"
-        try {
-            Remove-Item $symlinkPath -Force
-        } catch {
-            Write-Log "ERROR: Failed to remove $symlinkPath. Exception: $($_.Exception.Message)"
         }
     }
     # Remove JAVA_HOME environment variable

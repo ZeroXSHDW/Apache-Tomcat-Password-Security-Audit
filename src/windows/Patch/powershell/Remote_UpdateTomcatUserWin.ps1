@@ -22,6 +22,8 @@ function Find-Java11Home {
         if (Test-Path 'C:\Program Files\Java') {
             Write-Host "Enumerating subdirectories in C:\Program Files\Java:"
             $subdirs = Get-ChildItem 'C:\Program Files\Java' -Directory
+            $bestVersion = 0
+            $bestJdk = $null
             foreach ($dir in $subdirs) {
                 $javaExe = Join-Path $dir.FullName 'bin\java.exe'
                 if (Test-Path $javaExe) {
@@ -30,6 +32,17 @@ function Find-Java11Home {
                     } elseif ($dir.Name -like 'jdk-11*') {
                         Write-Host "Found Java in $($dir.FullName) (versioned JDK 11+), adding as candidate."
                         $javaCandidates += ,(Get-Item $javaExe)
+                        # Prefer highest version
+                        if ($dir.Name -match 'jdk-11[.](\d+)[.](\d+)') {
+                            $ver = [int]$matches[1]
+                            if ($ver -gt $bestVersion) {
+                                $bestVersion = $ver
+                                $bestJdk = $dir.FullName
+                            }
+                        } else {
+                            # fallback: if no version, just pick first
+                            if (-not $bestJdk) { $bestJdk = $dir.FullName }
+                        }
                     } else {
                         Write-Host "Found Java in $($dir.FullName) (other JDK), adding as candidate."
                         $javaCandidates += ,(Get-Item $javaExe)
@@ -37,6 +50,10 @@ function Find-Java11Home {
                 } else {
                     Write-Host "No java.exe in $($dir.FullName)"
                 }
+            }
+            if ($bestJdk) {
+                Write-Host "Selected best versioned JDK: $bestJdk"
+                return $bestJdk
             }
         } else {
             Write-Host "C:\Program Files\Java does not exist."
