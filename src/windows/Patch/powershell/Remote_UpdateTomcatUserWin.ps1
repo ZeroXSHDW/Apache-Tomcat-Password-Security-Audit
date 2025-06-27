@@ -33,8 +33,9 @@ foreach ($server in $ServerName | Select-Object -Unique) {
                         }
                     }
                 }
-                $javaPath = (Get-Command java.exe -ErrorAction SilentlyContinue)?.Source
-                if ($javaPath) {
+                $javaCmd = Get-Command java.exe -ErrorAction SilentlyContinue
+                if ($javaCmd) {
+                    $javaPath = $javaCmd.Source
                     $parent = Split-Path (Split-Path $javaPath -Parent) -Parent
                     Log "[Remote] Found java.exe in PATH: $javaPath, parent: $parent"; return $parent
                 }
