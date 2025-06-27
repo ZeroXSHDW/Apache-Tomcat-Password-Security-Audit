@@ -12,17 +12,27 @@ param (
 # Java autodetection logic
 function Find-Java11Home {
     $javaCandidates = @()
-    $searchRoots = @("C:\\Program Files", "C:\\Program Files (x86)")
+    $searchRoots = @(
+        "C:\\Program Files\\Java\\jdk-11",
+        "C:\\Program Files\\Java",
+        "C:\\tomcat\\jdk-11",
+        "C:\\Program Files",
+        "C:\\Program Files (x86)"
+    )
     foreach ($root in $searchRoots) {
         if (Test-Path $root) {
             $javaExes = Get-ChildItem -Path $root -Recurse -Filter java.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "bin\\java.exe$" }
-            $javaCandidates += $javaExes
+            foreach ($exe in $javaExes) {
+                Write-Host "Found Java candidate: $($exe.FullName)"
+                $javaCandidates += $exe
+            }
         }
     }
     # Also check JAVA_HOME
     if ($env:JAVA_HOME) {
         $javaHomeExe = Join-Path $env:JAVA_HOME 'bin\java.exe'
         if (Test-Path $javaHomeExe) {
+            Write-Host "Found JAVA_HOME candidate: $javaHomeExe"
             $javaCandidates += Get-Item $javaHomeExe
         }
     }
@@ -30,6 +40,7 @@ function Find-Java11Home {
     $env:PATH.Split(';') | ForEach-Object {
         $possible = Join-Path $_ 'java.exe'
         if (Test-Path $possible) {
+            Write-Host "Found PATH candidate: $possible"
             $javaCandidates += Get-Item $possible
         }
     }
@@ -40,12 +51,16 @@ function Find-Java11Home {
             $versionOut = & $java.FullName -version 2>&1 | Select-Object -First 1
             if ($versionOut -match 'version "(\d+)(?:\.(\d+))?') {
                 $major = [int]$matches[1]
+                Write-Host "Java candidate $($java.FullName) version: $major"
                 if ($major -ge 11 -and $major -gt $bestVersion) {
                     $best = $java.Directory.Parent.FullName
                     $bestVersion = $major
                 }
             }
         } catch {}
+    }
+    if ($best) {
+        Write-Host "Selected JAVA_HOME: $best (version $bestVersion)"
     }
     return $best
 }
