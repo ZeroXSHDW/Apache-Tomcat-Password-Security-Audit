@@ -27,8 +27,11 @@ function Find-Java11Home {
                 if (Test-Path $javaExe) {
                     if ($dir.Name -like 'jre*') {
                         Write-Host "Found Java in $($dir.FullName) but it is a JRE, skipping."
+                    } elseif ($dir.Name -like 'jdk-11*') {
+                        Write-Host "Found Java in $($dir.FullName) (versioned JDK 11+), adding as candidate."
+                        $javaCandidates += ,(Get-Item $javaExe)
                     } else {
-                        Write-Host "Found Java in $($dir.FullName)"
+                        Write-Host "Found Java in $($dir.FullName) (other JDK), adding as candidate."
                         $javaCandidates += ,(Get-Item $javaExe)
                     }
                 } else {
