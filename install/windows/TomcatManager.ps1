@@ -182,10 +182,22 @@ function Install-OpenJDK11Manual {
     if (Test-Path $versionedJdkDir) {
         Write-Log "Removing existing $versionedJdkDir before moving new files in..."
         try {
-            Remove-Item -Path $versionedJdkDir -Recurse -Force
+            Remove-Item -Path $versionedJdkDir -Recurse -Force -ErrorAction Stop
         } catch {
             Write-Log "ERROR: Failed to remove $versionedJdkDir. Exception: $($_.Exception.Message)"
             exit 1
+        }
+    }
+    # Ensure destination is empty
+    if (Test-Path $versionedJdkDir) {
+        $leftovers = Get-ChildItem -Path $versionedJdkDir -Force
+        foreach ($item in $leftovers) {
+            try {
+                Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction Stop
+                Write-Log "Removed leftover item: $($item.FullName)"
+            } catch {
+                Write-Log "ERROR: Failed to remove leftover item: $($item.FullName). Exception: $($_.Exception.Message)"
+            }
         }
     }
     Write-Log "Moving extracted files to $versionedJdkDir..."
@@ -264,18 +276,23 @@ function Install-OpenJDK11Manual {
 # Uninstall Java
 function Uninstall-Java {
     Write-Log "Starting Java uninstallation process..."
-    $javaDirs = @(
-        "C:\Program Files\Java\jdk-11",
-        "C:\Program Files\Java\jdk8u412-b08"
-    )
+    $javaDirs = Get-ChildItem 'C:\Program Files\Java' -Directory | Where-Object { $_.Name -like 'jdk-11*' -or $_.Name -like 'jdk8*' }
     foreach ($dir in $javaDirs) {
-        if (Test-Path $dir) {
-            try {
-                Remove-Item -Path $dir -Recurse -Force
-                Write-Log "Removed Java directory: $dir"
-            } catch {
-                Write-Log "ERROR: Failed to remove Java directory $dir. Exception: $($_.Exception.Message)"
-            }
+        Write-Log "Removing Java directory: $($dir.FullName)"
+        try {
+            Remove-Item -Path $dir.FullName -Recurse -Force -ErrorAction Stop
+        } catch {
+            Write-Log "ERROR: Failed to remove Java directory $($dir.FullName). Exception: $($_.Exception.Message)"
+        }
+    }
+    # Remove jdk-11 symlink/junction if present
+    $symlinkPath = 'C:\Program Files\Java\jdk-11'
+    if (Test-Path $symlinkPath) {
+        Write-Log "Removing jdk-11 symlink/junction: $symlinkPath"
+        try {
+            Remove-Item $symlinkPath -Force
+        } catch {
+            Write-Log "ERROR: Failed to remove $symlinkPath. Exception: $($_.Exception.Message)"
         }
     }
     # Remove JAVA_HOME environment variable
@@ -285,7 +302,7 @@ function Uninstall-Java {
     # Remove Java from PATH
     $currentPath = [Environment]::GetEnvironmentVariable("PATH", [EnvironmentVariableTarget]::Machine)
     $paths = $currentPath -split ";"
-    $filteredPaths = $paths | Where-Object { $_ -notmatch "Java\\jdk-11\\bin" -and $_ -notmatch "Java\\jdk8u412-b08\\bin" }
+    $filteredPaths = $paths | Where-Object { $_ -notmatch "Java\\jdk-11\\bin" -and $_ -notmatch "Java\\jdk8" }
     $newPath = ($filteredPaths -join ";").TrimEnd(';')
     [Environment]::SetEnvironmentVariable("PATH", $newPath, [EnvironmentVariableTarget]::Machine)
     $env:PATH = $newPath
