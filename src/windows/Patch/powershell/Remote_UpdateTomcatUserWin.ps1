@@ -1,5 +1,5 @@
 # Remote_UpdateTomcatUserWin.ps1
-# Remotely updates Tomcat user password security configuration on Windows servers
+# Remotely updates Tomcat user password security configuration on Windows servers (format matches Remote_CheckTomcatConfigWin.ps1)
 
 param (
     [Parameter(Mandatory=$true)][string[]]$ServerName,
@@ -8,9 +8,19 @@ param (
     [Parameter(Mandatory=$true)][PSCredential]$Credential
 )
 
+function Log {
+    param(
+        [Parameter(Mandatory=$true)][String]$msg,
+        [Parameter(Mandatory=$true)][String]$server
+    )
+    $script:logMessages += "[$server] $msg"
+    Write-Host "[$server] $msg"
+}
+
 $uniqueServers = $ServerName | Select-Object -Unique
 foreach ($server in $uniqueServers) {
-    Write-Host "[Client] Invoking remote update on $server..."
+    $script:logMessages = @()
+    Log -msg "Starting remote Tomcat user update on $server..." -server $server
     try {
         $updateResults = Invoke-Command -ComputerName $server -Credential $Credential -ScriptBlock {
             param($TomcatHome, $ServiceName)
@@ -20,11 +30,12 @@ foreach ($server in $uniqueServers) {
                 $script:logMessages += $Message
                 Write-Host $Message
             }
-            Write-Log ("#" * 60 + $env:COMPUTERNAME + "#" * 59)
             $execTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-            Write-Log "Execution Time: $execTime"
-            Write-Log "HOSTNAME: $env:COMPUTERNAME"
-            Write-Log ("=" * 27)
+            $hostname = $env:COMPUTERNAME
+            Write-Host ("#" * 60 + $hostname + "#" * 59)
+            Write-Host "Execution Time: $execTime"
+            Write-Host "HOSTNAME: $hostname"
+            Write-Host ("=" * 27)
             Write-Log "[Remote] Script block started"
 
             # --- Robust Java detection ---
@@ -61,7 +72,99 @@ foreach ($server in $uniqueServers) {
             Write-Log "Using JAVA_HOME: $ResolvedJavaHome"
             # --- End Java detection ---
 
-            # --- Begin main logic from UpdateTomcatUserWin.ps1 ---
+            # --- Tomcat detection (like audit script) ---
+            function Get-TomcatConfigPath {
+                if ($TomcatHome -and (Test-Path $TomcatHome)) {
+                    $confPath = Join-Path $TomcatHome "conf"
+                    $serverXml = Join-Path $confPath "server.xml"
+                    if (Test-Path $serverXml) {
+                        $version = "Unknown"
+                        if ($TomcatHome -match "apache-tomcat-(\d+\.\d+)(?:\.\d+)?") {
+                            $version = $matches[1]
+                        } elseif ($TomcatHome -match "Tomcat\s*(\d+\.\d+)") {
+                            $version = $matches[1]
+                        }
+                        Write-Log "Found Tomcat configuration at: $confPath"
+                        return @{ Path = $confPath; Version = $version }
+                    }
+                }
+                $possiblePaths = @(
+                    "C:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
+                    "C:\Program Files\Apache Software Foundation\Tomcat 8.0\conf",
+                    "C:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
+                    "C:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
+                    "C:\Program Files\Apache Software Foundation\Tomcat 10.0\conf",
+                    "C:\Program Files\Apache Software Foundation\Tomcat 10.1\conf",
+                    "C:\Program Files (x86)\Apache Software Foundation\Tomcat 7.0\conf",
+                    "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.0\conf",
+                    "C:\Program Files (x86)\Apache Software Foundation\Tomcat 8.5\conf",
+                    "C:\Program Files (x86)\Apache Software Foundation\Tomcat 9.0\conf",
+                    "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.0\conf",
+                    "C:\Program Files (x86)\Apache Software Foundation\Tomcat 10.1\conf",
+                    "C:\Tomcat\conf",
+                    "C:\Tomcat7\conf",
+                    "C:\Tomcat8\conf",
+                    "C:\Tomcat9\conf",
+                    "C:\Tomcat10\conf",
+                    "C:\Apache\Tomcat\conf",
+                    "C:\Apache\Tomcat7\conf",
+                    "C:\Apache\Tomcat8\conf",
+                    "C:\Apache\Tomcat9\conf",
+                    "C:\Apache\Tomcat10\conf",
+                    "D:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
+                    "D:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
+                    "D:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
+                    "D:\Program Files\Apache Software Foundation\Tomcat 10.0\conf",
+                    "D:\Program Files\Apache Software Foundation\Tomcat 10.1\conf",
+                    "D:\Tomcat\conf",
+                    "E:\Program Files\Apache Software Foundation\Tomcat 7.0\conf",
+                    "E:\Program Files\Apache Software Foundation\Tomcat 8.5\conf",
+                    "E:\Program Files\Apache Software Foundation\Tomcat 9.0\conf",
+                    "E:\Program Files\Apache Software Foundation\Tomcat 10.0\conf",
+                    "E:\Program Files\Apache Software Foundation\Tomcat 10.1\conf",
+                    "E:\Tomcat\conf"
+                )
+                $tomcatRoot = "C:\Program Files\Apache Software Foundation\Tomcat"
+                if (Test-Path $tomcatRoot) {
+                    $subDirs = Get-ChildItem -Path $tomcatRoot -Directory -ErrorAction SilentlyContinue
+                    foreach ($dir in $subDirs) {
+                        $confPath = Join-Path $dir.FullName "conf"
+                        if (Test-Path (Join-Path $confPath "server.xml")) {
+                            $possiblePaths += $confPath
+                        }
+                    }
+                }
+                foreach ($path in $possiblePaths) {
+                    if (Test-Path $path) {
+                        $serverXml = Join-Path $path "server.xml"
+                        if (Test-Path $serverXml) {
+                            $version = "Unknown"
+                            if ($path -match "apache-tomcat-(\d+\.\d+)(?:\.\d+)?") {
+                                $version = $matches[1]
+                            } elseif ($path -match "Tomcat\s*(\d+\.\d+)") {
+                                $version = $matches[1]
+                            }
+                            Write-Log "Found Tomcat configuration at: $path"
+                            return @{ Path = $path; Version = $version }
+                        }
+                    }
+                }
+                return $null
+            }
+            $tomcatInfo = Get-TomcatConfigPath
+            if (-not $tomcatInfo) {
+                Write-Log "ERROR - No Tomcat configuration directory found"
+                Write-Log "[Remote] Script block ended"
+                return $logMessages
+            }
+            $confPath = $tomcatInfo.Path
+            $Version = $tomcatInfo.Version
+            $TomcatHome = Split-Path $confPath
+            Write-Log "Detected Tomcat version $Version at $confPath"
+            Write-Log "Tomcat Home: $TomcatHome"
+            Write-Log "Tomcat Version: $Version"
+
+            # --- Main update logic (from previous script, using Write-Log for all output) ---
             function Backup-ConfigFile {
                 param($FilePath)
                 if (-not $FilePath -or [string]::IsNullOrWhiteSpace($FilePath)) {
@@ -398,13 +501,12 @@ foreach ($server in $uniqueServers) {
             Write-Log "[Remote] Script block ended"
             return $logMessages
         } -ArgumentList $TomcatHome, $ServiceName
-        Write-Host "[Client] Remote update completed for $server. Output:"
         if ($updateResults) {
-            $updateResults | ForEach-Object { Write-Host $_ }
+            $updateResults | ForEach-Object { Log -msg $_ -server $server }
         } else {
-            Write-Host "[Client] No output returned from remote script."
+            Log -msg "No output returned from remote script." -server $server
         }
     } catch {
-        Write-Host "[Client][$server] ERROR: $_"
+        Log -msg "[Client][$server] ERROR: $_" -server $server
     }
 }
