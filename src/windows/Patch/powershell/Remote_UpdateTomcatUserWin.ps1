@@ -42,7 +42,11 @@ foreach ($server in $ServerName | Select-Object -Unique) {
                 Log "[Remote] No valid Java found (JAVA_HOME, C:\\Program Files\\Java, or PATH)"; return $null
             }
             $ResolvedJavaHome = Find-JavaHome
-            if (-not $ResolvedJavaHome) { Log "[Remote] ERROR: Could not auto-detect a valid Java installation. Please install Java 11+ and try again."; $log | Write-Output; exit 1 }
+            if (-not $ResolvedJavaHome -or [string]::IsNullOrWhiteSpace($ResolvedJavaHome)) {
+                Log "[Remote] ERROR: Could not auto-detect a valid Java installation. Please install Java 11+ and try again."
+                $log | Write-Output
+                exit 1
+            }
             $env:JAVA_HOME = $ResolvedJavaHome
             $env:PATH = "$ResolvedJavaHome\bin;" + $env:PATH
             Write-Log "Using JAVA_HOME: $ResolvedJavaHome"
