@@ -247,6 +247,53 @@ $cred = Get-Credential
 [WIN-SERVER] Audit completed. Log: C:\Temp\TomcatConfigCheck.csv
 ```
 
+## Command Line Parameters
+
+Below are the command line parameters for each script. All scripts support optional parameters for custom Tomcat locations; Windows scripts may also accept service names or credentials.
+
+### Unix Scripts
+
+- **CheckTomcatConfigUnixBash.sh**
+  - `--custom-conf=/path/to/conf` (optional): Use a custom Tomcat configuration directory (must contain `server.xml` and `tomcat-users.xml`).
+  - **Usage:**
+    ```bash
+    sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh [--custom-conf=/path/to/conf]
+    ```
+
+- **UpdateTomcatUserUnix.sh**
+  - `[optional-custom-conf-path]` (optional): Path to Tomcat `conf` directory (if not using default or auto-detected).
+  - **Usage:**
+    ```bash
+    sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh [optional-custom-conf-path]
+    ```
+
+### Windows Scripts
+
+- **CheckTomcatConfigWin.ps1**
+  - `-TomcatConfPath <path>` (optional): Path to Tomcat `conf` directory (if not using default or auto-detected).
+  - **Usage:**
+    ```powershell
+    .\src\windows\Audit\powershell\CheckTomcatConfigWin.ps1 [-TomcatConfPath <path>]
+    ```
+
+- **UpdateTomcatUserWin.ps1**
+  - `-TomcatHome <path>` (optional): Path to Tomcat home directory (if not using default or auto-detected).
+  - `-ServiceName <name>` (optional, default: `Tomcat101`): Name of the Tomcat Windows service to restart after patching.
+  - **Usage:**
+    ```powershell
+    .\src\windows\Patch\powershell\UpdateTomcatUserWin.ps1 [-TomcatHome <path>] [-ServiceName <name>]
+    ```
+
+- **Remote_CheckTomcatConfigWin.ps1**
+  - `-ServerName <server>` (required): One or more remote server names to audit.
+  - `-TomcatConfPath <path>` (optional): Path to Tomcat `conf` directory on the remote server.
+  - `-Credential <PSCredential>` (required): Credentials for remote connection (use `Get-Credential`).
+  - **Usage:**
+    ```powershell
+    $cred = Get-Credential
+    .\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName WIN-SERVER -Credential $cred
+    ```
+
 ## Testing Framework
 
 **WARNING**: The testing framework modifies system configurations, including `server.xml` and `tomcat-users.xml`, and installs/uninstalls Tomcat instances. It is **strictly for use in test labs** to verify that the auditing and patching scripts function correctly. **Do not use on production systems**, as it may disrupt services or cause data loss. Use only in controlled lab environments.
