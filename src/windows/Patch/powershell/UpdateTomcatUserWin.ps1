@@ -445,9 +445,31 @@ function Restart-TomcatIfRunning {
 }
 
 function Find-Java11Home {
-    $javaCandidates = @()
+    # 1. Explicit check for C:\Program Files\Java\jdk-11\bin\java.exe
+    $explicit = 'C:\Program Files\Java\jdk-11\bin\java.exe'
+    if (Test-Path $explicit) {
+        Write-Host "Explicitly found Java at $explicit"
+        return 'C:\Program Files\Java\jdk-11'
+    } else {
+        Write-Host "Did not find Java at $explicit"
+        if (Test-Path 'C:\Program Files\Java') {
+            Write-Host "Enumerating subdirectories in C:\Program Files\Java:"
+            $subdirs = Get-ChildItem 'C:\Program Files\Java' -Directory
+            foreach ($dir in $subdirs) {
+                $javaExe = Join-Path $dir.FullName 'bin\java.exe'
+                if (Test-Path $javaExe) {
+                    Write-Host "Found Java in $($dir.FullName)"
+                    $javaCandidates += Get-Item $javaExe
+                } else {
+                    Write-Host "No java.exe in $($dir.FullName)"
+                }
+            }
+        } else {
+            Write-Host "C:\Program Files\Java does not exist."
+        }
+    }
+    # 2. Continue with previous search logic
     $searchRoots = @(
-        "C:\\Program Files\\Java\\jdk-11",
         "C:\\Program Files\\Java",
         "C:\\tomcat\\jdk-11",
         "C:\\Program Files",
