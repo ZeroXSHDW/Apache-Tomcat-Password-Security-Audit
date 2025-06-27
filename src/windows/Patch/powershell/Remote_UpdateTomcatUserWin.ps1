@@ -9,76 +9,51 @@ param (
     [Parameter(Mandatory=$true)][PSCredential]$Credential
 )
 
-# Java autodetection logic
+foreach ($server in $uniqueServers) {
+    Write-Host "[Remote] Starting Tomcat user update on $server..."
+    try {
+        $result = Invoke-Command -ComputerName $server -Credential $Credential -ScriptBlock {
+            param($TomcatHome, $ServiceName)
+
+# --- Begin robust remote Java detection ---
 function Find-Java11Home {
     $javaCandidates = @()
-    # 1. Explicit check for C:\Program Files\Java\jdk-11\bin\java.exe
-    $explicit = 'C:\Program Files\Java\jdk-11\bin\java.exe'
-    if (Test-Path $explicit) {
-        Write-Host "Explicitly found Java at $explicit"
-        return 'C:\Program Files\Java\jdk-11'
-    } else {
-        Write-Host "Did not find Java at $explicit"
-        if (Test-Path 'C:\Program Files\Java') {
-            Write-Host "Enumerating subdirectories in C:\Program Files\Java:"
-            $subdirs = Get-ChildItem 'C:\Program Files\Java' -Directory
-            $bestVersion = 0
-            $bestJdk = $null
-            foreach ($dir in $subdirs) {
-                $javaExe = Join-Path $dir.FullName 'bin\java.exe'
-                if (Test-Path $javaExe) {
-                    if ($dir.Name -like 'jre*') {
-                        Write-Host "Found Java in $($dir.FullName) but it is a JRE, skipping."
-                    } elseif ($dir.Name -like 'jdk-11*') {
-                        Write-Host "Found Java in $($dir.FullName) (versioned JDK 11+), adding as candidate."
-                        $javaCandidates += ,(Get-Item $javaExe)
-                        # Prefer highest version
-                        if ($dir.Name -match 'jdk-11[.](\d+)[.](\d+)') {
-                            $ver = [int]$matches[1]
-                            if ($ver -gt $bestVersion) {
-                                $bestVersion = $ver
-                                $bestJdk = $dir.FullName
-                            }
-                        } else {
-                            # fallback: if no version, just pick first
-                            if (-not $bestJdk) { $bestJdk = $dir.FullName }
+    $bestVersion = 0
+    $bestJdk = $null
+    if (Test-Path 'C:\Program Files\Java') {
+        Write-Host "[Remote] Enumerating subdirectories in C:\Program Files\Java:"
+        $subdirs = Get-ChildItem 'C:\Program Files\Java' -Directory
+        foreach ($dir in $subdirs) {
+            $javaExe = Join-Path $dir.FullName 'bin\java.exe'
+            if (Test-Path $javaExe) {
+                if ($dir.Name -like 'jre*') {
+                    Write-Host "[Remote] Found Java in $($dir.FullName) but it is a JRE, skipping."
+                } elseif ($dir.Name -like 'jdk-11*') {
+                    Write-Host "[Remote] Found Java in $($dir.FullName) (versioned JDK 11+), adding as candidate."
+                    $javaCandidates += ,(Get-Item $javaExe)
+                    if ($dir.Name -match 'jdk-11[.](\d+)[.](\d+)') {
+                        $ver = [int]$matches[1]
+                        if ($ver -gt $bestVersion) {
+                            $bestVersion = $ver
+                            $bestJdk = $dir.FullName
                         }
                     } else {
-                        Write-Host "Found Java in $($dir.FullName) (other JDK), adding as candidate."
-                        $javaCandidates += ,(Get-Item $javaExe)
+                        if (-not $bestJdk) { $bestJdk = $dir.FullName }
                     }
                 } else {
-                    Write-Host "No java.exe in $($dir.FullName)"
+                    Write-Host "[Remote] Found Java in $($dir.FullName) (other JDK), adding as candidate."
+                    $javaCandidates += ,(Get-Item $javaExe)
                 }
-            }
-            if ($bestJdk) {
-                Write-Host "Selected best versioned JDK: $bestJdk"
-                return $bestJdk
-            }
-        } else {
-            Write-Host "C:\Program Files\Java does not exist."
-        }
-    }
-    # 2. Continue with previous search logic
-    $searchRoots = @(
-        "C:\\Program Files\\Java",
-        "C:\\tomcat\\jdk-11",
-        "C:\\Program Files",
-        "C:\\Program Files (x86)"
-    )
-    foreach ($root in $searchRoots) {
-        if (Test-Path $root) {
-            $javaExes = Get-ChildItem -Path $root -Recurse -Filter java.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "bin\\java.exe$" }
-            foreach ($exe in $javaExes) {
-                $parentDir = Split-Path $exe.Directory.Parent.FullName -Leaf
-                if ($parentDir -like 'jre*') {
-                    Write-Host "Found Java candidate: $($exe.FullName) but it is a JRE, skipping."
-                } else {
-                    Write-Host "Found Java candidate: $($exe.FullName)"
-                    $javaCandidates += ,$exe
-                }
+            } else {
+                Write-Host "[Remote] No java.exe in $($dir.FullName)"
             }
         }
+        if ($bestJdk) {
+            Write-Host "[Remote] Selected best versioned JDK: $bestJdk"
+            return $bestJdk
+        }
+    } else {
+        Write-Host "[Remote] C:\Program Files\Java does not exist."
     }
     # Also check JAVA_HOME
     if ($env:JAVA_HOME) {
@@ -86,65 +61,24 @@ function Find-Java11Home {
         if (Test-Path $javaHomeExe) {
             $parentDir = Split-Path (Split-Path $javaHomeExe -Parent) -Parent | Split-Path -Leaf
             if ($parentDir -like 'jre*') {
-                Write-Host "Found JAVA_HOME candidate: $javaHomeExe but it is a JRE, skipping."
+                Write-Host "[Remote] Found JAVA_HOME candidate: $javaHomeExe but it is a JRE, skipping."
             } else {
-                Write-Host "Found JAVA_HOME candidate: $javaHomeExe"
-                $javaCandidates += ,(Get-Item $javaHomeExe)
+                Write-Host "[Remote] Found JAVA_HOME candidate: $javaHomeExe"
+                return $env:JAVA_HOME
             }
         }
     }
-    # Also check PATH
-    $env:PATH.Split(';') | ForEach-Object {
-        $possible = Join-Path $_ 'java.exe'
-        if (Test-Path $possible) {
-            $parentDir = Split-Path (Split-Path $possible -Parent) -Parent | Split-Path -Leaf
-            if ($parentDir -like 'jre*') {
-                Write-Host "Found PATH candidate: $possible but it is a JRE, skipping."
-            } else {
-                Write-Host "Found PATH candidate: $possible"
-                $javaCandidates += ,(Get-Item $possible)
-            }
-        }
-    }
-    $best = $null
-    $bestVersion = 0
-    foreach ($java in $javaCandidates | Select-Object -Unique) {
-        try {
-            $versionOut = & $java.FullName -version 2>&1 | Select-Object -First 1
-            if ($versionOut -match 'version "(\d+)(?:\.(\d+))?') {
-                $major = [int]$matches[1]
-                Write-Host "Java candidate $($java.FullName) version: $major"
-                if ($major -ge 11 -and $major -gt $bestVersion) {
-                    $best = $java.Directory.Parent.FullName
-                    $bestVersion = $major
-                }
-            }
-        } catch {}
-    }
-    if ($best) {
-        Write-Host "Selected JAVA_HOME: $best (version $bestVersion)"
-    } else {
-        Write-Host "No valid JDK 11+ found. Only JREs or older versions detected."
-    }
-    return $best
+    Write-Host "[Remote] No valid JDK 11+ found. Only JREs or older versions detected."
+    return $null
 }
 
-$ResolvedJavaHome = $JavaHome
-if (-not $ResolvedJavaHome -or -not (Test-Path (Join-Path $ResolvedJavaHome 'bin\java.exe'))) {
-    $ResolvedJavaHome = Find-Java11Home
-}
+$ResolvedJavaHome = Find-Java11Home
 if (-not $ResolvedJavaHome) {
-    Write-Host "ERROR: Could not auto-detect a valid Java 11+ installation. Please specify -JavaHome."
+    Write-Host "[Remote] ERROR: Could not auto-detect a valid Java 11+ installation. Please install Java 11+ and try again."
     exit 1
 }
-Write-Host "Using JAVA_HOME: $ResolvedJavaHome"
-
-$uniqueServers = $ServerName | Select-Object -Unique
-foreach ($server in $uniqueServers) {
-    Write-Host "[Remote] Starting Tomcat user update on $server..."
-    try {
-        $result = Invoke-Command -ComputerName $server -Credential $Credential -ScriptBlock {
-            param($TomcatHome, $ServiceName, $JavaHome)
+Write-Host "[Remote] Using JAVA_HOME: $ResolvedJavaHome"
+# --- End robust remote Java detection ---
 
 # --- Begin exact copy of UpdateTomcatUserWin.ps1 main logic ---
 function Get-TomcatConfigPath {
@@ -608,7 +542,7 @@ Restart-TomcatIfRunning -ServiceName $ServiceName -TomcatHome $TomcatHome | Out-
 Write-Log "Configuration update completed successfully"
 # --- End exact copy ---
 
-        } -ArgumentList $TomcatHome, $ServiceName, $JavaHome
+        } -ArgumentList $TomcatHome, $ServiceName
         $result | ForEach-Object { Write-Host $_ }
     } catch {
         Write-Host "[Remote][$server] ERROR: $_"
