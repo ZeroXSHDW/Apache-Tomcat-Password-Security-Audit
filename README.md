@@ -411,44 +411,5 @@ Example `tomcat-users.xml`:
 </tomcat-users>
 ```
 
-## Directory Descriptions
-
-```
-Apache-Tomcat-Password-Security-Audit/
-├── docs/                      # Documentation
-│   ├── README.md             # Main documentation
-│   └── LICENSE               # License file
-├── src/                      # Source code
-│   ├── unix/                 # Unix-specific scripts
-│   │   ├── Audit/            # Auditing scripts
-│   │   │   └── bash/        # Bash auditing scripts
-│   │   │       └── CheckTomcatConfigUnixBash.sh
-│   │   └── Patch/            # Patching scripts
-│   │       └── bash/        # Bash patching scripts
-│   │           └── UpdateTomcatUserUnix.sh
-│   └── windows/              # Windows-specific scripts
-│       ├── Audit/            # Auditing scripts
-│       │   └── powershell/   # PowerShell auditing scripts
-│       │       ├── CheckTomcatConfigWin.ps1
-│       │       └── Remote_CheckTomcatConfigWin.ps1
-│       └── Patch/            # Patching scripts
-│           └── powershell/   # PowerShell patching scripts
-│               └── UpdateTomcatUserWin.ps1
-├── tests/                    # Test framework
-│   └── Audit/                # Test scripts for auditing and patching
-│       ├── unix/            # Unix test scripts
-│       │   └── test_config_unix.py
-│       └── windows/         # Windows test scripts
-│           └── test_config_win.ps1
-├── assets/                   # Static assets
-│   └── images/               # Images and other media
-│       └── banner.jpg
-└── install/                  # Installation and management scripts
-    ├── unix/                 # Unix installation and management
-    │   └── tomcat_manager.sh
-    └── windows/              # Windows installation and management
-        └── TomcatManager.ps1
-```
-
 ## License
 Licensed under the Apache 2.0 License. See `
