@@ -11,6 +11,7 @@ param (
 
 # Java autodetection logic
 function Find-Java11Home {
+    $javaCandidates = @()
     # 1. Explicit check for C:\Program Files\Java\jdk-11\bin\java.exe
     $explicit = 'C:\Program Files\Java\jdk-11\bin\java.exe'
     if (Test-Path $explicit) {
@@ -24,8 +25,12 @@ function Find-Java11Home {
             foreach ($dir in $subdirs) {
                 $javaExe = Join-Path $dir.FullName 'bin\java.exe'
                 if (Test-Path $javaExe) {
-                    Write-Host "Found Java in $($dir.FullName)"
-                    $javaCandidates += Get-Item $javaExe
+                    if ($dir.Name -like 'jre*') {
+                        Write-Host "Found Java in $($dir.FullName) but it is a JRE, skipping."
+                    } else {
+                        Write-Host "Found Java in $($dir.FullName)"
+                        $javaCandidates += ,(Get-Item $javaExe)
+                    }
                 } else {
                     Write-Host "No java.exe in $($dir.FullName)"
                 }
@@ -45,8 +50,13 @@ function Find-Java11Home {
         if (Test-Path $root) {
             $javaExes = Get-ChildItem -Path $root -Recurse -Filter java.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "bin\\java.exe$" }
             foreach ($exe in $javaExes) {
-                Write-Host "Found Java candidate: $($exe.FullName)"
-                $javaCandidates += $exe
+                $parentDir = Split-Path $exe.Directory.Parent.FullName -Leaf
+                if ($parentDir -like 'jre*') {
+                    Write-Host "Found Java candidate: $($exe.FullName) but it is a JRE, skipping."
+                } else {
+                    Write-Host "Found Java candidate: $($exe.FullName)"
+                    $javaCandidates += ,$exe
+                }
             }
         }
     }
@@ -54,16 +64,26 @@ function Find-Java11Home {
     if ($env:JAVA_HOME) {
         $javaHomeExe = Join-Path $env:JAVA_HOME 'bin\java.exe'
         if (Test-Path $javaHomeExe) {
-            Write-Host "Found JAVA_HOME candidate: $javaHomeExe"
-            $javaCandidates += Get-Item $javaHomeExe
+            $parentDir = Split-Path (Split-Path $javaHomeExe -Parent) -Parent | Split-Path -Leaf
+            if ($parentDir -like 'jre*') {
+                Write-Host "Found JAVA_HOME candidate: $javaHomeExe but it is a JRE, skipping."
+            } else {
+                Write-Host "Found JAVA_HOME candidate: $javaHomeExe"
+                $javaCandidates += ,(Get-Item $javaHomeExe)
+            }
         }
     }
     # Also check PATH
     $env:PATH.Split(';') | ForEach-Object {
         $possible = Join-Path $_ 'java.exe'
         if (Test-Path $possible) {
-            Write-Host "Found PATH candidate: $possible"
-            $javaCandidates += Get-Item $possible
+            $parentDir = Split-Path (Split-Path $possible -Parent) -Parent | Split-Path -Leaf
+            if ($parentDir -like 'jre*') {
+                Write-Host "Found PATH candidate: $possible but it is a JRE, skipping."
+            } else {
+                Write-Host "Found PATH candidate: $possible"
+                $javaCandidates += ,(Get-Item $possible)
+            }
         }
     }
     $best = $null
@@ -83,6 +103,8 @@ function Find-Java11Home {
     }
     if ($best) {
         Write-Host "Selected JAVA_HOME: $best (version $bestVersion)"
+    } else {
+        Write-Host "No valid JDK 11+ found. Only JREs or older versions detected."
     }
     return $best
 }
