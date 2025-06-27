@@ -5,9 +5,51 @@ param (
     [Parameter(Mandatory=$true)][string[]]$ServerName,
     [string]$TomcatHome = $null,
     [string]$ServiceName = "Tomcat101",
-    [string]$JavaHome = "C:\\Program Files\\AdoptOpenJDK\\jdk-11.0.22.7-hotspot",
+    [string]$JavaHome = $null,
     [Parameter(Mandatory=$true)][PSCredential]$Credential
 )
+
+# Java autodetection logic
+function Find-Java11Home {
+    $candidates = @(
+        "C:\\Program Files\\AdoptOpenJDK\\jdk-11.*",
+        "C:\\Program Files\\Eclipse Foundation\\jdk-11.*",
+        "C:\\Program Files\\Zulu\\zulu-11*",
+        "C:\\Program Files\\Amazon Corretto\\jdk11*",
+        "C:\\Program Files\\Java\\jdk-11*",
+        "C:\\Program Files\\OpenJDK\\jdk-11*",
+        "C:\\Program Files\\RedHat\\java-11*",
+        "C:\\Program Files\\Microsoft\\jdk-11*",
+        "C:\\Program Files\\BellSoft\\LibericaJDK-11*",
+        "C:\\Program Files\\Temurin\\jdk-11*"
+    )
+    foreach ($pattern in $candidates) {
+        $dirs = Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue
+        foreach ($dir in $dirs) {
+            $javaExe = Join-Path $dir.FullName "bin\java.exe"
+            if (Test-Path $javaExe) {
+                $versionOut = & $javaExe -version 2>&1 | Select-Object -First 1
+                if ($versionOut -match 'version "(\d+)[.]') {
+                    $major = [int]$matches[1]
+                    if ($major -ge 11) {
+                        return $dir.FullName
+                    }
+                }
+            }
+        }
+    }
+    return $null
+}
+
+$ResolvedJavaHome = $JavaHome
+if (-not $ResolvedJavaHome -or -not (Test-Path (Join-Path $ResolvedJavaHome 'bin\java.exe'))) {
+    $ResolvedJavaHome = Find-Java11Home
+}
+if (-not $ResolvedJavaHome) {
+    Write-Host "ERROR: Could not auto-detect a valid Java 11+ installation. Please specify -JavaHome."
+    exit 1
+}
+Write-Host "Using JAVA_HOME: $ResolvedJavaHome"
 
 $uniqueServers = $ServerName | Select-Object -Unique
 foreach ($server in $uniqueServers) {
@@ -354,7 +396,7 @@ function Update-AllUserPasswords {
             continue
         }
         Write-Log "Hashing plaintext password for user $username using Tomcat $Version"
-        $hash = Get-PasswordHash -TomcatBin $binPath -Password $password -Version $Version -TomcatHome $TomcatHome -JavaHome $JavaHome
+        $hash = Get-PasswordHash -TomcatBin $binPath -Password $password -Version $Version -TomcatHome $TomcatHome -JavaHome $ResolvedJavaHome
         if ($hash -and $hash -ne $password) {
             $user.SetAttribute("password", $hash)
             $updated = $true
@@ -459,7 +501,7 @@ if ($Version -eq "7.0") {
     Patch-ServerXml -TomcatHome $TomcatHome -Version $Version
     $HashAlg = "SHA-256"
 } elseif ($Version -in @("8.5", "9.0", "10.0", "10.1")) {
-    $pbkdf2Supported = Test-PBKDF2Support -TomcatHome $TomcatHome -JavaHome $JavaHome
+    $pbkdf2Supported = Test-PBKDF2Support -TomcatHome $TomcatHome -JavaHome $ResolvedJavaHome
     if (-not $pbkdf2Supported) {
         Write-Log "ERROR: PBKDF2WithHmacSHA512 is not available in your Java runtime. Please upgrade Java to at least 8u161 or 11+ with PBKDF2 support. Cannot update user passwords to compliance. Exiting." "ERROR"
         exit 1
