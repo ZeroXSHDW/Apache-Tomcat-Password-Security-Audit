@@ -335,7 +335,37 @@ Below are the command line parameters for each script. All scripts support optio
     ```powershell
     .\src\windows\Patch\powershell\UpdateTomcatUserWin.ps1 [-TomcatHome <path>] [-ServiceName <name>]
     ```
-    
+
+- **Remote_CheckTomcatConfigWin.ps1**
+  - `-ServerName <server>` (required): One or more remote server names to audit.
+  - `-TomcatConfPath <path>` (optional): Path to Tomcat `conf` directory on the remote server.
+  - `-Credential <PSCredential>` (required): Credentials for remote connection (use `Get-Credential`).
+  - **Usage:**
+    ```powershell
+    .\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName WIN-SERVER -Credential $cred
+    ```
+
+- **Remote_UpdateTomcatUserWin.ps1**
+  - `-ServerName <server>` (required): One or more remote server names to patch.
+  - `-TomcatHome <path>` (optional): Path to Tomcat home directory on the remote server.
+  - `-ServiceName <name>` (optional, default: `Tomcat101`): Name of the Tomcat Windows service to restart after patching.
+  - `-Credential <PSCredential>` (required): Credentials for remote connection (use `Get-Credential`).
+  - **Usage:**
+    ```powershell
+    .\src\windows\Patch\powershell\Remote_UpdateTomcatUserWin.ps1 -ServerName WIN-SERVER -Credential (Get-Credential)
+    ```
+
+- **TomcatManager.ps1**
+  - `-Action <Install|Uninstall|Start|Stop|Status>` (required): Action to perform (install, uninstall, start, stop, or check status of Tomcat service).
+  - `-TomcatVersion <version>` (optional): Tomcat version to install (e.g., `10.1.42`).
+  - `-InstallDir <path>` (optional): Installation directory (default: `C:\tomcat`).
+  - `-JavaHome <path>` (optional): Path to Java installation.
+  - `-ServiceName <name>` (optional): Name for the Tomcat Windows service.
+  - **Usage:**
+    ```powershell
+    .\install\windows\TomcatManager.ps1 -Action Install -TomcatVersion 10.1.42 -InstallDir C:\tomcat
+    ```
+
 ## Testing Framework
 
 **WARNING**: The testing framework modifies system configurations, including `server.xml` and `tomcat-users.xml`, and installs/uninstalls Tomcat instances. It is **strictly for use in test labs** to verify that the auditing and patching scripts function correctly. **Do not use on production systems**, as it may disrupt services or cause data loss. Use only in controlled lab environments.
@@ -421,14 +451,4 @@ Apache-Tomcat-Password-Security-Audit/
 ```
 
 ## License
-Licensed under the Apache 2.0 License. See `docs/LICENSE` for details.
-
-## Log Files
-- **Windows:** `$env:TEMP\TomcatManager.log` and `$env:TEMP\TomcatManager.csv`
-- **Unix:** `~/TomcatManager.log` and `/tmp/TomcatManager.csv`
-
-## Troubleshooting
-- **Permissions:** Always run as Administrator (Windows) or with sudo/root (Unix).
-- **Java Not Found:** The script will attempt to install Java if missing, but you may need to install it manually on some systems.
-- **Firewall/Service Issues:** Use the `--no-firewall` or `--no-service` options if you do not want these configured.
-- **Log Files:** Check the log files for detailed error messages if something fails.
+Licensed under the Apache 2.0 License. See `
