@@ -3,7 +3,8 @@
 
 param(
     [string]$TomcatHome = $null,
-    [string]$ServiceName = "Tomcat101"
+    [string]$ServiceName = "Tomcat101",
+    [string]$JavaHome = "C:\\Program Files\\AdoptOpenJDK\\jdk-11.0.22.7-hotspot"
 )
 
 function Get-TomcatConfigPath {
@@ -178,7 +179,7 @@ function Ensure-SetenvBat {
 }
 
 function Test-PBKDF2Support {
-    param([string]$TomcatHome)
+    param([string]$TomcatHome, [string]$JavaHome)
     Ensure-SetenvBat -TomcatHome $TomcatHome
     $digestScript = Join-Path $TomcatHome "bin\digest.bat"
     $testPassword = "TestPassword123!"
@@ -190,6 +191,7 @@ function Test-PBKDF2Support {
         $startInfo.WorkingDirectory = (Split-Path $digestScript)
         $startInfo.UseShellExecute = $false
         $startInfo.RedirectStandardOutput = $true
+        $startInfo.EnvironmentVariables["JAVA_HOME"] = $JavaHome
         $process = [System.Diagnostics.Process]::Start($startInfo)
         $output = $process.StandardOutput.ReadToEnd()
         $process.WaitForExit()
@@ -251,7 +253,8 @@ function Get-PasswordHash {
         [string]$TomcatBin,
         [string]$Password,
         [string]$Version,
-        [string]$TomcatHome
+        [string]$TomcatHome,
+        [string]$JavaHome
     )
     Ensure-SetenvBat -TomcatHome $TomcatHome
     $digestScript = Join-Path $TomcatBin "digest.bat"
@@ -284,6 +287,7 @@ function Get-PasswordHash {
         $startInfo.WorkingDirectory = (Split-Path $digestScript)
         $startInfo.UseShellExecute = $false
         $startInfo.RedirectStandardOutput = $true
+        $startInfo.EnvironmentVariables["JAVA_HOME"] = $JavaHome
         $process = [System.Diagnostics.Process]::Start($startInfo)
         $digestRaw = $process.StandardOutput.ReadToEnd()
         $process.WaitForExit()
@@ -293,7 +297,6 @@ function Get-PasswordHash {
             Write-Log "WARNING: digest.bat output indicates MessageDigestCredentialHandler or missing PBKDF2 support. Check your Tomcat and Java versions!" "ERROR"
         }
         if ($Version -in @("8.5", "9.0", "10.0", "10.1")) {
-            # Accept Tomcat 9+ PBKDF2 format: password:salt$iterations$hash or password:salt$iterations$salt$hash
             if ($digestRaw -match "^.+:[0-9a-fA-F]+\$[0-9]+\$[0-9a-fA-F]+(\$[0-9a-fA-F]+)?$") {
                 $hash = $digestRaw
                 return $hash
@@ -343,7 +346,7 @@ function Update-AllUserPasswords {
             continue
         }
         Write-Log "Hashing plaintext password for user $username using Tomcat $Version"
-        $hash = Get-PasswordHash -TomcatBin $binPath -Password $password -Version $Version -TomcatHome $TomcatHome
+        $hash = Get-PasswordHash -TomcatBin $binPath -Password $password -Version $Version -TomcatHome $TomcatHome -JavaHome $JavaHome
         if ($hash -and $hash -ne $password) {
             $user.SetAttribute("password", $hash)
             $updated = $true
@@ -451,7 +454,7 @@ if ($Version -eq "7.0") {
     Patch-ServerXml -TomcatHome $TomcatHome -Version $Version
     $HashAlg = "SHA-256"
 } elseif ($Version -in @("8.5", "9.0", "10.0", "10.1")) {
-    $pbkdf2Supported = Test-PBKDF2Support -TomcatHome $TomcatHome
+    $pbkdf2Supported = Test-PBKDF2Support -TomcatHome $TomcatHome -JavaHome $JavaHome
     if (-not $pbkdf2Supported) {
         Write-Log "ERROR: PBKDF2WithHmacSHA512 is not available in your Java runtime. Please upgrade Java to at least 8u161 or 11+ with PBKDF2 support. Cannot update user passwords to compliance. Exiting." "ERROR"
         exit 1
