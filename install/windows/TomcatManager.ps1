@@ -222,13 +222,36 @@ function Install-OpenJDK11Manual {
     $symlinkPath = 'C:\Program Files\Java\jdk-11'
     $useSymlink = $true
     if (Test-Path $symlinkPath) {
+        Write-Log "Removing existing jdk-11 junction/symlink: $symlinkPath"
         try {
             Remove-Item $symlinkPath -Force
-        } catch {}
+        } catch {
+            Write-Log "ERROR: Failed to remove $symlinkPath. Exception: $($_.Exception.Message)"
+        }
     }
+    $junctionCreated = $false
     try {
-        cmd /c "mklink /J \"$symlinkPath\" \"$versionedJdkDir\"" | Out-Null
-        Write-Log "Created junction $symlinkPath -> $versionedJdkDir"
+        if ($PSVersionTable.PSVersion.Major -ge 5) {
+            try {
+                New-Item -ItemType Junction -Path $symlinkPath -Target $versionedJdkDir -Force | Out-Null
+                Write-Log "Created junction using PowerShell: $symlinkPath -> $versionedJdkDir"
+                $junctionCreated = $true
+            } catch {
+                Write-Log "PowerShell junction creation failed: $($_.Exception.Message)"
+            }
+        }
+        if (-not $junctionCreated) {
+            $mklinkCmd = "mklink /J `"$symlinkPath`" `"$versionedJdkDir`""
+            Write-Log "Attempting mklink: $mklinkCmd"
+            $mklinkOutput = cmd /c $mklinkCmd 2>&1
+            Write-Log "mklink output: $mklinkOutput"
+            if (Test-Path $symlinkPath) {
+                $junctionCreated = $true
+                Write-Log "Created junction using mklink: $symlinkPath -> $versionedJdkDir"
+            } else {
+                Write-Log "ERROR: mklink failed to create $symlinkPath"
+            }
+        }
     } catch {
         Write-Log "ERROR: Failed to create junction $symlinkPath -> $versionedJdkDir. Exception: $($_.Exception.Message)"
         $useSymlink = $false
@@ -238,7 +261,14 @@ function Install-OpenJDK11Manual {
     $javaHomePath = $symlinkPath
     $javaExe = "$javaHomePath\bin\java.exe"
     if (-not (Test-Path $javaExe)) {
-        Write-Log "WARNING: $javaExe not found after creating junction. Falling back to versioned directory."
+        Write-Log "WARNING: $javaExe not found after creating junction. Logging directory contents for diagnostics."
+        if (Test-Path $javaHomePath) {
+            Write-Log "Contents of $($javaHomePath):"; Get-ChildItem $javaHomePath -Recurse | ForEach-Object { Write-Log "$($_.FullName)" }
+        } else {
+            Write-Log "$javaHomePath does not exist."
+        }
+        Write-Log "Contents of $($versionedJdkDir):"; Get-ChildItem $versionedJdkDir -Recurse | ForEach-Object { Write-Log "$($_.FullName)" }
+        Write-Log "Falling back to versioned directory."
         $javaHomePath = $versionedJdkDir
         $javaExe = "$javaHomePath\bin\java.exe"
     }
