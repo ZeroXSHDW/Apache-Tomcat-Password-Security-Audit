@@ -47,9 +47,9 @@
   - PowerShell remoting enabled for remote auditing.
 - **Java**: Java 8 for Tomcat 7.0; Java 11 for 8.5, 9.0, 10.0, 10.1.
 
-### Secure Tomcat Installation (Recommended)
+### Tomcat Installation (Not Recommended for Production Environments)
 
-For automated, secure installation of Tomcat (all supported versions), use the install scripts provided in the `install/` directory. These scripts handle download, extraction, Java setup, secure user configuration, and service management for both Windows and Unix.
+For automated, installation of Tomcat (all supported versions), use the install scripts provided in the `install/` directory. These scripts handle download, extraction, Java setup, secure user configuration, and service management for both Windows and Unix.
 
 See [install/README.md](install/README.md) for full instructions and usage examples.
 
@@ -72,10 +72,6 @@ Run the Unix Bash auditing script to check compliance:
 sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
 ```
 - **Output**: Logs to `/tmp/TomcatManager.csv`.
-- **Example Command Usage:**
-```bash
-sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
-```
 - **Example Output:**
 ```
 Execution Time: 2025-06-26 14:12:11
@@ -119,10 +115,6 @@ Run the Unix Bash patching script to convert plaintext passwords to compliant ha
 sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
 ```
 - **Output**: Logs to `/tmp/TomcatManager.csv`.
-- **Example Command Usage:**
-```bash
-sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
-```
 - **Example Output:**
 ```
 2025-06-26 16:51:37,Created backup: /opt/tomcat/conf/server.xml.bak.20250626165137
@@ -152,10 +144,6 @@ Finished updating users in /opt/tomcat/conf/tomcat-users.xml
 .\src\windows\Audit\powershell\CheckTomcatConfigWin.ps1
 ```
 - **Output**: Logs to `$env:LOCALAPPDATA\Temp\TomcatManager.csv` (e.g., `C:\Users\<User>\AppData\Local\Temp`).
-- **Example Command Usage:**
-```powershell
-.\src\windows\Audit\powershell\CheckTomcatConfigWin.ps1
-```
 - **Example Output:**
 ```
 Checking Apache Tomcat configuration security...
@@ -196,10 +184,6 @@ Audit completed. Log: C:\Users\<User>\AppData\Local\Temp\TomcatManager.csv
 .\src\windows\Patch\powershell\UpdateTomcatUserWin.ps1
 ```
 - **Output**: Logs to `$env:LOCALAPPDATA\Temp\TomcatManager.csv` and console.
-- **Example Command Usage:**
-```powershell
-.\src\windows\Patch\powershell\UpdateTomcatUserWin.ps1
-```
 - **Example Output:**
 ```
 Auto-detected TomcatHome: C:\tomcat
@@ -223,15 +207,9 @@ Auto-detected TomcatHome: C:\tomcat
 
 #### Remote Audit
 ```powershell
-$cred = Get-Credential
 .\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName WIN-SERVER -Credential $cred
 ```
 - **Output**: Logs to `C:\Temp\TomcatConfigCheck.csv` on the client.
-- **Example Command Usage:**
-```powershell
-$cred = Get-Credential
-.\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName WIN-SERVER -Credential $cred
-```
 - **Example Output:**
 ```
 [Client] Starting script execution at 2025-06-18 13:35:00.
@@ -271,7 +249,9 @@ $cred = Get-Credential
 ## Example Output: Remote Tomcat User Update
 
 Below is a sample output from running the remote Tomcat user update script. This demonstrates the logging, backup, password hashing, and completion messages you should expect:
-
+```powershell
+.\Remote_UpdateTomcatUserWin.ps1 -ServerName "WIN-E6DN4M5084M" -Credential (Get-Credential)
+```
 ```powershell
 PS C:\Users\Admin\Downloads> .\Remote_UpdateTomcatUserWin.ps1 -ServerName "WIN-E6DN4M5084M" -Credential (Get-Credential)
 
@@ -355,17 +335,7 @@ Below are the command line parameters for each script. All scripts support optio
     ```powershell
     .\src\windows\Patch\powershell\UpdateTomcatUserWin.ps1 [-TomcatHome <path>] [-ServiceName <name>]
     ```
-
-- **Remote_CheckTomcatConfigWin.ps1**
-  - `-ServerName <server>` (required): One or more remote server names to audit.
-  - `-TomcatConfPath <path>` (optional): Path to Tomcat `conf` directory on the remote server.
-  - `-Credential <PSCredential>` (required): Credentials for remote connection (use `Get-Credential`).
-  - **Usage:**
-    ```powershell
-    $cred = Get-Credential
-    .\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName WIN-SERVER -Credential $cred
-    ```
-
+    
 ## Testing Framework
 
 **WARNING**: The testing framework modifies system configurations, including `server.xml` and `tomcat-users.xml`, and installs/uninstalls Tomcat instances. It is **strictly for use in test labs** to verify that the auditing and patching scripts function correctly. **Do not use on production systems**, as it may disrupt services or cause data loss. Use only in controlled lab environments.
