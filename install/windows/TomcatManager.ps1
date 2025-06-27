@@ -139,6 +139,7 @@ function Install-OpenJDK11Manual {
     Write-Log "Attempting manual installation of OpenJDK 11 from Adoptium..."
     $JDK_URL = "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.22%2B7/OpenJDK11U-jdk_x64_windows_hotspot_11.0.22_7.zip"
     $JDK_ZIP = "$env:TEMP\OpenJDK11U-jdk_x64_windows_hotspot_11.0.22_7.zip"
+    $JAVA_HOME = "C:\Program Files\Java\jdk-11"
     $TEMP_EXTRACT_PATH = "$env:TEMP\jdk-11.0.22"
 
     # Download JDK
@@ -170,98 +171,74 @@ function Install-OpenJDK11Manual {
     }
     Remove-Item $JDK_ZIP -Force
 
-    # Find the extracted versioned directory (e.g., jdk-11.0.22+7)
-    $nestedDir = Get-ChildItem -Path $TEMP_EXTRACT_PATH -Directory | Where-Object { $_.Name -like 'jdk-11*' } | Select-Object -First 1
-    if (-not $nestedDir) {
-        Write-Log "ERROR: Could not find extracted JDK directory in $TEMP_EXTRACT_PATH."
-        exit 1
-    }
-    $versionedJdkDir = Join-Path 'C:\Program Files\Java' $nestedDir.Name
-
-    # Remove versioned JDK directory if it exists
-    if (Test-Path $versionedJdkDir) {
-        Write-Log "Removing existing $versionedJdkDir before moving new files in..."
-        try {
-            Remove-Item -Path $versionedJdkDir -Recurse -Force -ErrorAction Stop
-        } catch {
-            Write-Log "ERROR: Failed to remove $versionedJdkDir. Exception: $($_.Exception.Message)"
+    # Move contents from nested jdk-11.0.22+7 to JAVA_HOME
+    Write-Log "Moving extracted files to $JAVA_HOME..."
+    try {
+        New-Item -ItemType Directory -Path $JAVA_HOME -Force | Out-Null
+        $nestedPath = Join-Path -Path $TEMP_EXTRACT_PATH -ChildPath "jdk-11.0.22+7"
+        if (Test-Path $nestedPath) {
+            Get-ChildItem -Path $nestedPath | Move-Item -Destination $JAVA_HOME -Force
+            Write-Log "Moved contents from $nestedPath to $JAVA_HOME"
+        } else {
+            Write-Log "ERROR: Expected nested directory $nestedPath not found."
             exit 1
         }
-    }
-    # Ensure destination is empty
-    if (Test-Path $versionedJdkDir) {
-        $leftovers = Get-ChildItem -Path $versionedJdkDir -Force
-        foreach ($item in $leftovers) {
-            try {
-                Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction Stop
-                Write-Log "Removed leftover item: $($item.FullName)"
-            } catch {
-                Write-Log "ERROR: Failed to remove leftover item: $($item.FullName). Exception: $($_.Exception.Message)"
-            }
-        }
-    }
-    Write-Log "Moving extracted files to $versionedJdkDir..."
-    try {
-        New-Item -ItemType Directory -Path $versionedJdkDir -Force | Out-Null
-        Get-ChildItem -Path $nestedDir.FullName | Move-Item -Destination $versionedJdkDir -Force
-        Write-Log "Moved contents from $($nestedDir.FullName) to $versionedJdkDir"
         Remove-Item -Path $TEMP_EXTRACT_PATH -Recurse -Force
     } catch {
-        Write-Log "ERROR: Failed to move files to $versionedJdkDir. Exception: $($_.Exception.Message)"
+        Write-Log "ERROR: Failed to move files to $JAVA_HOME. Exception: $($_.Exception.Message)"
         exit 1
     }
 
-    # Verify java.exe exists in versioned directory
-    $javaExeVersioned = "$versionedJdkDir\bin\java.exe"
-    if (-not (Test-Path $javaExeVersioned)) {
-        Write-Log "ERROR: java.exe not found at $javaExeVersioned after moving files. Aborting."
+    # Verify java.exe exists
+    $javaExe = "$JAVA_HOME\bin\java.exe"
+    if (-not (Test-Path $javaExe)) {
+        Write-Log "ERROR: java.exe not found at $javaExe after moving files."
         exit 1
     }
 
-    # Set JAVA_HOME environment variable to versioned directory (no symlink/junction)
-    Write-Log "Setting JAVA_HOME environment variable to $versionedJdkDir..."
-    [Environment]::SetEnvironmentVariable("JAVA_HOME", $versionedJdkDir, [EnvironmentVariableTarget]::Machine)
-    $env:JAVA_HOME = $versionedJdkDir
+    # Set JAVA_HOME environment variable
+    Write-Log "Setting JAVA_HOME environment variable..."
+    [Environment]::SetEnvironmentVariable("JAVA_HOME", $JAVA_HOME, [EnvironmentVariableTarget]::Machine)
+    $env:JAVA_HOME = $JAVA_HOME
 
     # Update PATH
     $currentPath = [Environment]::GetEnvironmentVariable("PATH", [EnvironmentVariableTarget]::Machine)
-    if ($currentPath -notlike "*$versionedJdkDir\bin*") {
-        [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$versionedJdkDir\bin", [EnvironmentVariableTarget]::Machine)
-        $env:PATH = "$env:PATH;$versionedJdkDir\bin"
+    if ($currentPath -notlike "*$JAVA_HOME\bin*") {
+        [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$JAVA_HOME\bin", [EnvironmentVariableTarget]::Machine)
+        $env:PATH = "$env:PATH;$JAVA_HOME\bin"
     }
 
     # Verify installation
-    Write-Log "Verifying Java installation at $javaExeVersioned..."
+    Write-Log "Verifying Java installation..."
     try {
-        $javaVersion = & $javaExeVersioned -version 2>&1 | ForEach-Object { $_ -replace '^.*?(openjdk version.*)$', '$1' } | Out-String
+        $javaVersion = & $javaExe -version 2>&1 | ForEach-Object { $_ -replace '^.*?(openjdk version.*)$', '$1' } | Out-String
         Write-Log "java -version output: $javaVersion"
         if ($javaVersion -notmatch "11\.") {
             Write-Log "ERROR: Installed Java version is not 11. Output: $javaVersion"
             exit 1
         }
     } catch {
-        Write-Log "ERROR: Failed to run java -version at $javaExeVersioned. Exception: $($_.Exception.Message)"
+        Write-Log "ERROR: Failed to run java -version. Exception: $($_.Exception.Message)"
         exit 1
     }
-    Write-Log "OpenJDK 11 successfully installed at $versionedJdkDir"
-    Write-Log "Final JAVA_HOME: $versionedJdkDir"
-    Write-Log "Final java.exe path: $javaExeVersioned"
-
-    # Log all Java installations in C:\Program Files\Java
-    Write-Log "Current Java installations in C:\Program Files\Java:"
-    Get-ChildItem 'C:\Program Files\Java' -Directory | ForEach-Object { Write-Log $_.FullName }
+    Write-Log "OpenJDK 11 successfully installed at $JAVA_HOME"
 }
 
 # Uninstall Java
 function Uninstall-Java {
     Write-Log "Starting Java uninstallation process..."
-    $javaDirs = Get-ChildItem 'C:\Program Files\Java' -Directory | Where-Object { $_.Name -like 'jdk-11*' -or $_.Name -like 'jdk8*' }
+    $javaDirs = @(
+        "C:\Program Files\Java\jdk-11",
+        "C:\Program Files\Java\jdk8u412-b08"
+    )
     foreach ($dir in $javaDirs) {
-        Write-Log "Removing Java directory: $($dir.FullName)"
-        try {
-            Remove-Item -Path $dir.FullName -Recurse -Force -ErrorAction Stop
-        } catch {
-            Write-Log "ERROR: Failed to remove Java directory $($dir.FullName). Exception: $($_.Exception.Message)"
+        if (Test-Path $dir) {
+            try {
+                Remove-Item -Path $dir -Recurse -Force
+                Write-Log "Removed Java directory: $dir"
+            } catch {
+                Write-Log "ERROR: Failed to remove Java directory $dir. Exception: $($_.Exception.Message)"
+            }
         }
     }
     # Remove JAVA_HOME environment variable
@@ -271,7 +248,7 @@ function Uninstall-Java {
     # Remove Java from PATH
     $currentPath = [Environment]::GetEnvironmentVariable("PATH", [EnvironmentVariableTarget]::Machine)
     $paths = $currentPath -split ";"
-    $filteredPaths = $paths | Where-Object { $_ -notmatch "Java\\jdk-11\\bin" -and $_ -notmatch "Java\\jdk8" }
+    $filteredPaths = $paths | Where-Object { $_ -notmatch "Java\\jdk-11\\bin" -and $_ -notmatch "Java\\jdk8u412-b08\\bin" }
     $newPath = ($filteredPaths -join ";").TrimEnd(';')
     [Environment]::SetEnvironmentVariable("PATH", $newPath, [EnvironmentVariableTarget]::Machine)
     $env:PATH = $newPath
