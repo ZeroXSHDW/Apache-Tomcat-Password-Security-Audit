@@ -444,6 +444,56 @@ function Restart-TomcatIfRunning {
     }
 }
 
+function Find-Java11Home {
+    $javaCandidates = @()
+    $searchRoots = @("C:\\Program Files", "C:\\Program Files (x86)")
+    foreach ($root in $searchRoots) {
+        if (Test-Path $root) {
+            $javaExes = Get-ChildItem -Path $root -Recurse -Filter java.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "bin\\java.exe$" }
+            $javaCandidates += $javaExes
+        }
+    }
+    # Also check JAVA_HOME
+    if ($env:JAVA_HOME) {
+        $javaHomeExe = Join-Path $env:JAVA_HOME 'bin\java.exe'
+        if (Test-Path $javaHomeExe) {
+            $javaCandidates += Get-Item $javaHomeExe
+        }
+    }
+    # Also check PATH
+    $env:PATH.Split(';') | ForEach-Object {
+        $possible = Join-Path $_ 'java.exe'
+        if (Test-Path $possible) {
+            $javaCandidates += Get-Item $possible
+        }
+    }
+    $best = $null
+    $bestVersion = 0
+    foreach ($java in $javaCandidates | Select-Object -Unique) {
+        try {
+            $versionOut = & $java.FullName -version 2>&1 | Select-Object -First 1
+            if ($versionOut -match 'version "(\d+)(?:\.(\d+))?') {
+                $major = [int]$matches[1]
+                if ($major -ge 11 -and $major -gt $bestVersion) {
+                    $best = $java.Directory.Parent.FullName
+                    $bestVersion = $major
+                }
+            }
+        } catch {}
+    }
+    return $best
+}
+
+$ResolvedJavaHome = $JavaHome
+if (-not $ResolvedJavaHome -or -not (Test-Path (Join-Path $ResolvedJavaHome 'bin\java.exe'))) {
+    $ResolvedJavaHome = Find-Java11Home
+}
+if (-not $ResolvedJavaHome) {
+    Write-Host "ERROR: Could not auto-detect a valid Java 11+ installation. Please specify -JavaHome."
+    exit 1
+}
+Write-Host "Using JAVA_HOME: $ResolvedJavaHome"
+
 # Main execution
 Write-Log "Starting Tomcat configuration and user update"
 Test-AdminRights
@@ -454,7 +504,7 @@ if ($Version -eq "7.0") {
     Patch-ServerXml -TomcatHome $TomcatHome -Version $Version
     $HashAlg = "SHA-256"
 } elseif ($Version -in @("8.5", "9.0", "10.0", "10.1")) {
-    $pbkdf2Supported = Test-PBKDF2Support -TomcatHome $TomcatHome -JavaHome $JavaHome
+    $pbkdf2Supported = Test-PBKDF2Support -TomcatHome $TomcatHome -JavaHome $ResolvedJavaHome
     if (-not $pbkdf2Supported) {
         Write-Log "ERROR: PBKDF2WithHmacSHA512 is not available in your Java runtime. Please upgrade Java to at least 8u161 or 11+ with PBKDF2 support. Cannot update user passwords to compliance. Exiting." "ERROR"
         exit 1

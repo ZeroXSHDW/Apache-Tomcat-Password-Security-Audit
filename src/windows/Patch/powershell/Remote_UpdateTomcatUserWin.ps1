@@ -11,34 +11,43 @@ param (
 
 # Java autodetection logic
 function Find-Java11Home {
-    $candidates = @(
-        "C:\\Program Files\\AdoptOpenJDK\\jdk-11.*",
-        "C:\\Program Files\\Eclipse Foundation\\jdk-11.*",
-        "C:\\Program Files\\Zulu\\zulu-11*",
-        "C:\\Program Files\\Amazon Corretto\\jdk11*",
-        "C:\\Program Files\\Java\\jdk-11*",
-        "C:\\Program Files\\OpenJDK\\jdk-11*",
-        "C:\\Program Files\\RedHat\\java-11*",
-        "C:\\Program Files\\Microsoft\\jdk-11*",
-        "C:\\Program Files\\BellSoft\\LibericaJDK-11*",
-        "C:\\Program Files\\Temurin\\jdk-11*"
-    )
-    foreach ($pattern in $candidates) {
-        $dirs = Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue
-        foreach ($dir in $dirs) {
-            $javaExe = Join-Path $dir.FullName "bin\java.exe"
-            if (Test-Path $javaExe) {
-                $versionOut = & $javaExe -version 2>&1 | Select-Object -First 1
-                if ($versionOut -match 'version "(\d+)[.]') {
-                    $major = [int]$matches[1]
-                    if ($major -ge 11) {
-                        return $dir.FullName
-                    }
-                }
-            }
+    $javaCandidates = @()
+    $searchRoots = @("C:\\Program Files", "C:\\Program Files (x86)")
+    foreach ($root in $searchRoots) {
+        if (Test-Path $root) {
+            $javaExes = Get-ChildItem -Path $root -Recurse -Filter java.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "bin\\java.exe$" }
+            $javaCandidates += $javaExes
         }
     }
-    return $null
+    # Also check JAVA_HOME
+    if ($env:JAVA_HOME) {
+        $javaHomeExe = Join-Path $env:JAVA_HOME 'bin\java.exe'
+        if (Test-Path $javaHomeExe) {
+            $javaCandidates += Get-Item $javaHomeExe
+        }
+    }
+    # Also check PATH
+    $env:PATH.Split(';') | ForEach-Object {
+        $possible = Join-Path $_ 'java.exe'
+        if (Test-Path $possible) {
+            $javaCandidates += Get-Item $possible
+        }
+    }
+    $best = $null
+    $bestVersion = 0
+    foreach ($java in $javaCandidates | Select-Object -Unique) {
+        try {
+            $versionOut = & $java.FullName -version 2>&1 | Select-Object -First 1
+            if ($versionOut -match 'version "(\d+)(?:\.(\d+))?') {
+                $major = [int]$matches[1]
+                if ($major -ge 11 -and $major -gt $bestVersion) {
+                    $best = $java.Directory.Parent.FullName
+                    $bestVersion = $major
+                }
+            }
+        } catch {}
+    }
+    return $best
 }
 
 $ResolvedJavaHome = $JavaHome
