@@ -19,8 +19,40 @@ foreach ($server in $uniqueServers) {
 if (-not $TomcatHome -or -not (Test-Path $TomcatHome)) {
     $candidates = @(
         "C:\\tomcat",
-        "C:\\Program Files\\Apache Software Foundation\\Tomcat\\apache-tomcat-10.1.42"
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat\\apache-tomcat-10.1.42",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat 7.0",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat 8.0",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat 8.5",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat 9.0",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat 10.0",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat 10.1",
+        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 7.0",
+        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 8.0",
+        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 8.5",
+        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 9.0",
+        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 10.0",
+        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 10.1",
+        "C:\\Tomcat",
+        "C:\\Tomcat7",
+        "C:\\Tomcat8",
+        "C:\\Tomcat9",
+        "C:\\Tomcat10",
+        "C:\\Apache\\Tomcat",
+        "C:\\Apache\\Tomcat7",
+        "C:\\Apache\\Tomcat8",
+        "C:\\Apache\\Tomcat9",
+        "C:\\Apache\\Tomcat10"
     )
+    # Dynamically add all subdirectories under C:\Program Files\Apache Software Foundation\
+    $tomcatRoot = "C:\\Program Files\\Apache Software Foundation"
+    if (Test-Path $tomcatRoot) {
+        $subDirs = Get-ChildItem -Path $tomcatRoot -Directory -ErrorAction SilentlyContinue
+        foreach ($dir in $subDirs) {
+            if ($dir.Name -like "tomcat*") {
+                $candidates += $dir.FullName
+            }
+        }
+    }
     $found = $false
     foreach ($cand in $candidates) {
         if (Test-Path $cand) {
