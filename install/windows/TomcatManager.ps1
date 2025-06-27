@@ -188,35 +188,43 @@ function Install-OpenJDK11Manual {
         exit 1
     }
 
-    # Create or update symlink at C:\Program Files\Java\jdk-11
+    # Create or update symlink/junction at C:\Program Files\Java\jdk-11
     $symlinkPath = 'C:\Program Files\Java\jdk-11'
+    $useSymlink = $true
     if (Test-Path $symlinkPath) {
         try {
             Remove-Item $symlinkPath -Force
         } catch {}
     }
     try {
-        cmd /c "mklink /D \"$symlinkPath\" \"$versionedJdkDir\"" | Out-Null
-        Write-Log "Created symlink $symlinkPath -> $versionedJdkDir"
+        # Use junction for best compatibility
+        cmd /c "mklink /J \"$symlinkPath\" \"$versionedJdkDir\"" | Out-Null
+        Write-Log "Created junction $symlinkPath -> $versionedJdkDir"
     } catch {
-        Write-Log "ERROR: Failed to create symlink $symlinkPath -> $versionedJdkDir. Exception: $($_.Exception.Message)"
-        exit 1
+        Write-Log "ERROR: Failed to create junction $symlinkPath -> $versionedJdkDir. Exception: $($_.Exception.Message)"
+        $useSymlink = $false
     }
 
-    # Set JAVA_HOME environment variable to symlink
-    Write-Log "Setting JAVA_HOME environment variable to $symlinkPath..."
-    [Environment]::SetEnvironmentVariable("JAVA_HOME", $symlinkPath, [EnvironmentVariableTarget]::Machine)
-    $env:JAVA_HOME = $symlinkPath
+    # Set JAVA_HOME environment variable to symlink/junction or fallback
+    $javaHomePath = $symlinkPath
+    $javaExe = "$javaHomePath\bin\java.exe"
+    if (-not (Test-Path $javaExe)) {
+        Write-Log "WARNING: $javaExe not found after creating junction. Falling back to versioned directory."
+        $javaHomePath = $versionedJdkDir
+        $javaExe = "$javaHomePath\bin\java.exe"
+    }
+    Write-Log "Setting JAVA_HOME environment variable to $javaHomePath..."
+    [Environment]::SetEnvironmentVariable("JAVA_HOME", $javaHomePath, [EnvironmentVariableTarget]::Machine)
+    $env:JAVA_HOME = $javaHomePath
 
     # Update PATH
     $currentPath = [Environment]::GetEnvironmentVariable("PATH", [EnvironmentVariableTarget]::Machine)
-    if ($currentPath -notlike "*$symlinkPath\bin*") {
-        [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$symlinkPath\bin", [EnvironmentVariableTarget]::Machine)
-        $env:PATH = "$env:PATH;$symlinkPath\bin"
+    if ($currentPath -notlike "*$javaHomePath\bin*") {
+        [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$javaHomePath\bin", [EnvironmentVariableTarget]::Machine)
+        $env:PATH = "$env:PATH;$javaHomePath\bin"
     }
 
     # Verify installation
-    $javaExe = "$symlinkPath\bin\java.exe"
     Write-Log "Verifying Java installation at $javaExe..."
     try {
         $javaVersion = & $javaExe -version 2>&1 | ForEach-Object { $_ -replace '^.*?(openjdk version.*)$', '$1' } | Out-String
@@ -226,10 +234,10 @@ function Install-OpenJDK11Manual {
             exit 1
         }
     } catch {
-        Write-Log "ERROR: Failed to run java -version. Exception: $($_.Exception.Message)"
+        Write-Log "ERROR: Failed to run java -version at $javaExe. Exception: $($_.Exception.Message)"
         exit 1
     }
-    Write-Log "OpenJDK 11 successfully installed at $versionedJdkDir and symlinked at $symlinkPath"
+    Write-Log "OpenJDK 11 successfully installed at $versionedJdkDir and linked at $symlinkPath (or fallback used)"
 
     # Log all Java installations in C:\Program Files\Java
     Write-Log "Current Java installations in C:\Program Files\Java:"
