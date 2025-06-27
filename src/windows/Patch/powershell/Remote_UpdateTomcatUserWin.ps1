@@ -14,7 +14,9 @@ foreach ($server in $uniqueServers) {
     try {
         $result = Invoke-Command -ComputerName $server -Credential $Credential -ScriptBlock {
             param($TomcatHome, $ServiceName)
-            Write-Host "[Remote] Script started"
+            $log = @()
+            function Log { param($msg) $log += $msg }
+            Log "[Remote] Script started"
             try {
                 # --- Begin robust remote Java detection ---
                 function Find-Java11Home {
@@ -22,15 +24,15 @@ foreach ($server in $uniqueServers) {
                     $bestVersion = 0
                     $bestJdk = $null
                     if (Test-Path 'C:\Program Files\Java') {
-                        Write-Host "[Remote] Enumerating subdirectories in C:\Program Files\Java:"
+                        Log "[Remote] Enumerating subdirectories in C:\Program Files\Java:"
                         $subdirs = Get-ChildItem 'C:\Program Files\Java' -Directory
                         foreach ($dir in $subdirs) {
                             $javaExe = Join-Path $dir.FullName 'bin\java.exe'
                             if (Test-Path $javaExe) {
                                 if ($dir.Name -like 'jre*') {
-                                    Write-Host "[Remote] Found Java in $($dir.FullName) but it is a JRE, skipping."
+                                    Log "[Remote] Found Java in $($dir.FullName) but it is a JRE, skipping."
                                 } elseif ($dir.Name -like 'jdk-11*') {
-                                    Write-Host "[Remote] Found Java in $($dir.FullName) (versioned JDK 11+), adding as candidate."
+                                    Log "[Remote] Found Java in $($dir.FullName) (versioned JDK 11+), adding as candidate."
                                     $javaCandidates += ,(Get-Item $javaExe)
                                     if ($dir.Name -match 'jdk-11[.](\d+)[.](\d+)') {
                                         $ver = [int]$matches[1]
@@ -42,19 +44,19 @@ foreach ($server in $uniqueServers) {
                                         if (-not $bestJdk) { $bestJdk = $dir.FullName }
                                     }
                                 } else {
-                                    Write-Host "[Remote] Found Java in $($dir.FullName) (other JDK), adding as candidate."
+                                    Log "[Remote] Found Java in $($dir.FullName) (other JDK), adding as candidate."
                                     $javaCandidates += ,(Get-Item $javaExe)
                                 }
                             } else {
-                                Write-Host "[Remote] No java.exe in $($dir.FullName)"
+                                Log "[Remote] No java.exe in $($dir.FullName)"
                             }
                         }
                         if ($bestJdk) {
-                            Write-Host "[Remote] Selected best versioned JDK: $bestJdk"
+                            Log "[Remote] Selected best versioned JDK: $bestJdk"
                             return $bestJdk
                         }
                     } else {
-                        Write-Host "[Remote] C:\Program Files\Java does not exist."
+                        Log "[Remote] C:\Program Files\Java does not exist."
                     }
                     # Also check JAVA_HOME
                     if ($env:JAVA_HOME) {
@@ -62,22 +64,23 @@ foreach ($server in $uniqueServers) {
                         if (Test-Path $javaHomeExe) {
                             $parentDir = Split-Path (Split-Path $javaHomeExe -Parent) -Parent | Split-Path -Leaf
                             if ($parentDir -like 'jre*') {
-                                Write-Host "[Remote] Found JAVA_HOME candidate: $javaHomeExe but it is a JRE, skipping."
+                                Log "[Remote] Found JAVA_HOME candidate: $javaHomeExe but it is a JRE, skipping."
                             } else {
-                                Write-Host "[Remote] Found JAVA_HOME candidate: $javaHomeExe"
+                                Log "[Remote] Found JAVA_HOME candidate: $javaHomeExe"
                                 return $env:JAVA_HOME
                             }
                         }
                     }
-                    Write-Host "[Remote] No valid JDK 11+ found. Only JREs or older versions detected."
+                    Log "[Remote] No valid JDK 11+ found. Only JREs or older versions detected."
                     return $null
                 }
                 $ResolvedJavaHome = Find-Java11Home
                 if (-not $ResolvedJavaHome) {
-                    Write-Host "[Remote] ERROR: Could not auto-detect a valid Java 11+ installation. Please install Java 11+ and try again."
+                    Log "[Remote] ERROR: Could not auto-detect a valid Java 11+ installation. Please install Java 11+ and try again."
+                    $log | Write-Output
                     exit 1
                 }
-                Write-Host "[Remote] Using JAVA_HOME: $ResolvedJavaHome"
+                Log "[Remote] Using JAVA_HOME: $ResolvedJavaHome"
                 # --- End robust remote Java detection ---
 
                 # --- Begin exact copy of UpdateTomcatUserWin.ps1 main logic ---
@@ -138,7 +141,7 @@ foreach ($server in $uniqueServers) {
                                 } elseif ($path -match "Tomcat\s*(\d+\.\d+)") {
                                     $version = $matches[1]
                                 }
-                                Write-Host "Found Tomcat configuration at: $path"
+                                Log "Found Tomcat configuration at: $path"
                                 return @{ Path = $path; Version = $version }
                             }
                         }
@@ -152,9 +155,9 @@ foreach ($server in $uniqueServers) {
                     if ($tomcatInfo) {
                         $TomcatHome = Split-Path $tomcatInfo.Path
                         $TomcatVersion = $tomcatInfo.Version
-                        Write-Host "Auto-detected TomcatHome: $TomcatHome"
+                        Log "Auto-detected TomcatHome: $TomcatHome"
                     } else {
-                        Write-Host "ERROR: Could not auto-detect Tomcat installation. Please specify -TomcatHome."
+                        Log "ERROR: Could not auto-detect Tomcat installation. Please specify -TomcatHome."
                         exit 1
                     }
                 } else {
@@ -164,7 +167,7 @@ foreach ($server in $uniqueServers) {
                 function Write-Log {
                     param($Message, $Level = "INFO")
                     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                    Write-Host "$timestamp - $Level - $Message"
+                    Log "$timestamp - $Level - $Message"
                 }
 
                 try {
@@ -542,10 +545,11 @@ foreach ($server in $uniqueServers) {
                 Write-Log "Configuration update completed successfully"
                 # --- End exact copy ---
 
-                Write-Host "[Remote] Script completed"
+                Log "[Remote] Script completed"
             } catch {
-                Write-Host "[Remote] ERROR in remote block: $_"
+                Log "[Remote] ERROR in remote block: $_"
             }
+            $log | Write-Output
         } -ArgumentList $TomcatHome, $ServiceName
         Write-Host "[Local] Remote update completed for $server. Output:"
         $result | ForEach-Object { Write-Host $_ }
