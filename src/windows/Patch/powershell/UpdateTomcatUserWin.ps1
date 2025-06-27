@@ -6,25 +6,84 @@ param(
     [string]$ServiceName = "Tomcat101"
 )
 
-# Auto-detect TomcatHome if not provided or does not exist
-if (-not $TomcatHome -or -not (Test-Path $TomcatHome)) {
-    $candidates = @(
-        "C:\\tomcat",
-        "C:\\Program Files\\Apache Software Foundation\\Tomcat\\apache-tomcat-10.1.42"
+function Get-TomcatConfigPath {
+    $possiblePaths = @(
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat 7.0\\conf",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat 8.0\\conf",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat 8.5\\conf",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat 9.0\\conf",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat 10.0\\conf",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat 10.1\\conf",
+        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 7.0\\conf",
+        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 8.0\\conf",
+        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 8.5\\conf",
+        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 9.0\\conf",
+        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 10.0\\conf",
+        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 10.1\\conf",
+        "C:\\Tomcat\\conf",
+        "C:\\Tomcat7\\conf",
+        "C:\\Tomcat8\\conf",
+        "C:\\Tomcat9\\conf",
+        "C:\\Tomcat10\\conf",
+        "C:\\Apache\\Tomcat\\conf",
+        "C:\\Apache\\Tomcat7\\conf",
+        "C:\\Apache\\Tomcat8\\conf",
+        "C:\\Apache\\Tomcat9\\conf",
+        "C:\\Apache\\Tomcat10\\conf",
+        "D:\\Program Files\\Apache Software Foundation\\Tomcat 7.0\\conf",
+        "D:\\Program Files\\Apache Software Foundation\\Tomcat 8.5\\conf",
+        "D:\\Program Files\\Apache Software Foundation\\Tomcat 9.0\\conf",
+        "D:\\Program Files\\Apache Software Foundation\\Tomcat 10.0\\conf",
+        "D:\\Program Files\\Apache Software Foundation\\Tomcat 10.1\\conf",
+        "D:\\Tomcat\\conf",
+        "E:\\Program Files\\Apache Software Foundation\\Tomcat 7.0\\conf",
+        "E:\\Program Files\\Apache Software Foundation\\Tomcat 8.5\\conf",
+        "E:\\Program Files\\Apache Software Foundation\\Tomcat 9.0\\conf",
+        "E:\\Program Files\\Apache Software Foundation\\Tomcat 10.0\\conf",
+        "E:\\Program Files\\Apache Software Foundation\\Tomcat 10.1\\conf",
+        "E:\\Tomcat\\conf"
     )
-    $found = $false
-    foreach ($cand in $candidates) {
-        if (Test-Path $cand) {
-            $TomcatHome = $cand
-            $found = $true
-            Write-Host "Auto-detected TomcatHome: $TomcatHome"
-            break
+    $tomcatRoot = "C:\\Program Files\\Apache Software Foundation\\Tomcat"
+    if (Test-Path $tomcatRoot) {
+        $subDirs = Get-ChildItem -Path $tomcatRoot -Directory -ErrorAction SilentlyContinue
+        foreach ($dir in $subDirs) {
+            $confPath = Join-Path $dir.FullName "conf"
+            if (Test-Path (Join-Path $confPath "server.xml")) {
+                $possiblePaths += $confPath
+            }
         }
     }
-    if (-not $found) {
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            $serverXml = Join-Path $path "server.xml"
+            if (Test-Path $serverXml) {
+                $version = "Unknown"
+                if ($path -match "apache-tomcat-(\d+\.\d+)(?:\.\d+)?") {
+                    $version = $matches[1]
+                } elseif ($path -match "Tomcat\s*(\d+\.\d+)") {
+                    $version = $matches[1]
+                }
+                Write-Host "Found Tomcat configuration at: $path"
+                return @{ Path = $path; Version = $version }
+            }
+        }
+    }
+    return $null
+}
+
+# Use the function to set TomcatHome and version
+$tomcatInfo = Get-TomcatConfigPath
+if (-not $TomcatHome -or -not (Test-Path $TomcatHome)) {
+    if ($tomcatInfo) {
+        $TomcatHome = Split-Path $tomcatInfo.Path
+        $TomcatVersion = $tomcatInfo.Version
+        Write-Host "Auto-detected TomcatHome: $TomcatHome"
+    } else {
         Write-Host "ERROR: Could not auto-detect Tomcat installation. Please specify -TomcatHome."
         exit 1
     }
+} else {
+    $TomcatVersion = $null
 }
 
 function Write-Log {
