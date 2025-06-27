@@ -45,7 +45,7 @@ foreach ($server in $ServerName | Select-Object -Unique) {
             if (-not $ResolvedJavaHome -or [string]::IsNullOrWhiteSpace($ResolvedJavaHome)) {
                 Log "[Remote] ERROR: Could not auto-detect a valid Java installation. Please install Java 11+ and try again."
                 $log | Write-Output
-                exit 1
+                return
             }
             $env:JAVA_HOME = $ResolvedJavaHome
             $env:PATH = "$ResolvedJavaHome\bin;" + $env:PATH
@@ -55,6 +55,10 @@ foreach ($server in $ServerName | Select-Object -Unique) {
             # --- Begin main logic from UpdateTomcatUserWin.ps1 ---
             function Backup-ConfigFile {
                 param($FilePath)
+                if (-not $FilePath -or [string]::IsNullOrWhiteSpace($FilePath)) {
+                    Write-Log "ERROR: FilePath is null or empty in Backup-ConfigFile." "ERROR"
+                    return $null
+                }
                 try {
                     $backupPath = "$FilePath.bak.$(Get-Date -Format 'yyyyMMddHHmmss')"
                     Copy-Item -Path $FilePath -Destination $backupPath -Force
@@ -67,6 +71,10 @@ foreach ($server in $ServerName | Select-Object -Unique) {
             }
             function Get-TomcatVersion {
                 param([string]$TomcatHome)
+                if (-not $TomcatHome -or [string]::IsNullOrWhiteSpace($TomcatHome)) {
+                    Write-Log "ERROR: TomcatHome is null or empty in Get-TomcatVersion." "ERROR"
+                    return $null
+                }
                 $versionFile = Join-Path $TomcatHome "RELEASE-NOTES"
                 $version = $null
                 if (Test-Path $versionFile) {
@@ -81,14 +89,18 @@ foreach ($server in $ServerName | Select-Object -Unique) {
                     return $version
                 } else {
                     Write-Log "ERROR: Could not determine Tomcat version at $TomcatHome. Exiting." "ERROR"
-                    exit 1
+                    return $null
                 }
             }
             function Ensure-SetenvBat {
                 param([string]$TomcatHome)
+                if (-not $TomcatHome -or [string]::IsNullOrWhiteSpace($TomcatHome)) {
+                    Write-Log "ERROR: TomcatHome is null or empty in Ensure-SetenvBat." "ERROR"
+                    return $null
+                }
                 if (-not (Test-Path $TomcatHome)) {
                     Write-Log "ERROR: Tomcat home directory $TomcatHome does not exist. Cannot create setenv.bat." "ERROR"
-                    exit 1
+                    return $null
                 }
                 $binDir = Join-Path $TomcatHome "bin"
                 if (-not (Test-Path $binDir)) {
@@ -111,6 +123,10 @@ foreach ($server in $ServerName | Select-Object -Unique) {
             }
             function Test-PBKDF2Support {
                 param([string]$TomcatHome)
+                if (-not $TomcatHome -or [string]::IsNullOrWhiteSpace($TomcatHome)) {
+                    Write-Log "ERROR: TomcatHome is null or empty in Test-PBKDF2Support." "ERROR"
+                    return $false
+                }
                 Ensure-SetenvBat -TomcatHome $TomcatHome
                 $digestScript = Join-Path $TomcatHome "bin\digest.bat"
                 $testPassword = "TestPassword123!"
@@ -132,6 +148,10 @@ foreach ($server in $ServerName | Select-Object -Unique) {
             }
             function Patch-ServerXml {
                 param([string]$TomcatHome, [string]$Version)
+                if (-not $TomcatHome -or [string]::IsNullOrWhiteSpace($TomcatHome)) {
+                    Write-Log "ERROR: TomcatHome is null or empty in Patch-ServerXml." "ERROR"
+                    return $false
+                }
                 $serverXmlPath = Join-Path $TomcatHome "conf\server.xml"
                 if (-not (Test-Path $serverXmlPath)) {
                     Write-Log "server.xml not found at $serverXmlPath" "ERROR"
@@ -163,6 +183,10 @@ foreach ($server in $ServerName | Select-Object -Unique) {
             }
             function Get-PasswordHash {
                 param([string]$TomcatBin, [string]$Password, [string]$Version, [string]$TomcatHome)
+                if (-not $TomcatHome -or [string]::IsNullOrWhiteSpace($TomcatHome)) {
+                    Write-Log "ERROR: TomcatHome is null or empty in Get-PasswordHash." "ERROR"
+                    return $null
+                }
                 Ensure-SetenvBat -TomcatHome $TomcatHome
                 $digestScript = Join-Path $TomcatBin "digest.bat"
                 if (-not (Test-Path $digestScript)) {
