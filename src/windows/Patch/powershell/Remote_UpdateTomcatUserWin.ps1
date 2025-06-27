@@ -17,6 +17,7 @@ foreach ($server in $ServerName | Select-Object -Unique) {
             function Log { param($msg) $log += $msg }
             function Write-Log { param($Message, $Level = "INFO") $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; Log "$timestamp - $Level - $Message" }
 
+            Log "[Remote] Script block started"
             # --- Robust Java detection ---
             function Find-JavaHome {
                 $candidates = @()
@@ -379,7 +380,9 @@ foreach ($server in $ServerName | Select-Object -Unique) {
             $updated = Update-AllUserPasswords -TomcatHome $TomcatHome -Version $Version
             Restart-TomcatIfRunning -ServiceName $ServiceName -TomcatHome $TomcatHome | Out-Null
             Write-Log "Configuration update completed successfully"
+            Log "[Remote] Script block ended"
             $log | Write-Output
+            return
         } -ArgumentList $TomcatHome, $ServiceName
         Write-Host "[Local] Remote update completed for $server. Output:"
         $result | ForEach-Object { Write-Host $_ }
