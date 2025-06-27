@@ -3,88 +3,28 @@
 
 param(
     [string]$TomcatHome = $null,
-    [string]$ServiceName = "Tomcat101",
-    [string]$JavaHome = "C:\\Program Files\\AdoptOpenJDK\\jdk-11.0.22.7-hotspot"
+    [string]$ServiceName = "Tomcat101"
 )
 
-function Get-TomcatConfigPath {
-    $possiblePaths = @(
-        "C:\\Program Files\\Apache Software Foundation\\Tomcat 7.0\\conf",
-        "C:\\Program Files\\Apache Software Foundation\\Tomcat 8.0\\conf",
-        "C:\\Program Files\\Apache Software Foundation\\Tomcat 8.5\\conf",
-        "C:\\Program Files\\Apache Software Foundation\\Tomcat 9.0\\conf",
-        "C:\\Program Files\\Apache Software Foundation\\Tomcat 10.0\\conf",
-        "C:\\Program Files\\Apache Software Foundation\\Tomcat 10.1\\conf",
-        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 7.0\\conf",
-        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 8.0\\conf",
-        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 8.5\\conf",
-        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 9.0\\conf",
-        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 10.0\\conf",
-        "C:\\Program Files (x86)\\Apache Software Foundation\\Tomcat 10.1\\conf",
-        "C:\\Tomcat\\conf",
-        "C:\\Tomcat7\\conf",
-        "C:\\Tomcat8\\conf",
-        "C:\\Tomcat9\\conf",
-        "C:\\Tomcat10\\conf",
-        "C:\\Apache\\Tomcat\\conf",
-        "C:\\Apache\\Tomcat7\\conf",
-        "C:\\Apache\\Tomcat8\\conf",
-        "C:\\Apache\\Tomcat9\\conf",
-        "C:\\Apache\\Tomcat10\\conf",
-        "D:\\Program Files\\Apache Software Foundation\\Tomcat 7.0\\conf",
-        "D:\\Program Files\\Apache Software Foundation\\Tomcat 8.5\\conf",
-        "D:\\Program Files\\Apache Software Foundation\\Tomcat 9.0\\conf",
-        "D:\\Program Files\\Apache Software Foundation\\Tomcat 10.0\\conf",
-        "D:\\Program Files\\Apache Software Foundation\\Tomcat 10.1\\conf",
-        "D:\\Tomcat\\conf",
-        "E:\\Program Files\\Apache Software Foundation\\Tomcat 7.0\\conf",
-        "E:\\Program Files\\Apache Software Foundation\\Tomcat 8.5\\conf",
-        "E:\\Program Files\\Apache Software Foundation\\Tomcat 9.0\\conf",
-        "E:\\Program Files\\Apache Software Foundation\\Tomcat 10.0\\conf",
-        "E:\\Program Files\\Apache Software Foundation\\Tomcat 10.1\\conf",
-        "E:\\Tomcat\\conf"
-    )
-    $tomcatRoot = "C:\\Program Files\\Apache Software Foundation\\Tomcat"
-    if (Test-Path $tomcatRoot) {
-        $subDirs = Get-ChildItem -Path $tomcatRoot -Directory -ErrorAction SilentlyContinue
-        foreach ($dir in $subDirs) {
-            $confPath = Join-Path $dir.FullName "conf"
-            if (Test-Path (Join-Path $confPath "server.xml")) {
-                $possiblePaths += $confPath
-            }
-        }
-    }
-    foreach ($path in $possiblePaths) {
-        if (Test-Path $path) {
-            $serverXml = Join-Path $path "server.xml"
-            if (Test-Path $serverXml) {
-                $version = "Unknown"
-                if ($path -match "apache-tomcat-(\d+\.\d+)(?:\.\d+)?") {
-                    $version = $matches[1]
-                } elseif ($path -match "Tomcat\s*(\d+\.\d+)") {
-                    $version = $matches[1]
-                }
-                Write-Host "Found Tomcat configuration at: $path"
-                return @{ Path = $path; Version = $version }
-            }
-        }
-    }
-    return $null
-}
-
-# Use the function to set TomcatHome and version
-$tomcatInfo = Get-TomcatConfigPath
+# Auto-detect TomcatHome if not provided or does not exist
 if (-not $TomcatHome -or -not (Test-Path $TomcatHome)) {
-    if ($tomcatInfo) {
-        $TomcatHome = Split-Path $tomcatInfo.Path
-        $TomcatVersion = $tomcatInfo.Version
-        Write-Host "Auto-detected TomcatHome: $TomcatHome"
-    } else {
+    $candidates = @(
+        "C:\\tomcat",
+        "C:\\Program Files\\Apache Software Foundation\\Tomcat\\apache-tomcat-10.1.42"
+    )
+    $found = $false
+    foreach ($cand in $candidates) {
+        if (Test-Path $cand) {
+            $TomcatHome = $cand
+            $found = $true
+            Write-Host "Auto-detected TomcatHome: $TomcatHome"
+            break
+        }
+    }
+    if (-not $found) {
         Write-Host "ERROR: Could not auto-detect Tomcat installation. Please specify -TomcatHome."
         exit 1
     }
-} else {
-    $TomcatVersion = $null
 }
 
 function Write-Log {
@@ -179,7 +119,7 @@ function Ensure-SetenvBat {
 }
 
 function Test-PBKDF2Support {
-    param([string]$TomcatHome, [string]$JavaHome)
+    param([string]$TomcatHome)
     Ensure-SetenvBat -TomcatHome $TomcatHome
     $digestScript = Join-Path $TomcatHome "bin\digest.bat"
     $testPassword = "TestPassword123!"
@@ -191,7 +131,6 @@ function Test-PBKDF2Support {
         $startInfo.WorkingDirectory = (Split-Path $digestScript)
         $startInfo.UseShellExecute = $false
         $startInfo.RedirectStandardOutput = $true
-        $startInfo.EnvironmentVariables["JAVA_HOME"] = $JavaHome
         $process = [System.Diagnostics.Process]::Start($startInfo)
         $output = $process.StandardOutput.ReadToEnd()
         $process.WaitForExit()
@@ -253,8 +192,7 @@ function Get-PasswordHash {
         [string]$TomcatBin,
         [string]$Password,
         [string]$Version,
-        [string]$TomcatHome,
-        [string]$JavaHome
+        [string]$TomcatHome
     )
     Ensure-SetenvBat -TomcatHome $TomcatHome
     $digestScript = Join-Path $TomcatBin "digest.bat"
@@ -287,7 +225,6 @@ function Get-PasswordHash {
         $startInfo.WorkingDirectory = (Split-Path $digestScript)
         $startInfo.UseShellExecute = $false
         $startInfo.RedirectStandardOutput = $true
-        $startInfo.EnvironmentVariables["JAVA_HOME"] = $JavaHome
         $process = [System.Diagnostics.Process]::Start($startInfo)
         $digestRaw = $process.StandardOutput.ReadToEnd()
         $process.WaitForExit()
@@ -297,6 +234,7 @@ function Get-PasswordHash {
             Write-Log "WARNING: digest.bat output indicates MessageDigestCredentialHandler or missing PBKDF2 support. Check your Tomcat and Java versions!" "ERROR"
         }
         if ($Version -in @("8.5", "9.0", "10.0", "10.1")) {
+            # Accept Tomcat 9+ PBKDF2 format: password:salt$iterations$hash or password:salt$iterations$salt$hash
             if ($digestRaw -match "^.+:[0-9a-fA-F]+\$[0-9]+\$[0-9a-fA-F]+(\$[0-9a-fA-F]+)?$") {
                 $hash = $digestRaw
                 return $hash
@@ -346,7 +284,7 @@ function Update-AllUserPasswords {
             continue
         }
         Write-Log "Hashing plaintext password for user $username using Tomcat $Version"
-        $hash = Get-PasswordHash -TomcatBin $binPath -Password $password -Version $Version -TomcatHome $TomcatHome -JavaHome $JavaHome
+        $hash = Get-PasswordHash -TomcatBin $binPath -Password $password -Version $Version -TomcatHome $TomcatHome
         if ($hash -and $hash -ne $password) {
             $user.SetAttribute("password", $hash)
             $updated = $true
@@ -444,115 +382,6 @@ function Restart-TomcatIfRunning {
     }
 }
 
-function Find-Java11Home {
-    $javaCandidates = @()
-    # 1. Explicit check for C:\Program Files\Java\jdk-11\bin\java.exe
-    $explicit = 'C:\Program Files\Java\jdk-11\bin\java.exe'
-    if (Test-Path $explicit) {
-        Write-Host "Explicitly found Java at $explicit"
-        return 'C:\Program Files\Java\jdk-11'
-    } else {
-        Write-Host "Did not find Java at $explicit"
-        if (Test-Path 'C:\Program Files\Java') {
-            Write-Host "Enumerating subdirectories in C:\Program Files\Java:"
-            $subdirs = Get-ChildItem 'C:\Program Files\Java' -Directory
-            foreach ($dir in $subdirs) {
-                $javaExe = Join-Path $dir.FullName 'bin\java.exe'
-                if (Test-Path $javaExe) {
-                    if ($dir.Name -like 'jre*') {
-                        Write-Host "Found Java in $($dir.FullName) but it is a JRE, skipping."
-                    } else {
-                        Write-Host "Found Java in $($dir.FullName)"
-                        $javaCandidates += ,(Get-Item $javaExe)
-                    }
-                } else {
-                    Write-Host "No java.exe in $($dir.FullName)"
-                }
-            }
-        } else {
-            Write-Host "C:\Program Files\Java does not exist."
-        }
-    }
-    # 2. Continue with previous search logic
-    $searchRoots = @(
-        "C:\\Program Files\\Java",
-        "C:\\tomcat\\jdk-11",
-        "C:\\Program Files",
-        "C:\\Program Files (x86)"
-    )
-    foreach ($root in $searchRoots) {
-        if (Test-Path $root) {
-            $javaExes = Get-ChildItem -Path $root -Recurse -Filter java.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "bin\\java.exe$" }
-            foreach ($exe in $javaExes) {
-                $parentDir = Split-Path $exe.Directory.Parent.FullName -Leaf
-                if ($parentDir -like 'jre*') {
-                    Write-Host "Found Java candidate: $($exe.FullName) but it is a JRE, skipping."
-                } else {
-                    Write-Host "Found Java candidate: $($exe.FullName)"
-                    $javaCandidates += ,$exe
-                }
-            }
-        }
-    }
-    # Also check JAVA_HOME
-    if ($env:JAVA_HOME) {
-        $javaHomeExe = Join-Path $env:JAVA_HOME 'bin\java.exe'
-        if (Test-Path $javaHomeExe) {
-            $parentDir = Split-Path (Split-Path $javaHomeExe -Parent) -Parent | Split-Path -Leaf
-            if ($parentDir -like 'jre*') {
-                Write-Host "Found JAVA_HOME candidate: $javaHomeExe but it is a JRE, skipping."
-            } else {
-                Write-Host "Found JAVA_HOME candidate: $javaHomeExe"
-                $javaCandidates += ,(Get-Item $javaHomeExe)
-            }
-        }
-    }
-    # Also check PATH
-    $env:PATH.Split(';') | ForEach-Object {
-        $possible = Join-Path $_ 'java.exe'
-        if (Test-Path $possible) {
-            $parentDir = Split-Path (Split-Path $possible -Parent) -Parent | Split-Path -Leaf
-            if ($parentDir -like 'jre*') {
-                Write-Host "Found PATH candidate: $possible but it is a JRE, skipping."
-            } else {
-                Write-Host "Found PATH candidate: $possible"
-                $javaCandidates += ,(Get-Item $possible)
-            }
-        }
-    }
-    $best = $null
-    $bestVersion = 0
-    foreach ($java in $javaCandidates | Select-Object -Unique) {
-        try {
-            $versionOut = & $java.FullName -version 2>&1 | Select-Object -First 1
-            if ($versionOut -match 'version "(\d+)(?:\.(\d+))?') {
-                $major = [int]$matches[1]
-                Write-Host "Java candidate $($java.FullName) version: $major"
-                if ($major -ge 11 -and $major -gt $bestVersion) {
-                    $best = $java.Directory.Parent.FullName
-                    $bestVersion = $major
-                }
-            }
-        } catch {}
-    }
-    if ($best) {
-        Write-Host "Selected JAVA_HOME: $best (version $bestVersion)"
-    } else {
-        Write-Host "No valid JDK 11+ found. Only JREs or older versions detected."
-    }
-    return $best
-}
-
-$ResolvedJavaHome = $JavaHome
-if (-not $ResolvedJavaHome -or -not (Test-Path (Join-Path $ResolvedJavaHome 'bin\java.exe'))) {
-    $ResolvedJavaHome = Find-Java11Home
-}
-if (-not $ResolvedJavaHome) {
-    Write-Host "ERROR: Could not auto-detect a valid Java 11+ installation. Please specify -JavaHome."
-    exit 1
-}
-Write-Host "Using JAVA_HOME: $ResolvedJavaHome"
-
 # Main execution
 Write-Log "Starting Tomcat configuration and user update"
 Test-AdminRights
@@ -563,7 +392,7 @@ if ($Version -eq "7.0") {
     Patch-ServerXml -TomcatHome $TomcatHome -Version $Version
     $HashAlg = "SHA-256"
 } elseif ($Version -in @("8.5", "9.0", "10.0", "10.1")) {
-    $pbkdf2Supported = Test-PBKDF2Support -TomcatHome $TomcatHome -JavaHome $ResolvedJavaHome
+    $pbkdf2Supported = Test-PBKDF2Support -TomcatHome $TomcatHome
     if (-not $pbkdf2Supported) {
         Write-Log "ERROR: PBKDF2WithHmacSHA512 is not available in your Java runtime. Please upgrade Java to at least 8u161 or 11+ with PBKDF2 support. Cannot update user passwords to compliance. Exiting." "ERROR"
         exit 1
