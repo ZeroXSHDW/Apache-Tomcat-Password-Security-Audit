@@ -139,7 +139,6 @@ function Install-OpenJDK11Manual {
     Write-Log "Attempting manual installation of OpenJDK 11 from Adoptium..."
     $JDK_URL = "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.22%2B7/OpenJDK11U-jdk_x64_windows_hotspot_11.0.22_7.zip"
     $JDK_ZIP = "$env:TEMP\OpenJDK11U-jdk_x64_windows_hotspot_11.0.22_7.zip"
-    $JAVA_HOME = "C:\Program Files\Java\jdk-11"
     $TEMP_EXTRACT_PATH = "$env:TEMP\jdk-11.0.22"
 
     # Download JDK
@@ -171,45 +170,54 @@ function Install-OpenJDK11Manual {
     }
     Remove-Item $JDK_ZIP -Force
 
-    # Move contents from nested jdk-11.0.22+7 to JAVA_HOME
-    Write-Log "Moving extracted files to $JAVA_HOME..."
+    # Find the extracted versioned directory (e.g., jdk-11.0.22+7)
+    $nestedDir = Get-ChildItem -Path $TEMP_EXTRACT_PATH -Directory | Where-Object { $_.Name -like 'jdk-11*' } | Select-Object -First 1
+    if (-not $nestedDir) {
+        Write-Log "ERROR: Could not find extracted JDK directory in $TEMP_EXTRACT_PATH."
+        exit 1
+    }
+    $versionedJdkDir = Join-Path 'C:\Program Files\Java' $nestedDir.Name
+    Write-Log "Moving extracted files to $versionedJdkDir..."
     try {
-        New-Item -ItemType Directory -Path $JAVA_HOME -Force | Out-Null
-        $nestedPath = Join-Path -Path $TEMP_EXTRACT_PATH -ChildPath "jdk-11.0.22+7"
-        if (Test-Path $nestedPath) {
-            Get-ChildItem -Path $nestedPath | Move-Item -Destination $JAVA_HOME -Force
-            Write-Log "Moved contents from $nestedPath to $JAVA_HOME"
-        } else {
-            Write-Log "ERROR: Expected nested directory $nestedPath not found."
-            exit 1
-        }
+        New-Item -ItemType Directory -Path $versionedJdkDir -Force | Out-Null
+        Get-ChildItem -Path $nestedDir.FullName | Move-Item -Destination $versionedJdkDir -Force
+        Write-Log "Moved contents from $($nestedDir.FullName) to $versionedJdkDir"
         Remove-Item -Path $TEMP_EXTRACT_PATH -Recurse -Force
     } catch {
-        Write-Log "ERROR: Failed to move files to $JAVA_HOME. Exception: $($_.Exception.Message)"
+        Write-Log "ERROR: Failed to move files to $versionedJdkDir. Exception: $($_.Exception.Message)"
         exit 1
     }
 
-    # Verify java.exe exists
-    $javaExe = "$JAVA_HOME\bin\java.exe"
-    if (-not (Test-Path $javaExe)) {
-        Write-Log "ERROR: java.exe not found at $javaExe after moving files."
+    # Create or update symlink at C:\Program Files\Java\jdk-11
+    $symlinkPath = 'C:\Program Files\Java\jdk-11'
+    if (Test-Path $symlinkPath) {
+        try {
+            Remove-Item $symlinkPath -Force
+        } catch {}
+    }
+    try {
+        cmd /c "mklink /D \"$symlinkPath\" \"$versionedJdkDir\"" | Out-Null
+        Write-Log "Created symlink $symlinkPath -> $versionedJdkDir"
+    } catch {
+        Write-Log "ERROR: Failed to create symlink $symlinkPath -> $versionedJdkDir. Exception: $($_.Exception.Message)"
         exit 1
     }
 
-    # Set JAVA_HOME environment variable
-    Write-Log "Setting JAVA_HOME environment variable..."
-    [Environment]::SetEnvironmentVariable("JAVA_HOME", $JAVA_HOME, [EnvironmentVariableTarget]::Machine)
-    $env:JAVA_HOME = $JAVA_HOME
+    # Set JAVA_HOME environment variable to symlink
+    Write-Log "Setting JAVA_HOME environment variable to $symlinkPath..."
+    [Environment]::SetEnvironmentVariable("JAVA_HOME", $symlinkPath, [EnvironmentVariableTarget]::Machine)
+    $env:JAVA_HOME = $symlinkPath
 
     # Update PATH
     $currentPath = [Environment]::GetEnvironmentVariable("PATH", [EnvironmentVariableTarget]::Machine)
-    if ($currentPath -notlike "*$JAVA_HOME\bin*") {
-        [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$JAVA_HOME\bin", [EnvironmentVariableTarget]::Machine)
-        $env:PATH = "$env:PATH;$JAVA_HOME\bin"
+    if ($currentPath -notlike "*$symlinkPath\bin*") {
+        [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$symlinkPath\bin", [EnvironmentVariableTarget]::Machine)
+        $env:PATH = "$env:PATH;$symlinkPath\bin"
     }
 
     # Verify installation
-    Write-Log "Verifying Java installation..."
+    $javaExe = "$symlinkPath\bin\java.exe"
+    Write-Log "Verifying Java installation at $javaExe..."
     try {
         $javaVersion = & $javaExe -version 2>&1 | ForEach-Object { $_ -replace '^.*?(openjdk version.*)$', '$1' } | Out-String
         Write-Log "java -version output: $javaVersion"
@@ -221,7 +229,11 @@ function Install-OpenJDK11Manual {
         Write-Log "ERROR: Failed to run java -version. Exception: $($_.Exception.Message)"
         exit 1
     }
-    Write-Log "OpenJDK 11 successfully installed at $JAVA_HOME"
+    Write-Log "OpenJDK 11 successfully installed at $versionedJdkDir and symlinked at $symlinkPath"
+
+    # Log all Java installations in C:\Program Files\Java
+    Write-Log "Current Java installations in C:\Program Files\Java:"
+    Get-ChildItem 'C:\Program Files\Java' -Directory | ForEach-Object { Write-Log $_.FullName }
 }
 
 # Uninstall Java
