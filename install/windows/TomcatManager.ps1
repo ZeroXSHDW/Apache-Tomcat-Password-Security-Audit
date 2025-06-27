@@ -177,6 +177,17 @@ function Install-OpenJDK11Manual {
         exit 1
     }
     $versionedJdkDir = Join-Path 'C:\Program Files\Java' $nestedDir.Name
+
+    # Remove versioned JDK directory if it exists
+    if (Test-Path $versionedJdkDir) {
+        Write-Log "Removing existing $versionedJdkDir before moving new files in..."
+        try {
+            Remove-Item -Path $versionedJdkDir -Recurse -Force
+        } catch {
+            Write-Log "ERROR: Failed to remove $versionedJdkDir. Exception: $($_.Exception.Message)"
+            exit 1
+        }
+    }
     Write-Log "Moving extracted files to $versionedJdkDir..."
     try {
         New-Item -ItemType Directory -Path $versionedJdkDir -Force | Out-Null
@@ -188,7 +199,14 @@ function Install-OpenJDK11Manual {
         exit 1
     }
 
-    # Create or update symlink/junction at C:\Program Files\Java\jdk-11
+    # Verify java.exe exists in versioned directory
+    $javaExeVersioned = "$versionedJdkDir\bin\java.exe"
+    if (-not (Test-Path $javaExeVersioned)) {
+        Write-Log "ERROR: java.exe not found at $javaExeVersioned after moving files. Aborting."
+        exit 1
+    }
+
+    # Create or update junction at C:\Program Files\Java\jdk-11
     $symlinkPath = 'C:\Program Files\Java\jdk-11'
     $useSymlink = $true
     if (Test-Path $symlinkPath) {
@@ -197,7 +215,6 @@ function Install-OpenJDK11Manual {
         } catch {}
     }
     try {
-        # Use junction for best compatibility
         cmd /c "mklink /J \"$symlinkPath\" \"$versionedJdkDir\"" | Out-Null
         Write-Log "Created junction $symlinkPath -> $versionedJdkDir"
     } catch {
