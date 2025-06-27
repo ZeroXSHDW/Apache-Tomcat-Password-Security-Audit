@@ -72,6 +72,10 @@ Run the Unix Bash auditing script to check compliance:
 sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
 ```
 - **Output**: Logs to `/tmp/TomcatManager.csv`.
+- **Example Command Usage:**
+```bash
+sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
+```
 - **Example Output:**
 ```
 Execution Time: 2025-06-26 14:12:11
@@ -115,6 +119,10 @@ Run the Unix Bash patching script to convert plaintext passwords to compliant ha
 sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
 ```
 - **Output**: Logs to `/tmp/TomcatManager.csv`.
+- **Example Command Usage:**
+```bash
+sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
+```
 - **Example Output:**
 ```
 2025-06-26 16:51:37,Created backup: /opt/tomcat/conf/server.xml.bak.20250626165137
@@ -144,6 +152,10 @@ Finished updating users in /opt/tomcat/conf/tomcat-users.xml
 .\src\windows\Audit\powershell\CheckTomcatConfigWin.ps1
 ```
 - **Output**: Logs to `$env:LOCALAPPDATA\Temp\TomcatManager.csv` (e.g., `C:\Users\<User>\AppData\Local\Temp`).
+- **Example Command Usage:**
+```powershell
+.\src\windows\Audit\powershell\CheckTomcatConfigWin.ps1
+```
 - **Example Output:**
 ```
 Checking Apache Tomcat configuration security...
@@ -184,6 +196,10 @@ Audit completed. Log: C:\Users\<User>\AppData\Local\Temp\TomcatManager.csv
 .\src\windows\Patch\powershell\UpdateTomcatUserWin.ps1
 ```
 - **Output**: Logs to `$env:LOCALAPPDATA\Temp\TomcatManager.csv` and console.
+- **Example Command Usage:**
+```powershell
+.\src\windows\Patch\powershell\UpdateTomcatUserWin.ps1
+```
 - **Example Output:**
 ```
 Auto-detected TomcatHome: C:\tomcat
@@ -211,6 +227,11 @@ $cred = Get-Credential
 .\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName WIN-SERVER -Credential $cred
 ```
 - **Output**: Logs to `C:\Temp\TomcatConfigCheck.csv` on the client.
+- **Example Command Usage:**
+```powershell
+$cred = Get-Credential
+.\src\windows\Audit\powershell\Remote_CheckTomcatConfigWin.ps1 -ServerName WIN-SERVER -Credential $cred
+```
 - **Example Output:**
 ```
 [Client] Starting script execution at 2025-06-18 13:35:00.
@@ -245,6 +266,57 @@ $cred = Get-Credential
 [WIN-SERVER] ===========================
 [WIN-SERVER] Overall Status: Secure
 [WIN-SERVER] Audit completed. Log: C:\Temp\TomcatConfigCheck.csv
+```
+
+## Example Output: Remote Tomcat User Update
+
+Below is a sample output from running the remote Tomcat user update script. This demonstrates the logging, backup, password hashing, and completion messages you should expect:
+
+```powershell
+PS C:\Users\Admin\Downloads> .\Remote_UpdateTomcatUserWin.ps1 -ServerName "WIN-E6DN4M5084M" -Credential (Get-Credential)
+
+cmdlet Get-Credential at command pipeline position 1
+Supply values for the following parameters:
+Credential
+[WIN-E6DN4M5084M] Starting remote Tomcat user update on WIN-E6DN4M5084M...
+2025-06-27 07:34:47 - INFO - Auto-detected TomcatHome: C:\\tomcat
+2025-06-27 07:34:48 - INFO - Java version: openjdk version "11.0.22" 2024-01-16
+2025-06-27 07:34:48 - INFO - Using TomcatHome: C:\\tomcat
+2025-06-27 07:34:48 - INFO - Starting Tomcat configuration and user update
+2025-06-27 07:34:48 - INFO - Administrative privileges confirmed
+2025-06-27 07:34:48 - INFO - Detected Tomcat version: 10.1
+2025-06-27 07:34:48 - INFO - Created or updated setenv.bat at C:\\tomcat\bin\setenv.bat to set CATALINA_HOME.
+2025-06-27 07:34:49 - INFO - Created backup: C:\\tomcat\conf\server.xml.bak.20250627073449
+2025-06-27 07:34:49 - INFO - Patched server.xml with correct CredentialHandler for Tomcat 10.1
+2025-06-27 07:34:49 - INFO - Created backup: C:\\tomcat\conf\tomcat-users.xml.bak.20250627073449
+2025-06-27 07:34:49 - INFO - Hashing plaintext password for user tomcat using Tomcat 10.1
+2025-06-27 07:34:49 - INFO - setenv.bat already sets CATALINA_HOME correctly.
+2025-06-27 07:34:49 - INFO - Running digest.bat command: C:\\tomcat\bin\digest.bat -h org.apache.catalina.realm.SecretKeyCredentialHandler -a PBKDF2WithHmacSHA512 -i 10000 -s 16 s3cretP@ssw0rd!
+2025-06-27 07:34:50 - INFO - digest.bat output: s3cretP@ssw0rd!:5dae7a04de769ce52f6dd51520343181$10000$27a2187bc799dd59f3fefee3aeac21b703d2da7b
+2025-06-27 07:34:50 - INFO - Updated password for user tomcat
+2025-06-27 07:34:50 - INFO - Successfully updated user hashes in tomcat-users.xml
+2025-06-27 07:34:50 - INFO - Tomcat is not running. No restart will be performed.
+2025-06-27 07:34:50 - INFO - Configuration update completed successfully
+[WIN-E6DN4M5084M] True
+[WIN-E6DN4M5084M] 2025-06-27 07:34:47 - INFO - Auto-detected TomcatHome: C:\\tomcat
+[WIN-E6DN4M5084M] 2025-06-27 07:34:48 - INFO - Java version: openjdk version "11.0.22" 2024-01-16
+[WIN-E6DN4M5084M] 2025-06-27 07:34:48 - INFO - Using TomcatHome: C:\\tomcat
+[WIN-E6DN4M5084M] 2025-06-27 07:34:48 - INFO - Starting Tomcat configuration and user update
+[WIN-E6DN4M5084M] 2025-06-27 07:34:48 - INFO - Administrative privileges confirmed
+[WIN-E6DN4M5084M] 2025-06-27 07:34:48 - INFO - Detected Tomcat version: 10.1
+[WIN-E6DN4M5084M] 2025-06-27 07:34:48 - INFO - Created or updated setenv.bat at C:\\tomcat\bin\setenv.bat to set CATALINA_HOME.
+[WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Created backup: C:\\tomcat\conf\server.xml.bak.20250627073449
+[WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Patched server.xml with correct CredentialHandler for Tomcat 10.1
+[WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Created backup: C:\\tomcat\conf\tomcat-users.xml.bak.20250627073449
+[WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Hashing plaintext password for user tomcat using Tomcat 10.1
+[WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - setenv.bat already sets CATALINA_HOME correctly.
+[WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Running digest.bat command: C:\\tomcat\bin\digest.bat -h org.apache.catalina.realm.SecretKeyCredentialHandler -a PBKDF2WithHmacSHA512 -i 10000 -s 16 s3cretP@ssw0rd!
+[WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - digest.bat output: s3cretP@ssw0rd!:5dae7a04de769ce52f6dd51520343181$10000$27a2187bc799dd59f3fefee3aeac21b703d2da7b
+[WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Updated password for user tomcat
+[WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Successfully updated user hashes in tomcat-users.xml
+[WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Tomcat is not running. No restart will be performed.
+[WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Configuration update completed successfully
+PS C:\Users\Admin\Downloads>
 ```
 
 ## Command Line Parameters
