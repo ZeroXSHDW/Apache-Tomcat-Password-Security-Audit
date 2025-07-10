@@ -454,7 +454,8 @@ check_tomcat_running_as_root() {
             local proc_user
             proc_user=$(ps -o user= -p "$pid" 2>/dev/null | awk '{print $1}')
             if [ "$proc_user" = "root" ]; then
-                write_log "WARNING: Tomcat process (PID $pid) is running as root! [ps method]" 2
+                write_log "WARNING: Tomcat process (PID $pid) is running as root! [ps method, NON-COMPLIANT]" 2
+                write_log "  - Detection method: ps (process user)" 2
                 write_log "  - It is a security risk to run Tomcat as root. Use a dedicated non-root user." 2
                 found_root=1
             fi
@@ -464,7 +465,8 @@ check_tomcat_running_as_root() {
     if command -v lsof >/dev/null 2>&1 && [ -n "$tomcat_pids" ]; then
         for pid in $tomcat_pids; do
             if lsof -p "$pid" 2>/dev/null | awk '{print $3}' | grep -qw root; then
-                write_log "WARNING: Tomcat process (PID $pid) has open files owned by root! [lsof method]" 2
+                write_log "WARNING: Tomcat process (PID $pid) has open files owned by root! [lsof method, NON-COMPLIANT]" 2
+                write_log "  - Detection method: lsof (open files owned by root)" 2
                 write_log "  - This may indicate Tomcat is running as root or has escalated privileges." 2
                 found_root=1
             fi
@@ -473,7 +475,64 @@ check_tomcat_running_as_root() {
     if [ -z "$tomcat_pids" ]; then
         write_log "No running Tomcat processes found for root check." 2
     elif [ $found_root -eq 0 ]; then
-        write_log "Tomcat process is not running as root (checked by both ps and lsof)." 2
+        write_log "Tomcat process is not running as root (checked by both ps and lsof). [COMPLIANT]" 2
+        write_log "  - Detection method: ps and lsof" 2
+    fi
+}
+
+# Function to check Tomcat service/init script for configured run user
+check_tomcat_service_user() {
+    local service_file=""
+    # Try to find a systemd service file
+    for f in /etc/systemd/system/tomcat*.service /lib/systemd/system/tomcat*.service /usr/lib/systemd/system/tomcat*.service; do
+        if [ -f "$f" ]; then
+            service_file="$f"
+            break
+        fi
+    done
+    # Try to find an init.d script if no systemd service found
+    if [ -z "$service_file" ]; then
+        for f in /etc/init.d/tomcat*; do
+            if [ -f "$f" ]; then
+                service_file="$f"
+                break
+            fi
+        done
+    fi
+
+    if [ -n "$service_file" ]; then
+        write_log "Found Tomcat service/init script: $service_file"
+        # Check for User= in systemd service
+        if grep -q '^User=' "$service_file"; then
+            local user
+            user=$(grep '^User=' "$service_file" | head -n1 | cut -d'=' -f2)
+            if [ "$user" = "root" ]; then
+                write_log "COMPLIANCE: Tomcat service is configured to run as root (User=root) [NON-COMPLIANT]" 2
+                write_log "  - Detection method: systemd service file (User=)" 2
+                write_log "  - Running Tomcat as root is against security compliance policy." 2
+            else
+                write_log "COMPLIANCE: Tomcat service is configured to run as user: $user [COMPLIANT]" 2
+                write_log "  - Detection method: systemd service file (User=)" 2
+            fi
+        # Check for TOMCAT_USER in init.d script
+        elif grep -q 'TOMCAT_USER=' "$service_file"; then
+            local user
+            user=$(grep 'TOMCAT_USER=' "$service_file" | head -n1 | sed 's/.*TOMCAT_USER=["'\''\"]\?\([^"'\''\"]*\).*/\1/')
+            if [ "$user" = "root" ]; then
+                write_log "COMPLIANCE: Tomcat init script is configured to run as root (TOMCAT_USER=root) [NON-COMPLIANT]" 2
+                write_log "  - Detection method: init.d script (TOMCAT_USER)" 2
+                write_log "  - Running Tomcat as root is against security compliance policy." 2
+            else
+                write_log "COMPLIANCE: Tomcat init script is configured to run as user: $user [COMPLIANT]" 2
+                write_log "  - Detection method: init.d script (TOMCAT_USER)" 2
+            fi
+        else
+            write_log "COMPLIANCE: Could not determine run user from $service_file [UNKNOWN]" 2
+            write_log "  - Detection method: service/init script present, but no user directive found" 2
+        fi
+    else
+        write_log "COMPLIANCE: No Tomcat service or init script found to determine run user. [UNKNOWN]" 2
+        write_log "  - Detection method: no service/init script found" 2
     fi
 }
 
@@ -517,7 +576,12 @@ audit_tomcat_config() {
     write_log "Config Path: $conf_path"
 
     # Check if Tomcat is running as root
+    write_log "==== Tomcat Root Execution Compliance Check ===="
     check_tomcat_running_as_root
+    if ! pgrep -f "org.apache.catalina.startup.Bootstrap" >/dev/null; then
+        check_tomcat_service_user
+    fi
+    write_log "==== End of Root Execution Compliance Check ===="
 
     # Always check file ownership and permissions for root detection
     check_file_ownership_and_permissions "$conf_path/server.xml"
