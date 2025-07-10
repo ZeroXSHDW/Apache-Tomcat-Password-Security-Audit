@@ -483,24 +483,41 @@ check_tomcat_running_as_root() {
 # Function to check Tomcat service/init script for configured run user
 check_tomcat_service_user() {
     local service_file=""
-    # Try to find a systemd service file
-    for f in /etc/systemd/system/tomcat*.service /lib/systemd/system/tomcat*.service /usr/lib/systemd/system/tomcat*.service; do
+    local env_file=""
+    local found=0
+    # Try to find a systemd service file or init script with various common names
+    for f in \
+        /etc/systemd/system/tomcat*.service \
+        /lib/systemd/system/tomcat*.service \
+        /usr/lib/systemd/system/tomcat*.service \
+        /etc/systemd/system/catalina*.service \
+        /lib/systemd/system/catalina*.service \
+        /usr/lib/systemd/system/catalina*.service \
+        /etc/systemd/system/apache-tomcat*.service \
+        /lib/systemd/system/apache-tomcat*.service \
+        /usr/lib/systemd/system/apache-tomcat*.service \
+        /etc/init.d/tomcat* \
+        /etc/init.d/catalina* \
+        /etc/init.d/apache-tomcat*; do
         if [ -f "$f" ]; then
             service_file="$f"
+            found=1
             break
         fi
     done
-    # Try to find an init.d script if no systemd service found
+
+    # Check for environment files that may set the user
     if [ -z "$service_file" ]; then
-        for f in /etc/init.d/tomcat*; do
-            if [ -f "$f" ]; then
-                service_file="$f"
+        for ef in /etc/default/tomcat* /etc/sysconfig/tomcat*; do
+            if [ -f "$ef" ]; then
+                env_file="$ef"
+                found=2
                 break
             fi
         done
     fi
 
-    if [ -n "$service_file" ]; then
+    if [ "$found" -eq 1 ]; then
         write_log "Found Tomcat service/init script: $service_file"
         # Check for User= in systemd service
         if grep -q '^User=' "$service_file"; then
@@ -526,13 +543,94 @@ check_tomcat_service_user() {
                 write_log "COMPLIANCE: Tomcat init script is configured to run as user: $user [COMPLIANT]" 2
                 write_log "  - Detection method: init.d script (TOMCAT_USER)" 2
             fi
+        # Check for EnvironmentFile directive
+        elif grep -q '^EnvironmentFile=' "$service_file"; then
+            local env_path
+            env_path=$(grep '^EnvironmentFile=' "$service_file" | head -n1 | cut -d'=' -f2 | tr -d '"')
+            if [ -f "$env_path" ]; then
+                if grep -q 'TOMCAT_USER=' "$env_path"; then
+                    local user
+                    user=$(grep 'TOMCAT_USER=' "$env_path" | head -n1 | sed 's/.*TOMCAT_USER=["'\''\"]\?\([^"'\''\"]*\).*/\1/')
+                    if [ "$user" = "root" ]; then
+                        write_log "COMPLIANCE: Tomcat environment file sets TOMCAT_USER=root [NON-COMPLIANT]" 2
+                        write_log "  - Detection method: EnvironmentFile ($env_path)" 2
+                        write_log "  - Running Tomcat as root is against security compliance policy." 2
+                    else
+                        write_log "COMPLIANCE: Tomcat environment file sets TOMCAT_USER=$user [COMPLIANT]" 2
+                        write_log "  - Detection method: EnvironmentFile ($env_path)" 2
+                    fi
+                else
+                    write_log "COMPLIANCE: No TOMCAT_USER found in $env_path [UNKNOWN]" 2
+                    write_log "  - Detection method: EnvironmentFile ($env_path)" 2
+                fi
+            else
+                write_log "COMPLIANCE: EnvironmentFile $env_path not found [UNKNOWN]" 2
+            fi
         else
             write_log "COMPLIANCE: Could not determine run user from $service_file [UNKNOWN]" 2
             write_log "  - Detection method: service/init script present, but no user directive found" 2
         fi
+    elif [ "$found" -eq 2 ]; then
+        write_log "Found Tomcat environment file: $env_file"
+        if grep -q 'TOMCAT_USER=' "$env_file"; then
+            local user
+            user=$(grep 'TOMCAT_USER=' "$env_file" | head -n1 | sed 's/.*TOMCAT_USER=["'\''\"]\?\([^"'\''\"]*\).*/\1/')
+            if [ "$user" = "root" ]; then
+                write_log "COMPLIANCE: Tomcat environment file sets TOMCAT_USER=root [NON-COMPLIANT]" 2
+                write_log "  - Detection method: environment file ($env_file)" 2
+                write_log "  - Running Tomcat as root is against security compliance policy." 2
+            else
+                write_log "COMPLIANCE: Tomcat environment file sets TOMCAT_USER=$user [COMPLIANT]" 2
+                write_log "  - Detection method: environment file ($env_file)" 2
+            fi
+        else
+            write_log "COMPLIANCE: No TOMCAT_USER found in $env_file [UNKNOWN]" 2
+            write_log "  - Detection method: environment file ($env_file)" 2
+        fi
     else
-        write_log "COMPLIANCE: No Tomcat service or init script found to determine run user. [UNKNOWN]" 2
-        write_log "  - Detection method: no service/init script found" 2
+        # Fallback: infer from owner of Tomcat home or startup script
+        local tomcat_home="${CATALINA_HOME:-${CATALINA_BASE:-}}"
+        if [ -z "$tomcat_home" ]; then
+            # Try to infer from conf_path if available
+            if [ -n "$conf_path" ]; then
+                tomcat_home=$(dirname "$conf_path")
+            fi
+        fi
+        local script_path=""
+        if [ -n "$tomcat_home" ]; then
+            for s in "$tomcat_home/bin/startup.sh" "$tomcat_home/bin/catalina.sh"; do
+                if [ -f "$s" ]; then
+                    script_path="$s"
+                    break
+                fi
+            done
+        fi
+        if [ -n "$script_path" ]; then
+            local owner
+            owner=$(stat -c '%U' "$script_path" 2>/dev/null)
+            if [ "$owner" = "root" ]; then
+                write_log "COMPLIANCE: Tomcat startup script $script_path is owned by root [POTENTIALLY NON-COMPLIANT]" 2
+                write_log "  - Detection method: file owner of startup script" 2
+                write_log "  - If Tomcat is started by root, this is non-compliant. Check how Tomcat is started." 2
+            else
+                write_log "COMPLIANCE: Tomcat startup script $script_path is owned by $owner [UNKNOWN]" 2
+                write_log "  - Detection method: file owner of startup script" 2
+            fi
+        elif [ -n "$tomcat_home" ]; then
+            local owner
+            owner=$(stat -c '%U' "$tomcat_home" 2>/dev/null)
+            if [ "$owner" = "root" ]; then
+                write_log "COMPLIANCE: Tomcat home directory $tomcat_home is owned by root [POTENTIALLY NON-COMPLIANT]" 2
+                write_log "  - Detection method: file owner of Tomcat home directory" 2
+                write_log "  - If Tomcat is started by root, this is non-compliant. Check how Tomcat is started." 2
+            else
+                write_log "COMPLIANCE: Tomcat home directory $tomcat_home is owned by $owner [UNKNOWN]" 2
+                write_log "  - Detection method: file owner of Tomcat home directory" 2
+            fi
+        else
+            write_log "COMPLIANCE: No Tomcat service/init script, environment file, or installation directory found to determine run user. [UNKNOWN]" 2
+            write_log "  - Detection method: fallback, nothing found" 2
+        fi
     fi
 }
 
