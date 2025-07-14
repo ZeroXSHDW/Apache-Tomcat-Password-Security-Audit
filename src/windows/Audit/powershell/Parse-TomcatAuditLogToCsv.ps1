@@ -30,10 +30,10 @@ function Parse-Block {
         if ($trimmed -match "^Tomcat Version: (.+)$") { $obj.TomcatVersion = $matches[1] }
         if ($trimmed -match "^Tomcat Home: (.+)$") { $obj.TomcatHome = $matches[1] }
         if ($trimmed -match "^Config Path: (.+)$") { $obj.ConfigPath = $matches[1] }
-        if ($trimmed -match "^  Credential Handler: (.+)$") { $obj.CredentialHandler = $matches[1] }
-        if ($trimmed -match "^  Algorithm: (.+)$") { $obj.Algorithm = $matches[1] }
-        if ($trimmed -match "^  Iterations: (.+)$") { $obj.Iterations = $matches[1] }
-        if ($trimmed -match "^  Salt Length: (.+)$") { $obj.SaltLength = $matches[1] }
+        if ($trimmed -match "^\s*Credential Handler: (.+)$") { $obj.CredentialHandler = $matches[1] }
+        if ($trimmed -match "^\s*Algorithm: (.+)$") { $obj.Algorithm = $matches[1] }
+        if ($trimmed -match "^\s*Iterations: (.+)$") { $obj.Iterations = $matches[1] }
+        if ($trimmed -match "^\s*Salt Length: (.+)$") { $obj.SaltLength = $matches[1] }
         if ($trimmed -match "^Overall Status: (.+)$") { $obj.OverallStatus = $matches[1] }
         if ($trimmed -match "^  Status: (.+)$") { $obj.Compliance = $matches[1] }
         if ($trimmed -match "^Audit completed") { $obj.AuditCompleted = $true }
