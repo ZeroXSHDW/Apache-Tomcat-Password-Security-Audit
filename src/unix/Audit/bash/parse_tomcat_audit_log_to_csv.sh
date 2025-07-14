@@ -11,7 +11,7 @@ fi
 # Helper: CSV escape
 csv_escape() {
     local s="$1"
-    s="${s//\"/\"\"}"
+    s="${s//"/""}"
     printf '"%s"' "$s"
 }
 
@@ -80,7 +80,7 @@ done
 # Write header
 header="Server,Timestamp,TomcatHome,ConfigPath,TomcatVersion,CredentialHandler,Algorithm,Iterations,SaltLength,OverallStatus,Compliance,ComplianceDetails,OptionalWarnings,AuditCompleted"
 for ((i=1; i<=max_users; i++)); do
-    header+=",Username$i,PasswordType$i,UserCompliance$i"
+    header+="\,Username$i,PasswordType$i,UserCompliance$i"
 done
 echo "$header" > "$OUTPUT_CSV"
 
