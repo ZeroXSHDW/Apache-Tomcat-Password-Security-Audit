@@ -10,24 +10,29 @@ fi
 
 # Helper: CSV escape
 csv_escape() {
-    echo "$1" | sed 's/"/""/g; s/^/"/; s/$/"/'
+    local s="$1"
+    s="${s//"/""}"
+    printf '"%s"' "$s"
 }
 
 # Read the file and split into blocks
-IFS= read -r -d '' content < <(cat "$INPUT_FILE"; printf '\0')
 blocks=()
 block=""
-while IFS= read -r line; do
+while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" =~ ^\*{10,}$ ]]; then
-        blocks+=("$block")
-        block=""
+        if [[ -n "$block" ]]; then
+            blocks+=("$block")
+            block=""
+        fi
     else
         block+="$line"$'\n'
     fi
-done <<< "$content"
-blocks+=("$block") # Add last block
+done < "$INPUT_FILE"
+if [[ -n "$block" ]]; then
+    blocks+=("$block")
+fi
 
-# Find max number of users
+# Find max number of users in any block
 max_users=0
 declare -a parsed_blocks
 
@@ -53,7 +58,6 @@ for block in "${blocks[@]}"; do
     # Users
     users=()
     while read -r userline; do
-        # Remove leading/trailing whitespace
         userline=$(echo "$userline" | sed 's/^ *//;s/ *$//')
         if [[ "$userline" =~ ^([a-zA-Z0-9_-]+)\ \|\ ([a-zA-Z0-9_-]+)\ \|\ ([a-zA-Z0-9\ \(\)\-]+)$ ]]; then
             username="${BASH_REMATCH[1]}"
@@ -67,14 +71,10 @@ for block in "${blocks[@]}"; do
         max_users=${#users[@]}
     fi
 
-    # Store all fields for this block
-    parsed_blocks+=("$(csv_escape "$server"),$(csv_escape "$timestamp"),$(csv_escape "$tomcat_home"),$(csv_escape "$config_path"),$(csv_escape "$tomcat_version"),$(csv_escape "$credential_handler"),$(csv_escape "$algorithm"),$(csv_escape "$iterations"),$(csv_escape "$salt_length"),$(csv_escape "$overall_status"),$(csv_escape "$compliance"),$(csv_escape "$compliance_details"),$(csv_escape "$optional_warnings"),$audit_completed,${users[*]}")
-    
-    unset users
-    
-    
-    
-
+    # Only add if this is a real audit block
+    if [[ -n "$server" && -n "$tomcat_version" ]]; then
+        parsed_blocks+=("$(csv_escape "$server"),$(csv_escape "$timestamp"),$(csv_escape "$tomcat_home"),$(csv_escape "$config_path"),$(csv_escape "$tomcat_version"),$(csv_escape "$credential_handler"),$(csv_escape "$algorithm"),$(csv_escape "$iterations"),$(csv_escape "$salt_length"),$(csv_escape "$overall_status"),$(csv_escape "$compliance"),$(csv_escape "$compliance_details"),$(csv_escape "$optional_warnings"),$audit_completed,${users[*]}")
+    fi
 done
 
 # Write header
@@ -86,14 +86,13 @@ echo "$header" > "$OUTPUT_CSV"
 
 # Write rows
 for row in "${parsed_blocks[@]}"; do
-    # Split users and fill columns
     IFS=',' read -r server timestamp tomcat_home config_path tomcat_version credential_handler algorithm iterations salt_length overall_status compliance compliance_details optional_warnings audit_completed users_str <<< "$row"
     IFS=' ' read -r -a users_arr <<< "$users_str"
     out="$server,$timestamp,$tomcat_home,$config_path,$tomcat_version,$credential_handler,$algorithm,$iterations,$salt_length,$overall_status,$compliance,$compliance_details,$optional_warnings,$audit_completed"
     for ((i=0; i<max_users; i++)); do
         if [[ -n "${users_arr[$i]}" ]]; then
             IFS='|' read -r uname ptype ucomp <<< "${users_arr[$i]}"
-            out+="$(csv_escape ",$uname"),$(csv_escape "$ptype"),$(csv_escape "$ucomp")"
+            out+="$(csv_escape "$uname"),$(csv_escape "$ptype"),$(csv_escape "$ucomp")"
         else
             out+=',,,'
         fi
