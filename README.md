@@ -299,6 +299,29 @@ Credential
 PS C:\Users\Admin\Downloads>
 ```
 
+## Windows Tomcat Audit JSON Output and Parsing
+
+### Remote_CheckTomcatConfigWinJson.ps1
+This script audits Apache Tomcat configuration on one or more remote Windows servers and outputs the results as a JSON array. It collects information such as Tomcat home, version, credential handler details, per-user compliance, overall status, and whether Tomcat is running as SYSTEM.
+
+**Usage:**
+```powershell
+# Run the audit and output JSON to a file
+./src/windows/Audit/powershell/Remote_CheckTomcatConfigWinJson.ps1 -ServerName "server1","server2" -Credential (Get-Credential) -TomcatConfPath "C:\Path\To\Tomcat\conf" > all_audit_results.txt
+```
+
+### Remote_ParseTomcatAuditJson.ps1
+This script parses the output file(s) from Remote_CheckTomcatConfigWinJson.ps1, even if the file contains multiple concatenated JSON outputs. It combines all results into a single JSON array for further processing or reporting.
+
+**Usage:**
+```powershell
+./src/windows/Audit/powershell/Remote_ParseTomcatAuditJson.ps1 -InputFile all_audit_results.txt
+```
+
+The output will be a single JSON array containing all parsed audit results from all servers.
+
+---
+
 ## Command Line Parameters
 
 Below are the command line parameters for each script. All scripts support optional parameters for custom Tomcat locations; Windows scripts may also accept service names or credentials.
