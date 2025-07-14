@@ -3,35 +3,34 @@ param(
     [Parameter(Mandatory=$true)][string]$OutputCsv
 )
 
-function Parse-LogLine {
-    param($line)
+function Parse-Block {
+    param($block)
     $obj = @{}
     $obj.Users = @()
-    $fields = $line -split ",", 3
-    if ($fields.Count -lt 3) { return $null }
-    $obj.Timestamp = $fields[0]
-    $obj.Server = $fields[1]
-    $obj.RawMessage = $fields[2]
-    $obj.OverallStatus = ""
-    $obj.Compliance = ""
+    $obj.Timestamp = ""
+    $obj.Server = ""
     $obj.TomcatVersion = ""
     $obj.CredentialHandler = ""
     $obj.Algorithm = ""
     $obj.Iterations = ""
     $obj.SaltLength = ""
+    $obj.OverallStatus = ""
+    $obj.Compliance = ""
 
-    # Parse message for compliance and user info
-    $messages = $obj.RawMessage -split ";"
-    foreach ($msg in $messages) {
-        $trimmed = $msg.Trim()
-        if ($trimmed -match "Tomcat Version: (.+)") { $obj.TomcatVersion = $matches[1] }
-        if ($trimmed -match "Credential Handler: (.+)") { $obj.CredentialHandler = $matches[1] }
-        if ($trimmed -match "Algorithm: (.+)") { $obj.Algorithm = $matches[1] }
-        if ($trimmed -match "Iterations: (.+)") { $obj.Iterations = $matches[1] }
-        if ($trimmed -match "Salt Length: (.+)") { $obj.SaltLength = $matches[1] }
-        if ($trimmed -match "Overall Status: (.+)") { $obj.OverallStatus = $matches[1] }
-        if ($trimmed -match "Status: (.+)") { $obj.Compliance = $matches[1] }
-        if ($trimmed -match "([\w-]+) \| ([\w-]+) \| ([\w\s\(\)-]+)") {
+    $lines = $block -split "`n"
+    foreach ($line in $lines) {
+        $trimmed = $line.Trim()
+        if ($trimmed -match "^Execution Time: (.+)$") { $obj.Timestamp = $matches[1] }
+        if ($trimmed -match "^Hostname: (.+)$") { $obj.Server = $matches[1] }
+        if ($trimmed -match "^Tomcat Version: (.+)$") { $obj.TomcatVersion = $matches[1] }
+        if ($trimmed -match "^  Credential Handler: (.+)$") { $obj.CredentialHandler = $matches[1] }
+        if ($trimmed -match "^  Algorithm: (.+)$") { $obj.Algorithm = $matches[1] }
+        if ($trimmed -match "^  Iterations: (.+)$") { $obj.Iterations = $matches[1] }
+        if ($trimmed -match "^  Salt Length: (.+)$") { $obj.SaltLength = $matches[1] }
+        if ($trimmed -match "^Overall Status: (.+)$") { $obj.OverallStatus = $matches[1] }
+        if ($trimmed -match "^  Status: (.+)$") { $obj.Compliance = $matches[1] }
+        # User line:  admin | Plaintext | Non-compliant
+        if ($trimmed -match "^\s*([\w-]+) \| ([\w-]+) \| ([\w\s\(\)-]+)$") {
             $obj.Users += @{
                 Username = $matches[1]
                 PasswordType = $matches[2]
@@ -39,14 +38,18 @@ function Parse-LogLine {
             }
         }
     }
-    return $obj
+    # Only return if it looks like a real audit block
+    if ($obj.Server -and $obj.TomcatVersion) { return $obj }
+    return $null
 }
 
-# Read and parse all lines except header
-$lines = Get-Content $InputFile | Where-Object { $_ -and $_ -notmatch '^Timestamp,Server,Message' }
+# Read the file and split into blocks
+$content = Get-Content $InputFile -Raw
+$blocks = $content -split "\*{10,}"  # Split on 10 or more asterisks
+
 $parsed = @()
-foreach ($line in $lines) {
-    $obj = Parse-LogLine $line
+foreach ($block in $blocks) {
+    $obj = Parse-Block $block
     if ($obj) { $parsed += $obj }
 }
 
