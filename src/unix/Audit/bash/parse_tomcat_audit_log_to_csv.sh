@@ -59,13 +59,13 @@ for block in "${blocks[@]}"; do
     users=()
     while read -r userline; do
         userline=$(echo "$userline" | sed 's/^ *//;s/ *$//')
-        if [[ "$userline" =~ ^([a-zA-Z0-9_-]+)\ \|\ ([a-zA-Z0-9_-]+)\ \|\ ([a-zA-Z0-9\ \(\)\-]+)$ ]]; then
+        if [[ "$userline" =~ ^([^|]+)[[:space:]]*\|[[:space:]]*([^|]+)[[:space:]]*\|[[:space:]]*([^|]+)$ ]]; then
             username="${BASH_REMATCH[1]}"
             passwordtype="${BASH_REMATCH[2]}"
             usercompliance="${BASH_REMATCH[3]}"
-            users+=("$username|$passwordtype|$usercompliance")
+            users+=("$username|||$passwordtype|||$usercompliance")
         fi
-    done < <(echo "$block" | grep -E "^[[:space:]]*[a-zA-Z0-9_-]+ \| [a-zA-Z0-9_-]+ \| [a-zA-Z0-9\ \(\)\-]+$")
+    done < <(echo "$block" | awk '/\|/ && !/User Audit Results/ && !/Username \| Password Type \| Compliance/ && !/----/ {print}')
 
     if (( ${#users[@]} > max_users )); then
         max_users=${#users[@]}
@@ -73,7 +73,7 @@ for block in "${blocks[@]}"; do
 
     # Only add if this is a real audit block
     if [[ -n "$server" && -n "$tomcat_version" ]]; then
-        parsed_blocks+=("$(csv_escape "$server"),$(csv_escape "$timestamp"),$(csv_escape "$tomcat_home"),$(csv_escape "$config_path"),$(csv_escape "$tomcat_version"),$(csv_escape "$credential_handler"),$(csv_escape "$algorithm"),$(csv_escape "$iterations"),$(csv_escape "$salt_length"),$(csv_escape "$overall_status"),$(csv_escape "$compliance"),$(csv_escape "$compliance_details"),$(csv_escape "$optional_warnings"),$audit_completed,${users[*]}")
+        parsed_blocks+=("$server|||$timestamp|||$tomcat_home|||$config_path|||$tomcat_version|||$credential_handler|||$algorithm|||$iterations|||$salt_length|||$overall_status|||$compliance|||$compliance_details|||$optional_warnings|||$audit_completed|||${users[*]}")
     fi
 done
 
@@ -86,18 +86,39 @@ echo "$header" > "$OUTPUT_CSV"
 
 # Write rows
 for row in "${parsed_blocks[@]}"; do
-    IFS=',' read -r server timestamp tomcat_home config_path tomcat_version credential_handler algorithm iterations salt_length overall_status compliance compliance_details optional_warnings audit_completed users_str <<< "$row"
-    IFS=' ' read -r -a users_arr <<< "$users_str"
-    out="$server,$timestamp,$tomcat_home,$config_path,$tomcat_version,$credential_handler,$algorithm,$iterations,$salt_length,$overall_status,$compliance,$compliance_details,$optional_warnings,$audit_completed"
+    IFS='|||' read -r server timestamp tomcat_home config_path tomcat_version credential_handler algorithm iterations salt_length overall_status compliance compliance_details optional_warnings audit_completed rest <<< "$row"
+    users_arr=()
+    if [[ -n "$rest" ]]; then
+        IFS=' ' read -r -a users_arr <<< "$rest"
+    fi
+    row_arr=()
+    row_arr+=("$(csv_escape "$server")")
+    row_arr+=("$(csv_escape "$timestamp")")
+    row_arr+=("$(csv_escape "$tomcat_home")")
+    row_arr+=("$(csv_escape "$config_path")")
+    row_arr+=("$(csv_escape "$tomcat_version")")
+    row_arr+=("$(csv_escape "$credential_handler")")
+    row_arr+=("$(csv_escape "$algorithm")")
+    row_arr+=("$(csv_escape "$iterations")")
+    row_arr+=("$(csv_escape "$salt_length")")
+    row_arr+=("$(csv_escape "$overall_status")")
+    row_arr+=("$(csv_escape "$compliance")")
+    row_arr+=("$(csv_escape "$compliance_details")")
+    row_arr+=("$(csv_escape "$optional_warnings")")
+    row_arr+=("$(csv_escape "$audit_completed")")
     for ((i=0; i<max_users; i++)); do
         if [[ -n "${users_arr[$i]}" ]]; then
-            IFS='|' read -r uname ptype ucomp <<< "${users_arr[$i]}"
-            out+=",$(csv_escape "$uname"),$(csv_escape "$ptype"),$(csv_escape "$ucomp")"
+            IFS='|||' read -r uname ptype ucomp <<< "${users_arr[$i]}"
+            row_arr+=("$(csv_escape "$uname")")
+            row_arr+=("$(csv_escape "$ptype")")
+            row_arr+=("$(csv_escape "$ucomp")")
         else
-            out+=",,,"
+            row_arr+=("")
+            row_arr+=("")
+            row_arr+=("")
         fi
     done
-    echo "$out" >> "$OUTPUT_CSV"
+    IFS=,; echo "${row_arr[*]}" >> "$OUTPUT_CSV"
 done
 
 echo "Exported to CSV: $OUTPUT_CSV" 
