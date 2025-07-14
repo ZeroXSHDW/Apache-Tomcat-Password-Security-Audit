@@ -59,13 +59,14 @@ for block in "${blocks[@]}"; do
     users=()
     while read -r userline; do
         userline=$(echo "$userline" | sed 's/^ *//;s/ *$//')
-        if [[ "$userline" =~ ^([a-zA-Z0-9_-]+)\ \|\ ([a-zA-Z0-9_-]+)\ \|\ ([a-zA-Z0-9\ \(\)\-]+)$ ]]; then
+        # Match: username | passwordtype | compliance (allowing for extra spaces)
+        if [[ "$userline" =~ ^([^|]+)[[:space:]]*\|[[:space:]]*([^|]+)[[:space:]]*\|[[:space:]]*([^|]+)$ ]]; then
             username="${BASH_REMATCH[1]}"
             passwordtype="${BASH_REMATCH[2]}"
             usercompliance="${BASH_REMATCH[3]}"
-            users+=("$username|$passwordtype|$usercompliance")
+            users+=("$username|||$passwordtype|||$usercompliance")
         fi
-    done < <(echo "$block" | grep -E "^[[:space:]]*[a-zA-Z0-9_-]+ \| [a-zA-Z0-9_-]+ \| [a-zA-Z0-9\ \(\)\-]+$")
+    done < <(echo "$block" | awk '/\|/ && !/User Audit Results/ && !/Username \| Password Type \| Compliance/ && !/----/ {print}')
 
     if (( ${#users[@]} > max_users )); then
         max_users=${#users[@]}
@@ -91,7 +92,7 @@ for row in "${parsed_blocks[@]}"; do
     out="$server,$timestamp,$tomcat_home,$config_path,$tomcat_version,$credential_handler,$algorithm,$iterations,$salt_length,$overall_status,$compliance,$compliance_details,$optional_warnings,$audit_completed"
     for ((i=0; i<max_users; i++)); do
         if [[ -n "${users_arr[$i]}" ]]; then
-            IFS='|' read -r uname ptype ucomp <<< "${users_arr[$i]}"
+            IFS='|||' read -r uname ptype ucomp <<< "${users_arr[$i]}"
             out+="$(csv_escape "$uname"),$(csv_escape "$ptype"),$(csv_escape "$ucomp")"
         else
             out+=',,,'
