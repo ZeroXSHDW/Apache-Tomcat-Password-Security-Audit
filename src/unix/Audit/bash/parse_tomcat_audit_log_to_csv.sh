@@ -21,8 +21,8 @@ block=""
 while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" =~ ^\*{10,}$ ]]; then
         if [[ -n "$block" ]]; then
-            blocks+=("$block")
-            block=""
+        blocks+=("$block")
+        block=""
         fi
     else
         block+="$line"$'\n'
@@ -56,24 +56,26 @@ for block in "${blocks[@]}"; do
     optional_warnings=$(echo "$block" | grep -E "^Warning: " | sed 's/^Warning: //' | paste -sd ';' -)
 
     # Users
-    users=()
+    users_str=""
+    user_count=0
     while read -r userline; do
         userline=$(echo "$userline" | sed 's/^ *//;s/ *$//')
         if [[ "$userline" =~ ^([^|]+)[[:space:]]*\|[[:space:]]*([^|]+)[[:space:]]*\|[[:space:]]*([^|]+)$ ]]; then
             username="${BASH_REMATCH[1]}"
             passwordtype="${BASH_REMATCH[2]}"
             usercompliance="${BASH_REMATCH[3]}"
-            users+=("$username|||$passwordtype|||$usercompliance")
+            users_str+="${username}|||${passwordtype}|||${usercompliance};;;;;"
+            ((user_count++))
         fi
     done < <(echo "$block" | awk '/\|/ && !/User Audit Results/ && !/Username \| Password Type \| Compliance/ && !/----/ {print}')
 
-    if (( ${#users[@]} > max_users )); then
-        max_users=${#users[@]}
+    if (( user_count > max_users )); then
+        max_users=$user_count
     fi
 
     # Only add if this is a real audit block
     if [[ -n "$server" && -n "$tomcat_version" ]]; then
-        parsed_blocks+=("$server|||$timestamp|||$tomcat_home|||$config_path|||$tomcat_version|||$credential_handler|||$algorithm|||$iterations|||$salt_length|||$overall_status|||$compliance|||$compliance_details|||$optional_warnings|||$audit_completed|||${users[*]}")
+        parsed_blocks+=("$server|||$timestamp|||$tomcat_home|||$config_path|||$tomcat_version|||$credential_handler|||$algorithm|||$iterations|||$salt_length|||$overall_status|||$compliance|||$compliance_details|||$optional_warnings|||$audit_completed|||$users_str")
     fi
 done
 
@@ -86,11 +88,9 @@ echo "$header" > "$OUTPUT_CSV"
 
 # Write rows
 for row in "${parsed_blocks[@]}"; do
-    IFS='|||' read -r server timestamp tomcat_home config_path tomcat_version credential_handler algorithm iterations salt_length overall_status compliance compliance_details optional_warnings audit_completed rest <<< "$row"
-    users_arr=()
-    if [[ -n "$rest" ]]; then
-        IFS=' ' read -r -a users_arr <<< "$rest"
-    fi
+    IFS='|||' read -r server timestamp tomcat_home config_path tomcat_version credential_handler algorithm iterations salt_length overall_status compliance compliance_details optional_warnings audit_completed users_str <<< "$row"
+    # Split users
+    IFS=';;;;;' read -ra users_arr <<< "$users_str"
     row_arr=()
     row_arr+=("$(csv_escape "$server")")
     row_arr+=("$(csv_escape "$timestamp")")
