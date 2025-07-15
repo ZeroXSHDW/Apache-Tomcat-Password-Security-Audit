@@ -1,124 +1,230 @@
 #!/bin/bash
 
+# Minimal argument check
+if [ $# -lt 2 ]; then
+  echo "Usage: $0 <input_log_file> <output_csv_file>"
+  exit 1
+fi
+
 INPUT_FILE="$1"
 OUTPUT_CSV="$2"
 
-if [[ -z "$INPUT_FILE" || -z "$OUTPUT_CSV" ]]; then
-    echo "Usage: $0 <input_log_file> <output_csv_file>"
-    exit 1
-fi
+# Convert input file to Unix line endings (handles Windows \r\n)
+TMPUNIX=$(mktemp)
+tr -d '\r' < "$INPUT_FILE" > "$TMPUNIX"
+INPUT_FILE="$TMPUNIX"
 
-# Helper: CSV escape
+# CSV escape function for proper output (handles commas, quotes, newlines)
 csv_escape() {
     local s="$1"
-    s="${s//"/""}"
-    printf '"%s"' "$s"
+    s="${s//\"/\"\"}" # double quotes
+    if echo "$s" | grep -q '[,\"]'; then
+        printf '"%s"' "$s"
+    else
+        printf '%s' "$s"
+    fi
 }
 
-# Read the file and split into blocks
-blocks=()
-block=""
-while IFS= read -r line || [[ -n "$line" ]]; do
-    if [[ "$line" =~ ^\*{10,}$ ]]; then
-        if [[ -n "$block" ]]; then
-        blocks+=("$block")
-        block=""
+# Fuzzy field matching: returns the first field in the block that matches the target (case-insensitive, allows for typos)
+fuzzy_field_match() {
+    local block="$1"
+    local field="$2"
+    local best_match=""
+    local best_score=0
+    echo "DEBUG: Candidate fields in block:" >&2
+    while IFS= read -r line; do
+        trimmed=$(echo "$line" | sed 's/^ *//;s/ *$//')
+        echo "$trimmed" | grep -q ":" || continue
+        candidate_field=$(echo "$trimmed" | cut -d: -f1 | sed 's/^ *//;s/ *$//')
+        candidate_value=$(echo "$trimmed" | cut -d: -f2- | sed 's/^ *//;s/ *$//')
+        echo "  $candidate_field" >&2
+        score=0
+        i=0
+        while [ $i -lt ${#field} ] && [ $i -lt ${#candidate_field} ]; do
+            c1=$(echo "${field:$i:1}" | tr '[:upper:]' '[:lower:]')
+            c2=$(echo "${candidate_field:$i:1}" | tr '[:upper:]' '[:lower:]')
+            [ "$c1" = "$c2" ] && score=$((score+1)) || break
+            i=$((i+1))
+        done
+        if [ $score -gt $best_score ]; then
+            best_score=$score
+            best_match="$candidate_value"
         fi
-    else
-        block+="$line"$'\n'
+    done <<< "$block"
+    if [ $best_score -ge $(( (${#field}*2)/5 )) ]; then
+        echo "$best_match"
     fi
-done < "$INPUT_FILE"
-if [[ -n "$block" ]]; then
-    blocks+=("$block")
-fi
+}
 
-# Find max number of users in any block
-max_users=0
-declare -a parsed_blocks
+# Helper function: extract a field from a block (fuzzy, trims whitespace)
+extract_field() {
+    local block="$1"
+    local field="$2"
+    fuzzy_field_match "$block" "$field"
+}
 
-for block in "${blocks[@]}"; do
-    # Extract fields
-    timestamp=$(echo "$block" | grep -m1 -E "^Execution Time:" | sed 's/^Execution Time: //')
-    server=$(echo "$block" | grep -m1 -E "^Hostname:" | sed 's/^Hostname: //')
-    tomcat_version=$(echo "$block" | grep -m1 -E "^Tomcat Version:" | sed 's/^Tomcat Version: //')
-    tomcat_home=$(echo "$block" | grep -m1 -E "^Tomcat Home:" | sed 's/^Tomcat Home: //')
-    config_path=$(echo "$block" | grep -m1 -E "^Config Path:" | sed 's/^Config Path: //')
-    credential_handler=$(echo "$block" | grep -m1 -E "^[[:space:]]*Credential Handler:" | sed 's/^[[:space:]]*Credential Handler: //')
-    algorithm=$(echo "$block" | grep -m1 -E "^[[:space:]]*Algorithm:" | sed 's/^[[:space:]]*Algorithm: //')
-    iterations=$(echo "$block" | grep -m1 -E "^[[:space:]]*Iterations:" | sed 's/^[[:space:]]*Iterations: //')
-    salt_length=$(echo "$block" | grep -m1 -E "^[[:space:]]*Salt Length:" | sed 's/^[[:space:]]*Salt Length: //')
-    overall_status=$(echo "$block" | grep -m1 -E "^Overall Status:" | sed 's/^Overall Status: //')
-    compliance=$(echo "$block" | grep -m1 -E "^[[:space:]]*Status:" | sed 's/^[[:space:]]*Status: //')
-    audit_completed=$(echo "$block" | grep -q "^Audit completed" && echo "true" || echo "false")
-
-    # Compliance details (semicolon separated)
-    compliance_details=$(echo "$block" | grep -E "COMPLIANCE:|WARNING:|is owned by|permissions|root check|Root Execution Compliance Check|Detection method:|Tomcat process is not running as root|Tomcat service is configured to run as root|Tomcat service is configured to run as user|has insecure permissions|permissions are secure" | paste -sd ';' -)
-    optional_warnings=$(echo "$block" | grep -E "^Warning: " | sed 's/^Warning: //' | paste -sd ';' -)
-
-    # Users
-    users_str=""
-    user_count=0
-    while read -r userline; do
-        userline=$(echo "$userline" | sed 's/^ *//;s/ *$//')
-        if [[ "$userline" =~ ^([^|]+)[[:space:]]*\|[[:space:]]*([^|]+)[[:space:]]*\|[[:space:]]*([^|]+)$ ]]; then
-            username="${BASH_REMATCH[1]}"
-            passwordtype="${BASH_REMATCH[2]}"
-            usercompliance="${BASH_REMATCH[3]}"
-            users_str+="${username}|||${passwordtype}|||${usercompliance};;;;;"
-            ((user_count++))
+# Helper function: extract user rows from a block
+extract_users() {
+    local block="$1"
+    local in_table=0
+    echo "$block" | while IFS= read -r line; do
+        trimmed=$(echo "$line" | sed 's/^ *//;s/ *$//')
+        if [ $in_table -eq 0 ]; then
+            echo "$trimmed" | grep -iq 'User Audit Results:' && in_table=1 && continue
         fi
-    done < <(echo "$block" | awk '/\|/ && !/User Audit Results/ && !/Username \| Password Type \| Compliance/ && !/----/ {print}')
-
-    if (( user_count > max_users )); then
-        max_users=$user_count
-    fi
-
-    # Only add if this is a real audit block
-    if [[ -n "$server" && -n "$tomcat_version" ]]; then
-        parsed_blocks+=("$server|||$timestamp|||$tomcat_home|||$config_path|||$tomcat_version|||$credential_handler|||$algorithm|||$iterations|||$salt_length|||$overall_status|||$compliance|||$compliance_details|||$optional_warnings|||$audit_completed|||$users_str")
-    fi
-done
-
-# Write header
-header="Server,Timestamp,TomcatHome,ConfigPath,TomcatVersion,CredentialHandler,Algorithm,Iterations,SaltLength,OverallStatus,Compliance,ComplianceDetails,OptionalWarnings,AuditCompleted"
-for ((i=1; i<=max_users; i++)); do
-    header+=",Username$i,PasswordType$i,UserCompliance$i"
-done
-echo "$header" > "$OUTPUT_CSV"
-
-# Write rows
-for row in "${parsed_blocks[@]}"; do
-    IFS='|||' read -r server timestamp tomcat_home config_path tomcat_version credential_handler algorithm iterations salt_length overall_status compliance compliance_details optional_warnings audit_completed users_str <<< "$row"
-    # Split users
-    IFS=';;;;;' read -ra users_arr <<< "$users_str"
-    row_arr=()
-    row_arr+=("$(csv_escape "$server")")
-    row_arr+=("$(csv_escape "$timestamp")")
-    row_arr+=("$(csv_escape "$tomcat_home")")
-    row_arr+=("$(csv_escape "$config_path")")
-    row_arr+=("$(csv_escape "$tomcat_version")")
-    row_arr+=("$(csv_escape "$credential_handler")")
-    row_arr+=("$(csv_escape "$algorithm")")
-    row_arr+=("$(csv_escape "$iterations")")
-    row_arr+=("$(csv_escape "$salt_length")")
-    row_arr+=("$(csv_escape "$overall_status")")
-    row_arr+=("$(csv_escape "$compliance")")
-    row_arr+=("$(csv_escape "$compliance_details")")
-    row_arr+=("$(csv_escape "$optional_warnings")")
-    row_arr+=("$(csv_escape "$audit_completed")")
-    for ((i=0; i<max_users; i++)); do
-        if [[ -n "${users_arr[$i]}" ]]; then
-            IFS='|||' read -r uname ptype ucomp <<< "${users_arr[$i]}"
-            row_arr+=("$(csv_escape "$uname")")
-            row_arr+=("$(csv_escape "$ptype")")
-            row_arr+=("$(csv_escape "$ucomp")")
-        else
-            row_arr+=("")
-            row_arr+=("")
-            row_arr+=("")
+        if [ $in_table -eq 1 ]; then
+            # Skip the user table header row (use POSIX grep -i and avoid | inside [] brackets)
+            echo "$trimmed" | grep -i '^username[ ]*|[ ]*password type[ ]*|[ ]*compliance' >/dev/null && continue
+            # Only accept lines that match the user row pattern: non-empty, three fields separated by pipes, not dashes or headers
+            echo "$trimmed" | grep -E '^[^|][^|]*\|[^|][^|]*\|[^|][^|]*$' >/dev/null || continue
+            IFS='|' read uname ptype ucomp <<EOF
+$trimmed
+EOF
+            uname_trim=$(echo "$uname" | sed 's/^ *//;s/ *$//')
+            ptype_trim=$(echo "$ptype" | sed 's/^ *//;s/ *$//')
+            ucomp_trim=$(echo "$ucomp" | sed 's/^ *//;s/ *$//')
+            # Skip if any field is empty or only dashes
+            [ -z "$uname_trim" ] || [ -z "$ptype_trim" ] || [ -z "$ucomp_trim" ] && continue
+            echo "$uname_trim" | grep -q '^[ -]*$' && continue
+            echo "$ptype_trim" | grep -q '^[ -]*$' && continue
+            echo "$ucomp_trim" | grep -q '^[ -]*$' && continue
+            echo "$uname_trim|$ptype_trim|$ucomp_trim"
+            # End user table if we hit a line that looks like a section divider or the end of the block
+            echo "$trimmed" | grep -Eq '^=+$|^Overall Status:' && break
         fi
     done
-    IFS=,; echo "${row_arr[*]}" >> "$OUTPUT_CSV"
+}
+
+# Helper function: extract compliance/warning lines
+extract_compliance_details() {
+    local block="$1"
+    echo "$block" | grep -iE "COMPLIANCE:|WARNING:|is owned by|permissions|root check|Root Execution Compliance Check|Detection method:|Tomcat process is not running as root|Tomcat service is configured to run as root|Tomcat service is configured to run as user|has insecure permissions|permissions are secure" | paste -sd ';' - | sed 's/^ *//;s/ *$//;s/[\r\n]//g'
+}
+
+extract_optional_warnings() {
+    local block="$1"
+    echo "$block" | grep -iE "^[ ]*Warning:" | sed 's/^[ ]*Warning:[ ]*//I;s/^ *//;s/ *$//;s/[\r\n]//g' | paste -sd ';' -
+}
+
+# Split input into blocks using Bash array (robust for macOS)
+blocks=()
+current_block=""
+while IFS= read -r line || [ -n "$line" ]; do
+    if echo "$line" | grep -qE '^\*{65,}[[:space:]]*$'; then
+        if [ -n "$current_block" ]; then
+            blocks+=("$current_block")
+            current_block=""
+        fi
+    else
+        current_block+="$line"$'\n'
+    fi
+done < "$INPUT_FILE"
+# Add the last block if any
+if [ -n "$current_block" ]; then
+    blocks+=("$current_block")
+fi
+
+# Write CSV header before processing any blocks
+max_users=0
+block=""
+
+declare -a header=("Server" "Timestamp" "TomcatHome" "ConfigPath" "TomcatVersion" "CredentialHandler" "Algorithm" "Iterations" "SaltLength" "OverallStatus" "Compliance" "ComplianceDetails" "OptionalWarnings" "AuditCompleted")
+# We'll determine max_users in the first pass, so defer header writing until after
+
+# First pass: determine max_users
+for block in "${blocks[@]}"; do
+    block=$(echo "$block" | sed '/./,$!d')
+    [ -z "$(echo "$block" | tr -d '\n[:space:]')" ] && continue
+    if echo "$block" | grep -iq "Hostname:" && echo "$block" | grep -iq "Tomcat Version:"; then
+        user_count=0
+        while IFS= read -r uline; do
+            user_count=$((user_count+1))
+        done < <(extract_users "$block")
+        [ $user_count -gt $max_users ] && max_users=$user_count
+    fi
 done
 
-echo "Exported to CSV: $OUTPUT_CSV" 
+# Now write the header with the correct number of user columns
+header=("Server" "Timestamp" "TomcatHome" "ConfigPath" "TomcatVersion" "CredentialHandler" "Algorithm" "Iterations" "SaltLength" "OverallStatus" "Compliance" "ComplianceDetails" "OptionalWarnings" "AuditCompleted")
+for i in $(seq 1 $max_users); do
+    header+=("Username$i" "PasswordType$i" "UserCompliance$i")
+done
+(IFS=,; echo "${header[*]}" > "$OUTPUT_CSV")
+
+# Second pass: process and write each row
+first_block_printed=0
+for block in "${blocks[@]}"; do
+    block=$(echo "$block" | sed '/./,$!d')
+    [ -z "$(echo "$block" | tr -d '\n[:space:]')" ] && continue
+    # Debug: print the first block after splitting
+    if [ $first_block_printed -eq 0 ]; then
+        echo "DEBUG: First block after splitting:" >&2
+        echo "$block" | head -30 >&2
+        first_block_printed=1
+    fi
+    if echo "$block" | grep -iq "Hostname:" && echo "$block" | grep -iq "Tomcat Version:"; then
+        # Print debug output for real audit blocks
+        echo "DEBUG: Candidate fields in block:" >&2
+        while IFS= read -r line2; do
+            trimmed=$(echo "$line2" | sed 's/^ *//;s/ *$//')
+            echo "$trimmed" | grep -q ":" || continue
+            candidate_field=$(echo "$trimmed" | cut -d: -f1 | sed 's/^ *//;s/ *$//')
+            echo "  $candidate_field" >&2
+        done <<< "$block"
+        # Extract fields
+        timestamp=$(extract_field "$block" "Execution Time")
+        server=$(extract_field "$block" "Hostname")
+        tomcat_version=$(extract_field "$block" "Tomcat Version")
+        tomcat_home=$(extract_field "$block" "Tomcat Home")
+        config_path=$(extract_field "$block" "Config Path")
+        credential_handler=$(extract_field "$block" "Credential Handler")
+        algorithm=$(extract_field "$block" "Algorithm")
+        iterations=$(extract_field "$block" "Iterations")
+        salt_length=$(extract_field "$block" "Salt Length")
+        overall_status=$(extract_field "$block" "Overall Status")
+        compliance=$(extract_field "$block" "Status")
+        audit_completed=$(echo "$block" | grep -iq "Audit completed" && echo "true" || echo "false")
+        compliance_details=$(extract_compliance_details "$block")
+        optional_warnings=$(extract_optional_warnings "$block")
+        user_lines=()
+        user_count=0
+        while IFS= read -r uline; do
+            user_lines+=("$uline")
+            user_count=$((user_count+1))
+        done < <(extract_users "$block")
+        row_arr=()
+        row_arr+=("$(csv_escape "$server")")
+        row_arr+=("$(csv_escape "$timestamp")")
+        row_arr+=("$(csv_escape "$tomcat_home")")
+        row_arr+=("$(csv_escape "$config_path")")
+        row_arr+=("$(csv_escape "$tomcat_version")")
+        row_arr+=("$(csv_escape "$credential_handler")")
+        row_arr+=("$(csv_escape "$algorithm")")
+        row_arr+=("$(csv_escape "$iterations")")
+        row_arr+=("$(csv_escape "$salt_length")")
+        row_arr+=("$(csv_escape "$overall_status")")
+        row_arr+=("$(csv_escape "$compliance")")
+        row_arr+=("$(csv_escape "$compliance_details")")
+        row_arr+=("$(csv_escape "$optional_warnings")")
+        row_arr+=("$(csv_escape "$audit_completed")")
+        for i in $(seq 1 $max_users); do
+            idx=$((i-1))
+            if [ $idx -lt $user_count ]; then
+                IFS='|' read uname ptype ucomp <<EOF
+${user_lines[$idx]}
+EOF
+                row_arr+=("$(csv_escape "$uname")")
+                row_arr+=("$(csv_escape "$ptype")")
+                row_arr+=("$(csv_escape "$ucomp")")
+            else
+                row_arr+=("")
+                row_arr+=("")
+                row_arr+=("")
+            fi
+        done
+        (IFS=,; echo "${row_arr[*]}") >> "$OUTPUT_CSV"
+    fi
+done
+
+# At the end, clean up temp file
+rm -f "$TMPUNIX" 
