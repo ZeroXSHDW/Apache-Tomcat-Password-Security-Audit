@@ -42,13 +42,11 @@ fuzzy_field_match() {
     local field="$2"
     local best_match=""
     local best_score=0
-    echo "DEBUG: Candidate fields in block:" >&2
     while IFS= read -r line; do
         trimmed=$(echo "$line" | sed 's/^ *//;s/ *$//')
         echo "$trimmed" | grep -q ":" || continue
         candidate_field=$(echo "$trimmed" | cut -d: -f1 | sed 's/^ *//;s/ *$//')
         candidate_value=$(echo "$trimmed" | cut -d: -f2- | sed 's/^ *//;s/ *$//')
-        echo "  $candidate_field" >&2
         score=0
         i=0
         while [ $i -lt ${#field} ] && [ $i -lt ${#candidate_field} ]; do
@@ -201,21 +199,7 @@ first_block_printed=0
 for block in "${blocks[@]}"; do
     block=$(echo "$block" | sed '/./,$!d')
     [ -z "$(echo "$block" | tr -d '\n[:space:]')" ] && continue
-    # Debug: print the first block after splitting
-    if [ $first_block_printed -eq 0 ]; then
-        echo "DEBUG: First block after splitting:" >&2
-        echo "$block" | head -30 >&2
-        first_block_printed=1
-    fi
     if echo "$block" | grep -iq "Hostname:" && echo "$block" | grep -iq "Tomcat Version:"; then
-        # Print debug output for real audit blocks
-        echo "DEBUG: Candidate fields in block:" >&2
-        while IFS= read -r line2; do
-            trimmed=$(echo "$line2" | sed 's/^ *//;s/ *$//')
-            echo "$trimmed" | grep -q ":" || continue
-            candidate_field=$(echo "$trimmed" | cut -d: -f1 | sed 's/^ *//;s/ *$//')
-            echo "  $candidate_field" >&2
-        done <<< "$block"
         # Extract fields
         timestamp=$(extract_field "$block" "Execution Time")
         server=$(extract_field "$block" "Hostname")
@@ -267,10 +251,6 @@ EOF
                 row_arr+=("")
             fi
         done
-        # Debug: print raw extracted compliance details and optional warnings
-        # echo "DEBUG: Raw compliance details: [$compliance_details]" >&2
-        # echo "DEBUG: Raw optional warnings: [$optional_warnings]" >&2
-
         # Build the CSV row as a string
         row_str=""
         for ((i=0; i<${#row_arr[@]}; i++)); do
