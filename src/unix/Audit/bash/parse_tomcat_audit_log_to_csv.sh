@@ -1,5 +1,15 @@
 #!/bin/bash
 
+# Ensure running with Bash
+if [ -z "$BASH_VERSION" ]; then
+  echo "This script must be run with bash."
+  exit 1
+fi
+
+# Set locale for UTF-8 compatibility
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+
 # Minimal argument check
 if [ $# -lt 2 ]; then
   echo "Usage: $0 <input_log_file> <output_csv_file>"
@@ -222,7 +232,16 @@ EOF
                 row_arr+=("")
             fi
         done
-        (IFS=,; echo "${row_arr[*]}") >> "$OUTPUT_CSV"
+        # Write the row to the CSV file using printf for robust CSV output
+        {
+            for ((i=0; i<${#row_arr[@]}; i++)); do
+                printf '%s' "${row_arr[$i]}"
+                if [ $i -lt $((${#row_arr[@]}-1)) ]; then
+                    printf ','
+                fi
+            done
+            printf '\n'
+        } >> "$OUTPUT_CSV"
     fi
 done
 
