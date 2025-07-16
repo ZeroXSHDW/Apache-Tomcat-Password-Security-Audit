@@ -28,7 +28,8 @@ INPUT_FILE="$TMPUNIX"
 csv_escape() {
     local s="$1"
     s="${s//\"/\"\"}" # double quotes
-    if echo "$s" | grep -q '[,\"]'; then
+    # If the field contains a comma, quote, or newline, wrap in double quotes
+    if [[ "$s" == *\"* || "$s" == *,* || "$s" == *$'\n'* ]]; then
         printf '"%s"' "$s"
     else
         printf '%s' "$s"
@@ -108,12 +109,46 @@ EOF
 # Helper function: extract compliance/warning lines
 extract_compliance_details() {
     local block="$1"
-    echo "$block" | grep -iE "COMPLIANCE:|WARNING:|is owned by|permissions|root check|Root Execution Compliance Check|Detection method:|Tomcat process is not running as root|Tomcat service is configured to run as root|Tomcat service is configured to run as user|has insecure permissions|permissions are secure" | paste -sd ';' - | sed 's/^ *//;s/ *$//;s/[\r\n]//g'
+    local inblock=0
+    local details=()
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^====\ Tomcat\ Root\ Execution\ Compliance\ Check\ ==== ]]; then
+            inblock=1
+            continue
+        fi
+        if [[ "$line" =~ ^====\ End\ of\ Root\ Execution\ Compliance\ Check\ ==== ]]; then
+            inblock=0
+        fi
+        if [ $inblock -eq 1 ]; then
+            details+=("$(echo "$line" | sed 's/^ *//;s/ *$//')")
+        fi
+    done <<< "$block"
+    local joined=""
+    for d in "${details[@]}"; do
+        if [ -n "$joined" ]; then
+            joined+=";"
+        fi
+        joined+="$d"
+    done
+    echo "$joined"
 }
 
 extract_optional_warnings() {
     local block="$1"
-    echo "$block" | grep -iE "^[ ]*Warning:" | sed 's/^[ ]*Warning:[ ]*//I;s/^ *//;s/ *$//;s/[\r\n]//g' | paste -sd ';' -
+    local warnings=()
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*Warning: ]]; then
+            warnings+=("$(echo "$line" | sed 's/^[ ]*Warning:[ ]*//I;s/^ *//;s/ *$//')")
+        fi
+    done <<< "$block"
+    local joined=""
+    for w in "${warnings[@]}"; do
+        if [ -n "$joined" ]; then
+            joined+=";"
+        fi
+        joined+="$w"
+    done
+    echo "$joined"
 }
 
 # Split input into blocks using Bash array (robust for macOS)
@@ -232,16 +267,22 @@ EOF
                 row_arr+=("")
             fi
         done
-        # Write the row to the CSV file using printf for robust CSV output
-        {
-            for ((i=0; i<${#row_arr[@]}; i++)); do
-                printf '%s' "${row_arr[$i]}"
-                if [ $i -lt $((${#row_arr[@]}-1)) ]; then
-                    printf ','
-                fi
-            done
-            printf '\n'
-        } >> "$OUTPUT_CSV"
+        # Debug: print raw extracted compliance details and optional warnings
+        # echo "DEBUG: Raw compliance details: [$compliance_details]" >&2
+        # echo "DEBUG: Raw optional warnings: [$optional_warnings]" >&2
+
+        # Build the CSV row as a string
+        row_str=""
+        for ((i=0; i<${#row_arr[@]}; i++)); do
+            # Add comma if not the first field
+            if [ $i -ne 0 ]; then
+                row_str+="," 
+            fi
+            row_str+="${row_arr[$i]}"
+        done
+
+        # Use printf to write to file for robust handling
+        printf '%s\n' "$row_str" >> "$OUTPUT_CSV"
     fi
 done
 
