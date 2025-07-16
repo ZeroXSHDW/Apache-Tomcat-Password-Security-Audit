@@ -3,6 +3,24 @@ param(
     [Parameter(Mandatory=$true)][string]$OutputCsv
 )
 
+function Remove-HostPrefix {
+    param($line)
+    if ($line -match '^\[([\w-]+)\] (.*)$') {
+        return $matches[2]
+    }
+    return $line
+}
+
+function IsTomcatAuditBlock {
+    param($block)
+    # Must contain Execution Time and Tomcat Version and Hostname/HOSTNAME
+    return (
+        $block -match "Execution Time:" -and
+        ($block -match "HOSTNAME:" -or $block -match "Hostname:") -and
+        $block -match "Tomcat Version:"
+    )
+}
+
 function Parse-Block {
     param($block)
     $obj = @{}
@@ -24,8 +42,9 @@ function Parse-Block {
 
     $lines = $block -split "`n"
     foreach ($line in $lines) {
-        $trimmed = $line.Trim()
+        $trimmed = Remove-HostPrefix $line.Trim()
         if ($trimmed -match "^Execution Time: (.+)$") { $obj.Timestamp = $matches[1] }
+        if ($trimmed -match "^HOSTNAME: (.+)$") { $obj.Server = $matches[1] }
         if ($trimmed -match "^Hostname: (.+)$") { $obj.Server = $matches[1] }
         if ($trimmed -match "^Tomcat Version: (.+)$") { $obj.TomcatVersion = $matches[1] }
         if ($trimmed -match "^Tomcat Home: (.+)$") { $obj.TomcatHome = $matches[1] }
@@ -46,7 +65,7 @@ function Parse-Block {
             }
         }
         # Collect compliance and warning details
-        if ($trimmed -match "COMPLIANCE:|WARNING:|is owned by|permissions|root check|Root Execution Compliance Check|Detection method:|Tomcat process is not running as root|Tomcat service is configured to run as root|Tomcat service is configured to run as user|has insecure permissions|permissions are secure") {
+        if ($trimmed -match "COMPLIANCE:|WARNING:|is owned by|permissions|root check|Root Execution Compliance Check|Detection method:|Tomcat process is not running as root|Tomcat service is configured to run as root|Tomcat service is configured to run as user|has insecure permissions|permissions are secure|WARNING: Tomcat process") {
             $obj.ComplianceDetails += $trimmed
         }
         # Collect optional warnings
@@ -61,12 +80,28 @@ function Parse-Block {
 
 # Read the file and split into blocks
 $content = Get-Content $InputFile -Raw
-$blocks = $content -split "\*{10,}"  # Split on 10 or more asterisks
+# Support both local and remote: split on 40+ # or = lines, or 10+ * lines
+$blocks = $content -split "(#+|=+|\*{10,})[\r\n]+"
+
+# Re-join lines into blocks by looking for Execution Time or [HOST] Execution Time
+$realBlocks = @()
+$current = ""
+foreach ($line in $blocks) {
+    if ($line -match "Execution Time: ") {
+        if ($current -ne "") { $realBlocks += $current }
+        $current = $line
+    } else {
+        $current += "`n$line"
+    }
+}
+if ($current -ne "") { $realBlocks += $current }
 
 $parsed = @()
-foreach ($block in $blocks) {
-    $obj = Parse-Block $block
-    if ($obj) { $parsed += $obj }
+foreach ($block in $realBlocks) {
+    if (IsTomcatAuditBlock $block) {
+        $obj = Parse-Block $block
+        if ($obj) { $parsed += $obj }
+    }
 }
 
 # Find the max number of users in any block
