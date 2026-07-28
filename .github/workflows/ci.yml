@@ -17,6 +17,7 @@ jobs:
             echo "Checking $script"
             bash -n "$script"
           done < <(find src/unix install/unix -type f -name '*.sh' -print0)
+
   python-syntax:
     runs-on: ubuntu-latest
     steps:
@@ -26,3 +27,15 @@ jobs:
           python-version: "3.12"
       - name: Compile Unix test helper
         run: python -m py_compile tests/Audit/unix/test_config_unix.py
+
+  # Full test_config_unix.py needs a live Tomcat install (lab only).
+  # These unit tests cover XML helpers without mutating a Tomcat tree.
+  unix-helper-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run self-contained XML helper unit tests
+        run: python -m unittest discover -s tests/unit -v

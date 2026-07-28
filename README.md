@@ -36,33 +36,33 @@
 ## Quick Start
 
 ### Prerequisites
-- **Unix (Linux/macOS)**:
-  - Bash shell.
-  - Tomcat installed (e.g., `/opt/tomcat`).
-  - Sudo permissions for auditing and patching.
-- **Windows**:
-  - PowerShell 5.1+ (included in Windows 10/11).
-  - Tomcat installed (e.g., `C:\Program Files\Apache Software Foundation\Tomcat`).
-  - Administrator privileges for auditing and patching.
-  - PowerShell remoting enabled for remote auditing.
-- **Java**: Java 8 for Tomcat 7.0; Java 11 for 8.5, 9.0, 10.0, 10.1.
+- **Unix (Linux/macOS)**: Bash, Tomcat under a path such as `/opt/tomcat`, and sudo for audit/patch.
+- **Windows**: PowerShell 5.1+, Tomcat installed, Administrator for patch; WinRM for remote audit.
+- **Java**: Java 8 for Tomcat 7.0; Java 11+ for 8.5 / 9.0 / 10.x.
 
-### Tomcat Installation (Not Recommended for Production Environments)
-
-For automated, installation of Tomcat (all supported versions), use the install scripts provided in the `install/` directory. These scripts handle download, extraction, Java setup, secure user configuration, and service management for both Windows and Unix.
-
-See [install/README.md](install/README.md) for full instructions and usage examples.
-
-### Clone Repository
+### Clone
 ```bash
 git clone https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit ~/tomcat-audit
 cd ~/tomcat-audit
 ```
-For Windows:
-```powershell
-git clone https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit C:\Users\<User>\tomcat-audit
-cd C:\Users\<User>\tomcat-audit
+
+### Fastest audit (Unix)
+```bash
+sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
+# optional custom conf:
+sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh --custom-conf=/path/to/conf
 ```
+
+### Fastest audit (Windows)
+```powershell
+.\src\windows\Audit\powershell\CheckTomcatConfigWin.ps1
+```
+
+### Optional Tomcat lab install
+Install scripts under `install/` set up non-production Tomcat trees for testing. See [install/README.md](install/README.md).
+
+### Security
+See [SECURITY.md](SECURITY.md) for disclosure and safe-operation notes.
 
 ## Usage
 
@@ -396,7 +396,12 @@ Below are the command line parameters for each script. All scripts support optio
 The testing framework validates the auditing and patching scripts by simulating various Tomcat configurations and password types to ensure they correctly identify and resolve compliance issues. It includes installation scripts to set up test environments.
 
 ### Run Tests
-#### Unix
+#### Unix (self-contained helpers — no Tomcat required)
+```bash
+python -m unittest discover -s tests/unit -v
+```
+
+#### Unix (full lab harness — requires installed Tomcat; mutates configs)
 ```bash
 sudo ./tests/Audit/unix/test_config_unix.py
 ```
