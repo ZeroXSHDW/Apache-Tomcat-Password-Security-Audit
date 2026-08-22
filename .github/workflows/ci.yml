@@ -42,3 +42,27 @@ jobs:
           python-version: "3.12"
       - name: Run self-contained XML helper unit tests
         run: python -m unittest discover -s tests/unit -v
+
+  powershell-parse:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Parse every PowerShell script
+        shell: pwsh
+        run: |
+          $parser = [System.Management.Automation.Language.Parser]
+          $failures = @()
+          Get-ChildItem -Path . -Recurse -File -Filter '*.ps1' | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            $null = $parser::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) {
+              $messages = ($errors | ForEach-Object { $_.Message }) -join '; '
+              $failures += "$($_.FullName): $messages"
+            }
+          }
+          if ($failures.Count -gt 0) {
+            $failures | ForEach-Object { Write-Error $_ }
+            exit 1
+          }
+          Write-Host 'All PowerShell scripts parsed successfully.'
