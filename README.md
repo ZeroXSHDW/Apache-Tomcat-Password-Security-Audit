@@ -143,7 +143,7 @@ Finished updating users in /opt/tomcat/conf/tomcat-users.xml
 ```powershell
 .\src\windows\Audit\powershell\CheckTomcatConfigWin.ps1
 ```
-- **Output**: Logs to `$env:LOCALAPPDATA\Temp\TomcatManager.csv` (e.g., `C:\Users\<User>\AppData\Local\Temp`).
+- **Output**: Logs to `$env:LOCALAPPDATA\Temp\TomcatManager.csv` (e.g., `$env:LOCALAPPDATA\Temp`).
 - **Example Output:**
 ```
 Checking Apache Tomcat configuration security...
@@ -176,7 +176,7 @@ Auditing tomcat-users.xml
     admin    | Hash          | Compliant
 ===========================
 Overall Status: Secure
-Audit completed. Log: C:\Users\<User>\AppData\Local\Temp\TomcatManager.csv
+Audit completed. Log: $env:LOCALAPPDATA\Temp\TomcatManager.csv
 ```
 
 #### Local Patch
@@ -253,7 +253,7 @@ Below is a sample output from running the remote Tomcat user update script. This
 .\Remote_UpdateTomcatUserWin.ps1 -ServerName "WIN-E6DN4M5084M" -Credential (Get-Credential)
 ```
 ```powershell
-PS C:\Users\Admin\Downloads> .\Remote_UpdateTomcatUserWin.ps1 -ServerName "WIN-E6DN4M5084M" -Credential (Get-Credential)
+PS <repo-root>> .\Remote_UpdateTomcatUserWin.ps1 -ServerName "WIN-E6DN4M5084M" -Credential (Get-Credential)
 
 cmdlet Get-Credential at command pipeline position 1
 Supply values for the following parameters:
@@ -296,7 +296,7 @@ Credential
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Successfully updated user hashes in tomcat-users.xml
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Tomcat is not running. No restart will be performed.
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Configuration update completed successfully
-PS C:\Users\Admin\Downloads>
+PS <repo-root>>
 ```
 
 ## Windows Tomcat Audit JSON Output and Parsing
