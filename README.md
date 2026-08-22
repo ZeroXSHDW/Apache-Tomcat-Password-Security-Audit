@@ -440,4 +440,9 @@ Example `tomcat-users.xml`:
 ```
 
 ## License
-Licensed under the Apache 2.0 License. See `
+
+Licensed under the Apache 2.0 License. See [LICENSE](LICENSE).
+
+## Contributing
+
+Keep audit scripts safe, deterministic, and non-destructive by default. Run the documented PowerShell and unit checks before review and see [CONTRIBUTING.md](CONTRIBUTING.md).
