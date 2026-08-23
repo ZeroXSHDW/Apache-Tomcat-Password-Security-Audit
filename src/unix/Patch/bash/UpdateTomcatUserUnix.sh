@@ -173,9 +173,17 @@ generate_hash() {
         9.0|10.0|10.1) algo="PBKDF2WithHmacSHA512"; iterations="-i 10000"; salt="-s 16";;
         *) algo="SHA-512"; iterations="-i 10000"; salt="-s 16";;
     esac
-    local cmd="$digest -a $algo ${iterations:-} ${salt:-} $password"
-    local hash=$($cmd 2>/dev/null | grep -o '[0-9a-fA-F:]*$')
-    if [ -z "$hash" ]; then error_exit "Failed to generate hash for $password"; fi
+    local digest_args=("$digest" -a "$algo")
+    if [ -n "${iterations:-}" ]; then digest_args+=(-i 10000); fi
+    if [ -n "${salt:-}" ]; then digest_args+=(-s 16); fi
+    digest_args+=("$password")
+    local digest_output
+    if ! digest_output=$("${digest_args[@]}" 2>/dev/null); then
+        error_exit "Failed to generate a password hash."
+    fi
+    local hash
+    hash=$(printf '%s\n' "$digest_output" | grep -o '[0-9a-fA-F:]*$' | tail -n 1)
+    if [ -z "$hash" ]; then error_exit "Password hash generation returned no usable hash."; fi
     echo "$hash"
 }
 
@@ -280,8 +288,8 @@ update_all_users() {
             fi
             compliance="Compliant"
             echo "✔ Updated user: $username"
-            echo "    • Old password:  $pw   (Plaintext, ❌ Non-compliant)"
-            echo "    • New password:  $hash   ($new_type, ✅ Compliant)"
+            echo "    • Old password:  [REDACTED]   (Plaintext, ❌ Non-compliant)"
+            echo "    • New password:  [REDACTED]   ($new_type, ✅ Compliant)"
             echo
             sed "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml" > "${tmp_xml}.new" && mv "${tmp_xml}.new" "$tmp_xml"
         fi

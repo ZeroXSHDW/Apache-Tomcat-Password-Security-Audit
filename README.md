@@ -131,11 +131,12 @@ sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
  Tomcat User Password Update
 ─────────────────────────────
 ✔ Updated user: tomcat
-    • Old password:  plaintext   (Plaintext, ❌ Non-compliant)
-    • New password:  [HASHED]   (Salted Hash, ✅ Compliant)
+    • Old password:  [REDACTED]   (Plaintext, ❌ Non-compliant)
+    • New password:  [REDACTED]   (Salted Hash, ✅ Compliant)
 Finished updating users in /opt/tomcat/conf/tomcat-users.xml
 ```
 - **Backups**: Before patching, backups are created for both `server.xml` and `tomcat-users.xml` with a timestamp.
+- **Credential hygiene**: Patch output and logs intentionally redact plaintext passwords and generated credential material.
 
 ### 3. Windows: Audit, Patch, and Remote Audit
 
@@ -197,7 +198,7 @@ Auto-detected TomcatHome: C:\tomcat
 2025-06-26 16:51:39 - INFO - Patched server.xml with correct CredentialHandler for Tomcat 10.1
 2025-06-26 16:51:39 - INFO - Created backup: C:\tomcat\conf\tomcat-users.xml.bak.20250626165139
 2025-06-26 16:51:39 - INFO - Hashing plaintext password for user tomcat using Tomcat 10.1
-2025-06-26 16:51:41 - INFO - digest.bat output: s3cretP@ssw0rd!:8dc9918eaf2ca02a0d0a81e18a2f0393$10000$523134b8b96e34cb3cb9aa0ce29ad0e22a646c82
+2025-06-26 16:51:41 - INFO - digest.bat completed; credential material omitted
 2025-06-26 16:51:41 - INFO - Updated password for user tomcat
 2025-06-26 16:51:41 - INFO - Successfully updated user hashes in tomcat-users.xml
 2025-06-26 16:51:41 - INFO - Tomcat is not running. No restart will be performed.
@@ -271,8 +272,8 @@ Credential
 2025-06-27 07:34:49 - INFO - Created backup: C:\\tomcat\conf\tomcat-users.xml.bak.20250627073449
 2025-06-27 07:34:49 - INFO - Hashing plaintext password for user tomcat using Tomcat 10.1
 2025-06-27 07:34:49 - INFO - setenv.bat already sets CATALINA_HOME correctly.
-2025-06-27 07:34:49 - INFO - Running digest.bat command: C:\\tomcat\bin\digest.bat -h org.apache.catalina.realm.SecretKeyCredentialHandler -a PBKDF2WithHmacSHA512 -i 10000 -s 16 s3cretP@ssw0rd!
-2025-06-27 07:34:50 - INFO - digest.bat output: s3cretP@ssw0rd!:5dae7a04de769ce52f6dd51520343181$10000$27a2187bc799dd59f3fefee3aeac21b703d2da7b
+2025-06-27 07:34:49 - INFO - Running digest.bat with credential arguments redacted
+2025-06-27 07:34:50 - INFO - digest.bat completed; credential material omitted
 2025-06-27 07:34:50 - INFO - Updated password for user tomcat
 2025-06-27 07:34:50 - INFO - Successfully updated user hashes in tomcat-users.xml
 2025-06-27 07:34:50 - INFO - Tomcat is not running. No restart will be performed.
@@ -290,8 +291,8 @@ Credential
 [WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Created backup: C:\\tomcat\conf\tomcat-users.xml.bak.20250627073449
 [WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Hashing plaintext password for user tomcat using Tomcat 10.1
 [WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - setenv.bat already sets CATALINA_HOME correctly.
-[WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Running digest.bat command: C:\\tomcat\bin\digest.bat -h org.apache.catalina.realm.SecretKeyCredentialHandler -a PBKDF2WithHmacSHA512 -i 10000 -s 16 s3cretP@ssw0rd!
-[WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - digest.bat output: s3cretP@ssw0rd!:5dae7a04de769ce52f6dd51520343181$10000$27a2187bc799dd59f3fefee3aeac21b703d2da7b
+[WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Running digest.bat with credential arguments redacted
+[WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - digest.bat completed; credential material omitted
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Updated password for user tomcat
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Successfully updated user hashes in tomcat-users.xml
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Tomcat is not running. No restart will be performed.
