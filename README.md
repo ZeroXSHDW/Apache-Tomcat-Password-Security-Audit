@@ -16,14 +16,6 @@
 - **Detailed Logging**: Logs audit and patch results to platform-specific locations for traceability.
 - **Compliance Reporting**: Identifies secure/insecure configurations and provides guidance for achieving compliance.
 
-### Features
-- Checks password types and credential handler configurations.
-- Converts plaintext passwords to secure hashes (SHA-256, SHA-512, PBKDF2WithHmacSHA512) based on Tomcat version.
-- Reports compliance status with actionable recommendations.
-- Supports local and remote auditing on Windows, and local auditing/patching on Unix.
-- Logs results for traceability (CSV for all platforms).
-- Compatible with Tomcat 7.0, 8.5, 9.0, 10.0, and 10.1.
-
 ### Supported Tomcat Versions
 | Version | Unix Support | Windows Support | Notes |
 |---------|--------------|-----------------|-------|
@@ -32,6 +24,22 @@
 | 9.0     | ✅           | ✅              | Includes `SecretKeyCredentialHandler` for PBKDF2. |
 | 10.0    | ✅           | ✅              | Supports `SecretKeyCredentialHandler` and `NestedCredentialHandler`. |
 | 10.1    | ✅           | ✅              | Identical features to 10.0. |
+
+## Architecture and boundaries
+
+The auditor has separate local and remote surfaces with an explicit lab-only
+test boundary:
+
+| Surface | Boundary |
+|---|---|
+| `src/unix/Audit/` and `src/unix/Patch/` | Bash tools that inspect or explicitly patch a local Tomcat configuration; patch mode creates timestamped backups. |
+| `src/windows/Audit/` and `src/windows/Patch/` | PowerShell tools for local Windows audit/patch and caller-supplied remote audit/update targets. Credentials are passed by the operator and are not stored by the repository. |
+| `install/` | Optional lab setup and lifecycle helpers; do not use them as a production deployment mechanism. |
+| `tests/unit/` and `tests/Audit/` | Self-contained helper tests and destructive lab harnesses. The full harness must run only against disposable Tomcat installations. |
+
+The supported controls cover Tomcat credential handlers, password formats,
+configuration permissions, backups, and redacted audit output. A compliant
+result is not a complete host, application, or compliance assessment.
 
 ## Quick Start
 
@@ -390,6 +398,20 @@ Below are the command line parameters for each script. All scripts support optio
     .\install\windows\TomcatManager.ps1 -Action Install -TomcatVersion 10.1.42 -InstallDir C:\tomcat
     ```
 
+## Verification
+
+The safe CI-equivalent checks do not require a Tomcat service or credentials:
+
+```bash
+find src/unix install/unix -type f -name '*.sh' -exec bash -n {} +
+python -m py_compile tests/Audit/unix/test_config_unix.py
+python -m unittest discover -s tests/unit -v
+```
+
+The workflow also parses every PowerShell file on Windows. The complete audit
+and patch lab harness is intentionally separate because it mutates disposable
+Tomcat trees; it is never a substitute for the safe unit gate.
+
 ## Testing Framework
 
 **WARNING**: The testing framework modifies system configurations, including `server.xml` and `tomcat-users.xml`, and installs/uninstalls Tomcat instances. It is **strictly for use in test labs** to verify that the auditing and patching scripts function correctly. **Do not use on production systems**, as it may disrupt services or cause data loss. Use only in controlled lab environments.
@@ -416,7 +438,7 @@ sudo ./tests/Audit/unix/test_config_unix.py
 - Logs to `$env:LOCALAPPDATA\Temp\TestTomcatConfig.log`.
 - Tests 15–42 configurations per Tomcat version.
 
-## Configuration Recommendations
+## Configuration reference and recommendations
 For optimal compliance:
 - **Tomcat 7.0**: Use `MessageDigestCredentialHandler` with SHA-256.
 - **Tomcat 8.5**: Use `MessageDigestCredentialHandler` with SHA-512, ≥10,000 iterations, ≥16-byte salt.
