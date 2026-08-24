@@ -6,7 +6,7 @@
 
 **Apache Tomcat - Password Security Auditor Tool** is a set of tools designed to audit and patch Apache Tomcat user authentication configurations for compliance with **NIST 800-53 IA-5** and **CIS Tomcat Benchmark** standards. This repository includes scripts for both Unix (Linux/macOS) and Windows environments, enabling system administrators and security professionals to evaluate and secure password configurations across various Tomcat versions.
 
-### Key Features
+## Features
 - **Automated Testing**: Scripts test multiple password types and credential handler configurations, modifying `server.xml` and `tomcat-users.xml` to simulate scenarios and validate compliance.
 - **Manual Auditing**: Analyze existing configurations, reporting password types, credential handlers, and compliance status with actionable recommendations.
 - **Automated Patching**: Convert plaintext passwords to compliant hashes, update configuration files, and restart Tomcat services.
@@ -41,19 +41,23 @@ The supported controls cover Tomcat credential handlers, password formats,
 configuration permissions, backups, and redacted audit output. A compliant
 result is not a complete host, application, or compliance assessment.
 
-## Quick Start
-
-### Prerequisites
+## Prerequisites
 - **Unix (Linux/macOS)**: Bash, Tomcat under a path such as `/opt/tomcat`, and sudo for audit/patch.
 - **Windows**: PowerShell 5.1+, Tomcat installed, Administrator for patch; WinRM for remote audit.
 - **Java**: Java 8 for Tomcat 7.0; Java 11+ for 8.5 / 9.0 / 10.x.
 
-### Clone
+## Installation and setup
+
+Clone the repository into a reviewable workspace:
+
 ```bash
 git clone https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit ~/tomcat-audit
 cd ~/tomcat-audit
 ```
 
+The optional lab installers under `install/` are for disposable test environments only. Review [install/README.md](install/README.md) and [SECURITY.md](SECURITY.md) before using any installer or patch mode.
+
+## Quick Start
 ### Fastest audit (Unix)
 ```bash
 sudo bash ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
@@ -69,7 +73,8 @@ sudo bash ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh --custom-conf=/path
 ### Optional Tomcat lab install
 Install scripts under `install/` set up non-production Tomcat trees for testing. See [install/README.md](install/README.md).
 
-### Security
+## Security
+
 See [SECURITY.md](SECURITY.md) for disclosure and safe-operation notes.
 
 ## Usage
