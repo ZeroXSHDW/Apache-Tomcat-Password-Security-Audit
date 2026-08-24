@@ -7,7 +7,7 @@ param(
     [string]$Action = $null,
     [string]$TomcatVersion = $null,
     [string]$Username = "tomcat",
-    [string]$Password = "s3cretP@ssw0rd!",
+    [string]$Password = $null,
     [string]$Roles = "manager-gui,admin-gui",
     [string]$StartMode = "service"  # 'service' (default) or 'bat'
 )
@@ -851,6 +851,10 @@ switch ($Action) {
     "install" {
         if (-not $TomcatVersion) {
             Write-Log "ERROR: Please specify a Tomcat version (7, 8.5, 9, 10.0, or 10.1)"
+            exit 1
+        }
+        if (-not $Password) {
+            Write-Log "ERROR: -Password is required for installation; no default password is provided."
             exit 1
         }
         Install-Tomcat -TomcatMajor $TomcatVersion -Username $Username -Password $Password -Roles $Roles -StartMode $StartMode
