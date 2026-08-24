@@ -56,9 +56,9 @@ cd ~/tomcat-audit
 
 ### Fastest audit (Unix)
 ```bash
-sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
+sudo bash ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
 # optional custom conf:
-sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh --custom-conf=/path/to/conf
+sudo bash ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh --custom-conf=/path/to/conf
 ```
 
 ### Fastest audit (Windows)
@@ -77,7 +77,7 @@ See [SECURITY.md](SECURITY.md) for disclosure and safe-operation notes.
 ### 1. Unix: Audit Local Configuration (Bash)
 Run the Unix Bash auditing script to check compliance:
 ```bash
-sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
+sudo bash ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
 ```
 - **Output**: Logs to `/tmp/TomcatManager.csv`.
 - **Example Output:**
@@ -120,7 +120,7 @@ Audit completed. Log: /tmp/TomcatManager.csv
 ### 2. Unix: Patch Local Configuration (Bash)
 Run the Unix Bash patching script to convert plaintext passwords to compliant hashes and update configurations:
 ```bash
-sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
+sudo bash ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
 ```
 - **Output**: Logs to `/tmp/TomcatManager.csv`.
 - **Example Output:**
@@ -342,14 +342,14 @@ Below are the command line parameters for each script. All scripts support optio
   - `--custom-conf=/path/to/conf` (optional): Use a custom Tomcat configuration directory (must contain `server.xml` and `tomcat-users.xml`).
   - **Usage:**
     ```bash
-    sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh [--custom-conf=/path/to/conf]
+    sudo bash ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh [--custom-conf=/path/to/conf]
     ```
 
 - **UpdateTomcatUserUnix.sh**
   - `[optional-custom-conf-path]` (optional): Path to Tomcat `conf` directory (if not using default or auto-detected).
   - **Usage:**
     ```bash
-    sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh [optional-custom-conf-path]
+    sudo bash ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh [optional-custom-conf-path]
     ```
 
 ### Windows Scripts
