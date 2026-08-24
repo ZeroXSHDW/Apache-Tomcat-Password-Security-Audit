@@ -31,6 +31,8 @@ class ReadmeContractTests(unittest.TestCase):
         self.assertNotRegex(readme, r"https://github\.com/your-org/")
         self.assertNotRegex(readme, r"/Users/|[A-Z]:\\Users\\")
         self.assertIn("git diff --check", readme)
+        self.assertIn("sudo bash ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh", readme)
+        self.assertIn("sudo bash ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh", readme)
         self.assertEqual(
             workflow.count("git diff --check"),
             workflow.count("uses: actions/checkout@"),
