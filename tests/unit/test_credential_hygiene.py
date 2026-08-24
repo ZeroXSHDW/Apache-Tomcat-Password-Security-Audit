@@ -9,6 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 UNIX_PATCH = ROOT / "src/unix/Patch/bash/UpdateTomcatUserUnix.sh"
 WINDOWS_PATCH = ROOT / "src/windows/Patch/powershell/UpdateTomcatUserWin.ps1"
+UNIX_INSTALLER = ROOT / "install/unix/tomcat_manager.sh"
+WINDOWS_INSTALLER = ROOT / "install/windows/TomcatManager.ps1"
 
 
 class TestCredentialHygiene(unittest.TestCase):
@@ -32,6 +34,17 @@ class TestCredentialHygiene(unittest.TestCase):
         self.assertNotIn('Write-Log "Running digest.bat command:', source)
         self.assertNotIn('Write-Log "digest.bat output: $digestRaw', source)
         self.assertNotIn('$startInfo.Arguments = "/c', source)
+
+    def test_installers_require_an_explicit_admin_password(self) -> None:
+        unix_source = UNIX_INSTALLER.read_text(encoding="utf-8")
+        windows_source = WINDOWS_INSTALLER.read_text(encoding="utf-8")
+
+        self.assertNotIn('PASSWORD="s3cret"', unix_source)
+        self.assertIn('PASSWORD=""', unix_source)
+        self.assertIn("Admin password is required; no default password is provided.", unix_source)
+        self.assertNotIn('"s3cretP@ssw0rd!"', windows_source)
+        self.assertIn("[string]$Password = $null", windows_source)
+        self.assertIn("-Password is required for installation; no default password is provided.", windows_source)
 
 
 if __name__ == "__main__":
