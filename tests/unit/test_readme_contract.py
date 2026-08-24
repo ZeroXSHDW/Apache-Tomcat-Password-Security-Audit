@@ -12,7 +12,10 @@ class ReadmeContractTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         required = (
             "## Overview",
+            "## Features",
             "## Architecture and boundaries",
+            "## Prerequisites",
+            "## Installation and setup",
             "## Quick Start",
             "## Usage",
             "## Command Line Parameters",
@@ -31,6 +34,8 @@ class ReadmeContractTests(unittest.TestCase):
         self.assertNotRegex(readme, r"https://github\.com/your-org/")
         self.assertNotRegex(readme, r"/Users/|[A-Z]:\\Users\\")
         self.assertIn("git diff --check", readme)
+        self.assertIn("## Security", readme)
+        self.assertIn("git clone https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit ~/tomcat-audit", readme)
         self.assertIn("sudo bash ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh", readme)
         self.assertIn("sudo bash ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh", readme)
         self.assertEqual(
