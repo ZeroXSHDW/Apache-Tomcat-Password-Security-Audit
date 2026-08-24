@@ -31,7 +31,7 @@ cd <repo-root>\install\windows
 - `-InstallPath` — Installation directory (default: `C:\Program Files\Apache Software Foundation\Tomcat`)
 - `-Version` — Tomcat major version (e.g., `7.0`, `8.5`, `9.0`, `10.0`, `10.1`)
 - `-Username` — Admin username (default: `tomcat`)
-- `-Password` — Admin password (default: `s3cret`)
+- `-Password` — Admin password (required; no default is provided)
 - `-Roles` — Comma-separated roles (default: `manager,admin`)
 - `-InstallService` — Install as Windows service (default: enabled)
 - `-ConfigureFirewall` — Add firewall rule for port 8080 (default: enabled)
@@ -60,7 +60,7 @@ sudo ./tomcat_manager.sh -v 9.0 -u admin -w MySecurePass! -r manager,admin
 - `-p, --path` — Installation path (default: `/opt/tomcat`)
 - `-v, --version` — Tomcat major version (e.g., `7.0`, `8.5`, `9.0`, `10.0`, `10.1`)
 - `-u, --username` — Admin username (default: `tomcat`)
-- `-w, --password` — Admin password (default: `s3cret`)
+- `-w, --password` — Admin password (required; no default is provided)
 - `-r, --roles` — Comma-separated roles (default: `manager,admin`)
 - `-s, --no-service` — Skip service installation
 - `-f, --no-firewall` — Skip firewall configuration
