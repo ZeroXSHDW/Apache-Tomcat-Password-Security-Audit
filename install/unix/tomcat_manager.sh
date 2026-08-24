@@ -166,7 +166,7 @@ HOSTNAME=$(hostname)
 INSTALL_PATH="/opt/tomcat"
 VERSION="9.0"
 USERNAME="tomcat"
-PASSWORD="s3cret"
+PASSWORD=""
 ROLES="manager,admin"
 INSTALL_SERVICE=true
 CONFIGURE_FIREWALL=true
@@ -179,7 +179,7 @@ show_usage() {
     echo "  -p, --path PATH            Installation path (default: /opt/tomcat)"
     echo "  -v, --version VERSION      Tomcat version (default: 9.0)"
     echo "  -u, --username USERNAME    Admin username (default: tomcat)"
-    echo "  -w, --password PASSWORD    Admin password (default: s3cret)"
+    echo "  -w, --password PASSWORD    Admin password (required; no default)"
     echo "  -r, --roles ROLES          Comma-separated roles (default: manager,admin)"
     echo "  -s, --no-service           Skip service installation"
     echo "  -f, --no-firewall          Skip firewall configuration"
@@ -582,6 +582,11 @@ update_user() {
 }
 
 # Main script
+if [ -z "$PASSWORD" ]; then
+    write_log "Admin password is required; no default password is provided." "ERROR"
+    exit 1
+fi
+
 write_log "Starting Tomcat installation"
 
 success=0

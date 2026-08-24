@@ -6,7 +6,7 @@
 
 **Apache Tomcat - Password Security Auditor Tool** is a set of tools designed to audit and patch Apache Tomcat user authentication configurations for compliance with **NIST 800-53 IA-5** and **CIS Tomcat Benchmark** standards. This repository includes scripts for both Unix (Linux/macOS) and Windows environments, enabling system administrators and security professionals to evaluate and secure password configurations across various Tomcat versions.
 
-### Key Features
+## Features
 - **Automated Testing**: Scripts test multiple password types and credential handler configurations, modifying `server.xml` and `tomcat-users.xml` to simulate scenarios and validate compliance.
 - **Manual Auditing**: Analyze existing configurations, reporting password types, credential handlers, and compliance status with actionable recommendations.
 - **Automated Patching**: Convert plaintext passwords to compliant hashes, update configuration files, and restart Tomcat services.
@@ -15,14 +15,6 @@
 - **Backup and Restore**: Automatically back up and restore configuration files during auditing and patching to prevent data loss.
 - **Detailed Logging**: Logs audit and patch results to platform-specific locations for traceability.
 - **Compliance Reporting**: Identifies secure/insecure configurations and provides guidance for achieving compliance.
-
-### Features
-- Checks password types and credential handler configurations.
-- Converts plaintext passwords to secure hashes (SHA-256, SHA-512, PBKDF2WithHmacSHA512) based on Tomcat version.
-- Reports compliance status with actionable recommendations.
-- Supports local and remote auditing on Windows, and local auditing/patching on Unix.
-- Logs results for traceability (CSV for all platforms).
-- Compatible with Tomcat 7.0, 8.5, 9.0, 10.0, and 10.1.
 
 ### Supported Tomcat Versions
 | Version | Unix Support | Windows Support | Notes |
@@ -33,24 +25,44 @@
 | 10.0    | ✅           | ✅              | Supports `SecretKeyCredentialHandler` and `NestedCredentialHandler`. |
 | 10.1    | ✅           | ✅              | Identical features to 10.0. |
 
-## Quick Start
+## Architecture and boundaries
 
-### Prerequisites
+The auditor has separate local and remote surfaces with an explicit lab-only
+test boundary:
+
+| Surface | Boundary |
+|---|---|
+| `src/unix/Audit/` and `src/unix/Patch/` | Bash tools that inspect or explicitly patch a local Tomcat configuration; patch mode creates timestamped backups. |
+| `src/windows/Audit/` and `src/windows/Patch/` | PowerShell tools for local Windows audit/patch and caller-supplied remote audit/update targets. Credentials are passed by the operator and are not stored by the repository. |
+| `install/` | Optional lab setup and lifecycle helpers; do not use them as a production deployment mechanism. |
+| `tests/unit/` and `tests/Audit/` | Self-contained helper tests and destructive lab harnesses. The full harness must run only against disposable Tomcat installations. |
+
+The supported controls cover Tomcat credential handlers, password formats,
+configuration permissions, backups, and redacted audit output. A compliant
+result is not a complete host, application, or compliance assessment.
+
+## Prerequisites
 - **Unix (Linux/macOS)**: Bash, Tomcat under a path such as `/opt/tomcat`, and sudo for audit/patch.
 - **Windows**: PowerShell 5.1+, Tomcat installed, Administrator for patch; WinRM for remote audit.
 - **Java**: Java 8 for Tomcat 7.0; Java 11+ for 8.5 / 9.0 / 10.x.
 
-### Clone
+## Installation and setup
+
+Clone the repository into a reviewable workspace:
+
 ```bash
 git clone https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit ~/tomcat-audit
 cd ~/tomcat-audit
 ```
 
+The optional lab installers under `install/` are for disposable test environments only. Review [install/README.md](install/README.md) and [SECURITY.md](SECURITY.md) before using any installer or patch mode.
+
+## Quick Start
 ### Fastest audit (Unix)
 ```bash
-sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
+sudo bash ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
 # optional custom conf:
-sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh --custom-conf=/path/to/conf
+sudo bash ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh --custom-conf=/path/to/conf
 ```
 
 ### Fastest audit (Windows)
@@ -61,7 +73,8 @@ sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh --custom-conf=/path/to/c
 ### Optional Tomcat lab install
 Install scripts under `install/` set up non-production Tomcat trees for testing. See [install/README.md](install/README.md).
 
-### Security
+## Security
+
 See [SECURITY.md](SECURITY.md) for disclosure and safe-operation notes.
 
 ## Usage
@@ -69,7 +82,7 @@ See [SECURITY.md](SECURITY.md) for disclosure and safe-operation notes.
 ### 1. Unix: Audit Local Configuration (Bash)
 Run the Unix Bash auditing script to check compliance:
 ```bash
-sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
+sudo bash ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh
 ```
 - **Output**: Logs to `/tmp/TomcatManager.csv`.
 - **Example Output:**
@@ -112,7 +125,7 @@ Audit completed. Log: /tmp/TomcatManager.csv
 ### 2. Unix: Patch Local Configuration (Bash)
 Run the Unix Bash patching script to convert plaintext passwords to compliant hashes and update configurations:
 ```bash
-sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
+sudo bash ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
 ```
 - **Output**: Logs to `/tmp/TomcatManager.csv`.
 - **Example Output:**
@@ -131,11 +144,13 @@ sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
  Tomcat User Password Update
 ─────────────────────────────
 ✔ Updated user: tomcat
-    • Old password:  plaintext   (Plaintext, ❌ Non-compliant)
-    • New password:  [HASHED]   (Salted Hash, ✅ Compliant)
+    • Old password:  [REDACTED]   (Plaintext, ❌ Non-compliant)
+    • New password:  [REDACTED]   (Salted Hash, ✅ Compliant)
 Finished updating users in /opt/tomcat/conf/tomcat-users.xml
 ```
-- **Backups**: Before patching, backups are created for both `server.xml` and `tomcat-users.xml` with a timestamp.
+- **Backups**: Before patching, backups are created for both `server.xml` and `tomcat-users.xml` with a unique timestamped suffix.
+- **Credential hygiene**: Patch output and logs intentionally redact plaintext passwords and generated credential material.
+- **Fail-closed versioning**: If the Unix patcher cannot identify a supported Tomcat version, it aborts before changing configuration; it never guesses a compatibility policy.
 
 ### 3. Windows: Audit, Patch, and Remote Audit
 
@@ -143,7 +158,7 @@ Finished updating users in /opt/tomcat/conf/tomcat-users.xml
 ```powershell
 .\src\windows\Audit\powershell\CheckTomcatConfigWin.ps1
 ```
-- **Output**: Logs to `$env:LOCALAPPDATA\Temp\TomcatManager.csv` (e.g., `C:\Users\<User>\AppData\Local\Temp`).
+- **Output**: Logs to `$env:LOCALAPPDATA\Temp\TomcatManager.csv` (e.g., `$env:LOCALAPPDATA\Temp`).
 - **Example Output:**
 ```
 Checking Apache Tomcat configuration security...
@@ -176,7 +191,7 @@ Auditing tomcat-users.xml
     admin    | Hash          | Compliant
 ===========================
 Overall Status: Secure
-Audit completed. Log: C:\Users\<User>\AppData\Local\Temp\TomcatManager.csv
+Audit completed. Log: $env:LOCALAPPDATA\Temp\TomcatManager.csv
 ```
 
 #### Local Patch
@@ -197,7 +212,7 @@ Auto-detected TomcatHome: C:\tomcat
 2025-06-26 16:51:39 - INFO - Patched server.xml with correct CredentialHandler for Tomcat 10.1
 2025-06-26 16:51:39 - INFO - Created backup: C:\tomcat\conf\tomcat-users.xml.bak.20250626165139
 2025-06-26 16:51:39 - INFO - Hashing plaintext password for user tomcat using Tomcat 10.1
-2025-06-26 16:51:41 - INFO - digest.bat output: s3cretP@ssw0rd!:8dc9918eaf2ca02a0d0a81e18a2f0393$10000$523134b8b96e34cb3cb9aa0ce29ad0e22a646c82
+2025-06-26 16:51:41 - INFO - digest.bat completed; credential material omitted
 2025-06-26 16:51:41 - INFO - Updated password for user tomcat
 2025-06-26 16:51:41 - INFO - Successfully updated user hashes in tomcat-users.xml
 2025-06-26 16:51:41 - INFO - Tomcat is not running. No restart will be performed.
@@ -253,7 +268,7 @@ Below is a sample output from running the remote Tomcat user update script. This
 .\Remote_UpdateTomcatUserWin.ps1 -ServerName "WIN-E6DN4M5084M" -Credential (Get-Credential)
 ```
 ```powershell
-PS C:\Users\Admin\Downloads> .\Remote_UpdateTomcatUserWin.ps1 -ServerName "WIN-E6DN4M5084M" -Credential (Get-Credential)
+PS <repo-root>> .\Remote_UpdateTomcatUserWin.ps1 -ServerName "WIN-E6DN4M5084M" -Credential (Get-Credential)
 
 cmdlet Get-Credential at command pipeline position 1
 Supply values for the following parameters:
@@ -271,8 +286,8 @@ Credential
 2025-06-27 07:34:49 - INFO - Created backup: C:\\tomcat\conf\tomcat-users.xml.bak.20250627073449
 2025-06-27 07:34:49 - INFO - Hashing plaintext password for user tomcat using Tomcat 10.1
 2025-06-27 07:34:49 - INFO - setenv.bat already sets CATALINA_HOME correctly.
-2025-06-27 07:34:49 - INFO - Running digest.bat command: C:\\tomcat\bin\digest.bat -h org.apache.catalina.realm.SecretKeyCredentialHandler -a PBKDF2WithHmacSHA512 -i 10000 -s 16 s3cretP@ssw0rd!
-2025-06-27 07:34:50 - INFO - digest.bat output: s3cretP@ssw0rd!:5dae7a04de769ce52f6dd51520343181$10000$27a2187bc799dd59f3fefee3aeac21b703d2da7b
+2025-06-27 07:34:49 - INFO - Running digest.bat with credential arguments redacted
+2025-06-27 07:34:50 - INFO - digest.bat completed; credential material omitted
 2025-06-27 07:34:50 - INFO - Updated password for user tomcat
 2025-06-27 07:34:50 - INFO - Successfully updated user hashes in tomcat-users.xml
 2025-06-27 07:34:50 - INFO - Tomcat is not running. No restart will be performed.
@@ -290,13 +305,13 @@ Credential
 [WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Created backup: C:\\tomcat\conf\tomcat-users.xml.bak.20250627073449
 [WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Hashing plaintext password for user tomcat using Tomcat 10.1
 [WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - setenv.bat already sets CATALINA_HOME correctly.
-[WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Running digest.bat command: C:\\tomcat\bin\digest.bat -h org.apache.catalina.realm.SecretKeyCredentialHandler -a PBKDF2WithHmacSHA512 -i 10000 -s 16 s3cretP@ssw0rd!
-[WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - digest.bat output: s3cretP@ssw0rd!:5dae7a04de769ce52f6dd51520343181$10000$27a2187bc799dd59f3fefee3aeac21b703d2da7b
+[WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Running digest.bat with credential arguments redacted
+[WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - digest.bat completed; credential material omitted
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Updated password for user tomcat
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Successfully updated user hashes in tomcat-users.xml
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Tomcat is not running. No restart will be performed.
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Configuration update completed successfully
-PS C:\Users\Admin\Downloads>
+PS <repo-root>>
 ```
 
 ## Windows Tomcat Audit JSON Output and Parsing
@@ -332,14 +347,14 @@ Below are the command line parameters for each script. All scripts support optio
   - `--custom-conf=/path/to/conf` (optional): Use a custom Tomcat configuration directory (must contain `server.xml` and `tomcat-users.xml`).
   - **Usage:**
     ```bash
-    sudo ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh [--custom-conf=/path/to/conf]
+    sudo bash ./src/unix/Audit/bash/CheckTomcatConfigUnixBash.sh [--custom-conf=/path/to/conf]
     ```
 
 - **UpdateTomcatUserUnix.sh**
   - `[optional-custom-conf-path]` (optional): Path to Tomcat `conf` directory (if not using default or auto-detected).
   - **Usage:**
     ```bash
-    sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh [optional-custom-conf-path]
+    sudo bash ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh [optional-custom-conf-path]
     ```
 
 ### Windows Scripts
@@ -389,6 +404,21 @@ Below are the command line parameters for each script. All scripts support optio
     .\install\windows\TomcatManager.ps1 -Action Install -TomcatVersion 10.1.42 -InstallDir C:\tomcat
     ```
 
+## Verification
+
+The safe CI-equivalent checks do not require a Tomcat service or credentials:
+
+```bash
+find src/unix install/unix -type f -name '*.sh' -exec bash -n {} +
+python -m py_compile tests/Audit/unix/test_config_unix.py
+python -m unittest discover -s tests/unit -v
+git diff --check
+```
+
+The workflow also parses every PowerShell file on Windows. The complete audit
+and patch lab harness is intentionally separate because it mutates disposable
+Tomcat trees; it is never a substitute for the safe unit gate.
+
 ## Testing Framework
 
 **WARNING**: The testing framework modifies system configurations, including `server.xml` and `tomcat-users.xml`, and installs/uninstalls Tomcat instances. It is **strictly for use in test labs** to verify that the auditing and patching scripts function correctly. **Do not use on production systems**, as it may disrupt services or cause data loss. Use only in controlled lab environments.
@@ -415,7 +445,7 @@ sudo ./tests/Audit/unix/test_config_unix.py
 - Logs to `$env:LOCALAPPDATA\Temp\TestTomcatConfig.log`.
 - Tests 15–42 configurations per Tomcat version.
 
-## Configuration Recommendations
+## Configuration reference and recommendations
 For optimal compliance:
 - **Tomcat 7.0**: Use `MessageDigestCredentialHandler` with SHA-256.
 - **Tomcat 8.5**: Use `MessageDigestCredentialHandler` with SHA-512, ≥10,000 iterations, ≥16-byte salt.
@@ -440,4 +470,9 @@ Example `tomcat-users.xml`:
 ```
 
 ## License
-Licensed under the Apache 2.0 License. See `
+
+Licensed under the Apache 2.0 License. See [LICENSE](LICENSE).
+
+## Contributing
+
+Keep audit scripts safe, deterministic, and non-destructive by default. Run the documented PowerShell and unit checks before review and see [CONTRIBUTING.md](CONTRIBUTING.md).

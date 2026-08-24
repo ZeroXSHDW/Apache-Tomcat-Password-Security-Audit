@@ -123,21 +123,13 @@ function Test-PBKDF2Support {
     Ensure-SetenvBat -TomcatHome $TomcatHome
     $digestScript = Join-Path $TomcatHome "bin\digest.bat"
     $testPassword = "TestPassword123!"
-    $digestArgs = "-a PBKDF2WithHmacSHA512 -i 10000 -s 16 $testPassword"
+    $digestArgs = @("-a", "PBKDF2WithHmacSHA512", "-i", "10000", "-s", "16", $testPassword)
     try {
-        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-        $startInfo.FileName = 'cmd.exe'
-        $startInfo.Arguments = "/c `"$digestScript $digestArgs`""
-        $startInfo.WorkingDirectory = (Split-Path $digestScript)
-        $startInfo.UseShellExecute = $false
-        $startInfo.RedirectStandardOutput = $true
-        $process = [System.Diagnostics.Process]::Start($startInfo)
-        $output = $process.StandardOutput.ReadToEnd()
-        $process.WaitForExit()
+        $output = (& $digestScript @digestArgs 2>&1 | Out-String).Trim()
         if ($output -match "NoSuchAlgorithmException" -or $output -match "not available" -or $output -match "Error") {
             return $false
         }
-        if ($process.ExitCode -eq 0 -and $output -match ":") {
+        if ($LASTEXITCODE -eq 0 -and $output -match ":") {
             return $true
         } else {
             return $false
@@ -202,34 +194,30 @@ function Get-PasswordHash {
     }
     if ($Version -eq "7.0") {
         $algorithm = "SHA-256"
-        $args = "-a $algorithm $Password"
+        $digestArgs = @("-a", $algorithm, $Password)
     } elseif ($Version -eq "8.5") {
         $algorithm = "PBKDF2WithHmacSHA512"
         $iterations = "10000"
         $saltLength = "16"
-        $args = "-a $algorithm -i $iterations -s $saltLength $Password"
+        $digestArgs = @("-a", $algorithm, "-i", $iterations, "-s", $saltLength, $Password)
     } elseif ($Version -in @("9.0", "10.0", "10.1")) {
         $algorithm = "PBKDF2WithHmacSHA512"
         $iterations = "10000"
         $saltLength = "16"
-        $args = "-h org.apache.catalina.realm.SecretKeyCredentialHandler -a $algorithm -i $iterations -s $saltLength $Password"
+        $digestArgs = @(
+            "-h", "org.apache.catalina.realm.SecretKeyCredentialHandler",
+            "-a", $algorithm, "-i", $iterations, "-s", $saltLength, $Password
+        )
     } else {
         Write-Log "ERROR: Unsupported Tomcat version $Version for password hashing." "ERROR"
         return $null
     }
     try {
-        Write-Log "Running digest.bat command: $digestScript $args"
-        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-        $startInfo.FileName = 'cmd.exe'
-        $startInfo.Arguments = "/c `"$digestScript $args`""
-        $startInfo.WorkingDirectory = (Split-Path $digestScript)
-        $startInfo.UseShellExecute = $false
-        $startInfo.RedirectStandardOutput = $true
-        $process = [System.Diagnostics.Process]::Start($startInfo)
-        $digestRaw = $process.StandardOutput.ReadToEnd()
-        $process.WaitForExit()
-        $digestRaw = $digestRaw.Trim()
-        Write-Log "digest.bat output: $digestRaw"
+        $digestRaw = (& $digestScript @digestArgs 2>&1 | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "digest.bat failed with exit code $LASTEXITCODE." "ERROR"
+            return $null
+        }
         if ($digestRaw -match "MessageDigestCredentialHandler" -or $digestRaw -match "NoSuchAlgorithmException") {
             Write-Log "WARNING: digest.bat output indicates MessageDigestCredentialHandler or missing PBKDF2 support. Check your Tomcat and Java versions!" "ERROR"
         }
@@ -239,13 +227,13 @@ function Get-PasswordHash {
                 $hash = $digestRaw
                 return $hash
             } else {
-                Write-Log "digest.bat output did not match expected PBKDF2 hash format: $digestRaw" "ERROR"
+                Write-Log "digest.bat output did not match the expected PBKDF2 hash format." "ERROR"
                 return $null
             }
         } elseif ($Version -eq "7.0" -and $digestRaw -match "^[0-9a-fA-F]{64}$") {
             return $digestRaw.Trim()
         } else {
-            Write-Log "digest.bat output: $digestRaw" "ERROR"
+            Write-Log "digest.bat output did not match the expected SHA-256 hash format." "ERROR"
             return $null
         }
     } catch {
@@ -409,4 +397,4 @@ $updated = Update-AllUserPasswords -TomcatHome $TomcatHome -Version $Version
 # Only restart Tomcat if it was running at script start, and use the same method
 Restart-TomcatIfRunning -ServiceName $ServiceName -TomcatHome $TomcatHome | Out-Null
 
-Write-Log "Configuration update completed successfully" 
+Write-Log "Configuration update completed successfully"
