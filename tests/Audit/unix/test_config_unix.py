@@ -226,7 +226,7 @@ def main():
     
     # Password examples (simplified for demo)
     password_values = {
-        "Plaintext": "s3cret",
+        "Plaintext": "fixture-only-password",
         "Hashed_MD5": "5ebe2294ecd0e0f08eab7690d2a6ee69",
         "Hashed_SHA1": "e5e9fa1ba31ecd1ae84f75caaa474f3a663f05f4",
         "Hashed_SHA256": "94f9b6c88f1b2b3b3363b7f4174480c1b3913b8200cb0a50f2974f2bc90bc774",
