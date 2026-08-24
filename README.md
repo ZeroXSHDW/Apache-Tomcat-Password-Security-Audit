@@ -406,6 +406,7 @@ The safe CI-equivalent checks do not require a Tomcat service or credentials:
 find src/unix install/unix -type f -name '*.sh' -exec bash -n {} +
 python -m py_compile tests/Audit/unix/test_config_unix.py
 python -m unittest discover -s tests/unit -v
+git diff --check
 ```
 
 The workflow also parses every PowerShell file on Windows. The complete audit

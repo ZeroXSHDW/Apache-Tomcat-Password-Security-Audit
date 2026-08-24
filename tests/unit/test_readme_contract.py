@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class ReadmeContractTests(unittest.TestCase):
     def test_readme_exposes_unique_operator_sections(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         required = (
             "## Overview",
             "## Architecture and boundaries",
@@ -29,6 +30,11 @@ class ReadmeContractTests(unittest.TestCase):
         self.assertEqual(len(headings), len(set(headings)))
         self.assertNotRegex(readme, r"https://github\.com/your-org/")
         self.assertNotRegex(readme, r"/Users/|[A-Z]:\\Users\\")
+        self.assertIn("git diff --check", readme)
+        self.assertEqual(
+            workflow.count("git diff --check"),
+            workflow.count("uses: actions/checkout@"),
+        )
 
 
 if __name__ == "__main__":
