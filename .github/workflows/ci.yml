@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   bash-syntax:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -32,7 +32,7 @@ jobs:
           done < <(find src/unix install/unix -type f -name '*.sh' -print0)
 
   python-syntax:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -49,7 +49,7 @@ jobs:
   # Full test_config_unix.py needs a live Tomcat install (lab only).
   # These unit tests cover XML helpers without mutating a Tomcat tree.
   unix-helper-unit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
