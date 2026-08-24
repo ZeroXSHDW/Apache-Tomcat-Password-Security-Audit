@@ -36,8 +36,15 @@ error_exit() {
 backup_file() {
     local file="$1"
     if [ -f "$file" ]; then
-        local backup="${file}.bak.$(date +%Y%m%d%H%M%S)"
-        cp "$file" "$backup"
+        local suffix
+        suffix="$(date +%Y%m%d%H%M%S)-$$"
+        local backup="${file}.bak.${suffix}"
+        local attempt=0
+        while [ -e "$backup" ]; do
+            attempt=$((attempt + 1))
+            backup="${file}.bak.${suffix}.${attempt}"
+        done
+        cp "$file" "$backup" || error_exit "Could not create backup of $file. Aborting patch."
         log "Created backup: $backup"
     fi
 }
@@ -149,10 +156,10 @@ detect_tomcat_version() {
         log "catalina.jar not found at $catalina_jar"
     fi
 
-    # Fallback: Error if version is unknown
+    # Fail closed if version is unknown. Guessing a policy can apply the wrong
+    # CredentialHandler and password format to a production configuration.
     if [ "$version" = "unknown" ]; then
-        log "ERROR: Could not determine Tomcat version at $tomcat_home. Defaulting to 8.5." 2
-        version="8.5"
+        error_exit "Could not determine Tomcat version at $tomcat_home. Aborting patch."
     fi
 
     echo "$version"
@@ -260,7 +267,7 @@ update_all_users() {
     echo "Attempting to update users in $users_xml"
     # Count all <user ...> entries (not just plaintext)
     total_user_count=$(grep -E '^[[:space:]]*<user ' "$users_xml" | grep -v '^[[:space:]]*<!--' | wc -l)
-    grep -E '^[[:space:]]*<user ' "$users_xml" | grep -v '^[[:space:]]*<!--' | while read -r line; do
+    while IFS= read -r line; do
         user_count=$((user_count+1))
         local username=$(echo "$line" | sed -n 's/.*username="\([^"]*\)".*/\1/p')
         local pw=$(echo "$line" | sed -n 's/.*password="\([^"]*\)".*/\1/p')
@@ -293,7 +300,7 @@ update_all_users() {
             echo
             sed "/<user.*username=\"$username\"/s#password=\"[^\"]*\"#password=\"$hash\"#" "$tmp_xml" > "${tmp_xml}.new" && mv "${tmp_xml}.new" "$tmp_xml"
         fi
-    done
+    done < <(awk '/^[[:space:]]*<user / && $0 !~ /^[[:space:]]*<!--[[:space:]]*/ {print}' "$users_xml")
     mv "$tmp_xml" "$users_xml"
     if [ "$total_user_count" -eq 0 ]; then
         echo "─────────────────────────────"

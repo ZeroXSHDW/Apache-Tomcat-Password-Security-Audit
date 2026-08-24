@@ -143,8 +143,9 @@ sudo ./src/unix/Patch/bash/UpdateTomcatUserUnix.sh
     • New password:  [REDACTED]   (Salted Hash, ✅ Compliant)
 Finished updating users in /opt/tomcat/conf/tomcat-users.xml
 ```
-- **Backups**: Before patching, backups are created for both `server.xml` and `tomcat-users.xml` with a timestamp.
+- **Backups**: Before patching, backups are created for both `server.xml` and `tomcat-users.xml` with a unique timestamped suffix.
 - **Credential hygiene**: Patch output and logs intentionally redact plaintext passwords and generated credential material.
+- **Fail-closed versioning**: If the Unix patcher cannot identify a supported Tomcat version, it aborts before changing configuration; it never guesses a compatibility policy.
 
 ### 3. Windows: Audit, Patch, and Remote Audit
 

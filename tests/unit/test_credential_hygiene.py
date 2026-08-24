@@ -15,6 +15,12 @@ class TestCredentialHygiene(unittest.TestCase):
     def test_unix_patch_uses_argument_array_and_redacts_secret_output(self) -> None:
         source = UNIX_PATCH.read_text(encoding="utf-8")
         self.assertIn('"${digest_args[@]}"', source)
+        self.assertIn("Aborting patch.", source)
+        self.assertNotIn("Defaulting to 8.5", source)
+        self.assertIn(
+            "done < <(awk '/^[[:space:]]*<user / && $0 !~",
+            source,
+        )
         self.assertNotIn('local cmd="$digest', source)
         self.assertNotIn("Failed to generate hash for $password", source)
         self.assertNotIn('Old password:  $pw', source)
