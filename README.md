@@ -11,8 +11,6 @@
 
 # Apache Tomcat Password Security Audit
 
-> **Private repository.** Owner: [ZeroXSHDW](https://github.com/ZeroXSHDW).
-
 **[Apache Tomcat Password Security Audit](https://ZeroDevLLC.com)** by [ZeroDev LLC](https://ZeroDevLLC.com) · GitHub: [ZeroXSHDW/Apache-Tomcat-Password-Security-Audit](https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit)
 
 > Brand: **[https://ZeroDevLLC.com](https://ZeroDevLLC.com)** · Store: **[https://zerodevllc.store](https://zerodevllc.store)**  
@@ -462,7 +460,6 @@ Example `tomcat-users.xml`:
   <user username="testuser" password="4b6f7e8c9d0a1b2c3d4e5f60718293a4:1234567890abcdef" roles="manager"/>
 </tomcat-users>
 ```
-
 
 
 ## Troubleshooting
