@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 def write_log(message, level="INFO"):
     """Write a log message with timestamp and severity level."""
     log_message = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {level} - {message}"
-    with open(LOG_FILE, 'a') as f:
+    with open(LOG_FILE, 'a', encoding='utf-8') as f:
         f.write(log_message + '\n')
     print(log_message)
 
@@ -57,7 +57,7 @@ def detect_tomcat_path():
         if os.path.exists(path):
             version_file = os.path.join(path, "RELEASE-NOTES")
             if os.path.exists(version_file):
-                with open(version_file, 'r') as f:
+                with open(version_file, 'r', encoding='utf-8') as f:
                     content = f.read()
                     version_match = re.search(r"Apache Tomcat Version\s+(\d+\.\d+\.\d+)", content)
                     if version_match:
@@ -82,7 +82,7 @@ def validate_xml_structure(xml_file):
             return False
 
         # Check for XML declaration
-        with open(xml_file, 'r') as f:
+        with open(xml_file, 'r', encoding='utf-8') as f:
             first_line = f.readline().strip()
             if not first_line.startswith('<?xml'):
                 write_log(f"Invalid XML declaration in {xml_file}", "ERROR")
