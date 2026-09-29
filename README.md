@@ -1,7 +1,26 @@
-# Apache Tomcat Password Security Auditor
+```
+  ______             ____              _     _     ____
+ |__  /___ _ __ ___ |  _ \  _____   __| |   | |   / ___|
+   / // _ \ '__/ _ \| | | |/ _ \ \ / /| |   | |  | |
+  / /|  __/ | | (_) | |_| |  __/\ V / | |___| |__| |___
+ /____\___|_|  \___/|____/ \___| \_/  |_____|_____\____|
+                    ZeroDev LLC
+             https://ZeroDevLLC.com
+```
 
-**Private repository.** Owner: [ZeroXSHDW](https://github.com/ZeroXSHDW).
+# Apache Tomcat Password Security Audit
 
+**[Apache Tomcat Password Security Audit](https://ZeroDevLLC.com)** by [ZeroDev LLC](https://ZeroDevLLC.com) · GitHub: [ZeroXSHDW/Apache-Tomcat-Password-Security-Audit](https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit)
+
+> Store / brand: **[https://ZeroDevLLC.com](https://ZeroDevLLC.com)**  
+> Production releases are published on the public-bound repo `Apache-Tomcat-Password-Security-Audit`.  
+> Active development uses the private twin [`Apache-Tomcat-Password-Security-Audit-dev`](https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit-dev).
+
+## Screenshots
+
+![Banner](assets/images/banner.jpg)
+
+---
 ![Tomcat Configuration Security Auditor Banner](assets/images/banner.jpg)
 
 ## Overview
