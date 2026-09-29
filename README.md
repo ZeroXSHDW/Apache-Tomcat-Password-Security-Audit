@@ -1,8 +1,30 @@
-# Apache Tomcat Password Security Auditor
+```
+  ______             ____              _     _     ____
+ |__  /___ _ __ ___ |  _ \  _____   __| |   | |   / ___|
+   / // _ \ '__/ _ \| | | |/ _ \ \ / /| |   | |  | |
+  / /|  __/ | | (_) | |_| |  __/\ V / | |___| |__| |___
+ /____\___|_|  \___/|____/ \___| \_/  |_____|_____\____|
+                    ZeroDev LLC
+            Apache Tomcat Password Security Audit
+    https://ZeroDevLLC.com  ·  https://zerodevllc.store
+```
 
-**Private repository.** Owner: [ZeroXSHDW](https://github.com/ZeroXSHDW).
+# Apache Tomcat Password Security Audit
 
-![Tomcat Configuration Security Auditor Banner](assets/images/banner.jpg)
+> **Private repository.** Owner: [ZeroXSHDW](https://github.com/ZeroXSHDW).
+
+**[Apache Tomcat Password Security Audit](https://ZeroDevLLC.com)** by [ZeroDev LLC](https://ZeroDevLLC.com) · GitHub: [ZeroXSHDW/Apache-Tomcat-Password-Security-Audit](https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit)
+
+> Brand: **[https://ZeroDevLLC.com](https://ZeroDevLLC.com)** · Store: **[https://zerodevllc.store](https://zerodevllc.store)**  
+> Production releases → public-bound `Apache-Tomcat-Password-Security-Audit`.  
+> Active development → private twin [`Apache-Tomcat-Password-Security-Audit-dev`](https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit-dev).
+
+
+## Screenshots
+
+![Banner](assets/images/banner.jpg)
+
+---
 
 ## Overview
 
@@ -44,8 +66,8 @@
 
 ### Clone
 ```bash
-git clone https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit ~/tomcat-audit
-cd ~/tomcat-audit
+git clone https://github.com/ZeroXSHDW/Apache-Tomcat-Password-Security-Audit
+cd Apache-Tomcat-Password-Security-Audit
 ```
 
 ### Fastest audit (Unix)
@@ -199,7 +221,7 @@ Auto-detected TomcatHome: C:\tomcat
 2025-06-26 16:51:39 - INFO - Patched server.xml with correct CredentialHandler for Tomcat 10.1
 2025-06-26 16:51:39 - INFO - Created backup: C:\tomcat\conf\tomcat-users.xml.bak.20250626165139
 2025-06-26 16:51:39 - INFO - Hashing plaintext password for user tomcat using Tomcat 10.1
-2025-06-26 16:51:41 - INFO - digest.bat output: s3cretP@ssw0rd!:8dc9918eaf2ca02a0d0a81e18a2f0393$10000$523134b8b96e34cb3cb9aa0ce29ad0e22a646c82
+2025-06-26 16:51:41 - INFO - digest.bat output: <demo-password>:8dc9918eaf2ca02a0d0a81e18a2f0393$10000$523134b8b96e34cb3cb9aa0ce29ad0e22a646c82
 2025-06-26 16:51:41 - INFO - Updated password for user tomcat
 2025-06-26 16:51:41 - INFO - Successfully updated user hashes in tomcat-users.xml
 2025-06-26 16:51:41 - INFO - Tomcat is not running. No restart will be performed.
@@ -255,7 +277,7 @@ Below is a sample output from running the remote Tomcat user update script. This
 .\Remote_UpdateTomcatUserWin.ps1 -ServerName "WIN-E6DN4M5084M" -Credential (Get-Credential)
 ```
 ```powershell
-PS C:\Users\Admin\Downloads> .\Remote_UpdateTomcatUserWin.ps1 -ServerName "WIN-E6DN4M5084M" -Credential (Get-Credential)
+PS C:\path\to\workdir> .\Remote_UpdateTomcatUserWin.ps1 -ServerName "WIN-E6DN4M5084M" -Credential (Get-Credential)
 
 cmdlet Get-Credential at command pipeline position 1
 Supply values for the following parameters:
@@ -273,8 +295,8 @@ Credential
 2025-06-27 07:34:49 - INFO - Created backup: C:\\tomcat\conf\tomcat-users.xml.bak.20250627073449
 2025-06-27 07:34:49 - INFO - Hashing plaintext password for user tomcat using Tomcat 10.1
 2025-06-27 07:34:49 - INFO - setenv.bat already sets CATALINA_HOME correctly.
-2025-06-27 07:34:49 - INFO - Running digest.bat command: C:\\tomcat\bin\digest.bat -h org.apache.catalina.realm.SecretKeyCredentialHandler -a PBKDF2WithHmacSHA512 -i 10000 -s 16 s3cretP@ssw0rd!
-2025-06-27 07:34:50 - INFO - digest.bat output: s3cretP@ssw0rd!:5dae7a04de769ce52f6dd51520343181$10000$27a2187bc799dd59f3fefee3aeac21b703d2da7b
+2025-06-27 07:34:49 - INFO - Running digest.bat command: C:\\tomcat\bin\digest.bat -h org.apache.catalina.realm.SecretKeyCredentialHandler -a PBKDF2WithHmacSHA512 -i 10000 -s 16 <demo-password>
+2025-06-27 07:34:50 - INFO - digest.bat output: <demo-password>:5dae7a04de769ce52f6dd51520343181$10000$27a2187bc799dd59f3fefee3aeac21b703d2da7b
 2025-06-27 07:34:50 - INFO - Updated password for user tomcat
 2025-06-27 07:34:50 - INFO - Successfully updated user hashes in tomcat-users.xml
 2025-06-27 07:34:50 - INFO - Tomcat is not running. No restart will be performed.
@@ -292,13 +314,13 @@ Credential
 [WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Created backup: C:\\tomcat\conf\tomcat-users.xml.bak.20250627073449
 [WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Hashing plaintext password for user tomcat using Tomcat 10.1
 [WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - setenv.bat already sets CATALINA_HOME correctly.
-[WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Running digest.bat command: C:\\tomcat\bin\digest.bat -h org.apache.catalina.realm.SecretKeyCredentialHandler -a PBKDF2WithHmacSHA512 -i 10000 -s 16 s3cretP@ssw0rd!
-[WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - digest.bat output: s3cretP@ssw0rd!:5dae7a04de769ce52f6dd51520343181$10000$27a2187bc799dd59f3fefee3aeac21b703d2da7b
+[WIN-E6DN4M5084M] 2025-06-27 07:34:49 - INFO - Running digest.bat command: C:\\tomcat\bin\digest.bat -h org.apache.catalina.realm.SecretKeyCredentialHandler -a PBKDF2WithHmacSHA512 -i 10000 -s 16 <demo-password>
+[WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - digest.bat output: <demo-password>:5dae7a04de769ce52f6dd51520343181$10000$27a2187bc799dd59f3fefee3aeac21b703d2da7b
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Updated password for user tomcat
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Successfully updated user hashes in tomcat-users.xml
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Tomcat is not running. No restart will be performed.
 [WIN-E6DN4M5084M] 2025-06-27 07:34:50 - INFO - Configuration update completed successfully
-PS C:\Users\Admin\Downloads>
+PS C:\path\to\workdir>
 ```
 
 ## Windows Tomcat Audit JSON Output and Parsing
@@ -407,7 +429,7 @@ python -m unittest discover -s tests/unit -v
 ```bash
 sudo ./tests/Audit/unix/test_config_unix.py
 ```
-- Logs to `~/TestTomcatConfig.log`.
+- Logs to a local `TestTomcatConfig.log` in the working directory (or temp).
 - Tests 42 configurations per Tomcat version (7.0, 8.5, 9.0, 10.0, 10.1).
 
 #### Windows
