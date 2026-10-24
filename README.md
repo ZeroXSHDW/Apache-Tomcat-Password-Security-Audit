@@ -1,3 +1,7 @@
+<!-- zerodevllc-theme -->
+[![ZeroDevLLC](https://img.shields.io/badge/ZeroDevLLC-cyber--deck-00ff88?style=for-the-badge&labelColor=050a08)](https://ZeroDevLLC.com)
+[![Theme](https://img.shields.io/badge/theme-3D%20cyber-00f0ff?style=flat-square&labelColor=050a08)](https://ZeroDevLLC.com)
+
 ```
   ______             ____              _     _     ____
  |__  /___ _ __ ___ |  _ \  _____   __| |   | |   / ___|
@@ -474,3 +478,7 @@ Example `tomcat-users.xml`:
 
 ## License
 Licensed under the Apache 2.0 License. See `
+
+---
+
+<p align="center"><sub><code>ZeroDevLLC · cyber-deck · local-first · no cloud · no telemetry</code></sub></p>
