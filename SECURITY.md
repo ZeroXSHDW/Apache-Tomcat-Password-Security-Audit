@@ -1,24 +1,20 @@
 # Security Policy
 
-## Supported use
-
-This repository provides **audit and remediation scripts** for Apache Tomcat password / credential-handler configuration. Treat all scripts as privileged tooling: they may read or modify `server.xml` and `tomcat-users.xml`, and patching paths can restart Tomcat.
+ZeroDevLLC projects follow a local-first, no-cloud, no-telemetry posture.
 
 ## Reporting a vulnerability
+Please report security issues privately to the maintainer rather than opening a public issue.
 
-If you believe you have found a security issue in these scripts (for example, unsafe file handling, command injection, or credential leakage):
+- Email: mmoran00000001@gmail.com
+- Subject: `[SECURITY] <repo> - <short summary>`
 
-1. Prefer a private disclosure to the repository owner via GitHub Security Advisories (or email the maintainer listed on the GitHub profile).
-2. Do **not** open a public issue that includes production credentials, hostnames of sensitive systems, or exploit PoCs against live hosts.
-3. Include: affected script path, Tomcat version(s), OS, and steps to reproduce in a lab.
+We aim to acknowledge within 72 hours and provide a fix or mitigation plan.
 
-## Safe operation
-
-- Run audit scripts first; only run patch scripts after reviewing backups.
-- Use lab / non-production Tomcat instances for the testing framework under `tests/`.
-- Do not commit real `tomcat-users.xml` files or plaintext passwords into this repository.
-- Prefer least-privilege accounts for remote WinRM audits; rotate credentials used for remoting.
+## Supported versions
+Only the latest release on the default branch is supported.
 
 ## Scope
+- In scope: code in this repository.
+- Out of scope: third-party dependencies; report those upstream.
 
-Out of scope: vulnerabilities in Apache Tomcat itself, Java, or third-party installers — report those upstream.
+ZeroDevLLC · cyber-deck · local-first · no cloud · no telemetry
